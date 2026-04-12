@@ -281,7 +281,10 @@ def refresh_bracket(tournament_id, category_id, category_name=""):
         _brackets[category_id] = state
         return state
     except Exception as e:
-        return {"error": str(e), "category_id": category_id}
+        err = {"error": str(e), "category_id": category_id,
+               "bracket_url": f"{BASE_URL}/tournaments/{tournament_id}/categories/{category_id}"}
+        _brackets[category_id] = err
+        return err
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
