@@ -210,6 +210,20 @@ def api_tournaments():
 
 # ── Roster cache endpoints ────────────────────────────────────────────────────
 
+@app.route("/api/roster/<tournament_id>", methods=["PUT"])
+def api_roster_upload(tournament_id):
+    """Upload a pre-built roster from a local machine. Requires X-Upload-Key header."""
+    expected = os.environ.get("UPLOAD_KEY", "")
+    if not expected or request.headers.get("X-Upload-Key") != expected:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    if not data or "athletes" not in data:
+        return jsonify({"error": "invalid payload"}), 400
+    from scraper import save_roster_cache
+    save_roster_cache(tournament_id, data)
+    return jsonify({"ok": True, "athletes": len(data["athletes"])})
+
+
 @app.route("/api/roster/<tournament_id>")
 def api_roster(tournament_id):
     """
