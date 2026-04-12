@@ -548,12 +548,11 @@ def _fight_is_upcoming(fight):
 
 def _check_eliminated(name_lower, state):
     """
-    Elimination logic (single-elimination brackets):
-    1. Explicit win   → not eliminated
-    2. Explicit loss  → eliminated
-    3. Completed fight (score) + no upcoming fights → eliminated
-       (if they won, they'd appear in a later fight or results_final would be True)
-    4. Pool/multi-person fights (winner="") → inconclusive, skip
+    Grey name detection (via watcher) already set winner/completed on each fight.
+    An athlete is eliminated if:
+      - They lost a fight (explicit winner that isn't them), OR
+      - All their fights are in the past + at least one completed + no upcoming
+    Athletes who placed (bronze/silver/gold) are handled by _get_placement.
     """
     fights_with_athlete = []
     for fight in state.get("fights", []):
@@ -565,29 +564,18 @@ def _check_eliminated(name_lower, state):
     if not fights_with_athlete:
         return False
 
-    # If any fight is upcoming → still in it
+    # Upcoming fight → still in it
     if any(_fight_is_upcoming(f) for f in fights_with_athlete):
         return False
 
-    # All their fights are in the past. Check explicit winner fields first.
-    won_any = False
+    # Explicit winner in any fight
     for fight in fights_with_athlete:
         winner = fight.get("winner", "")
-        if not winner:
-            continue
-        if name_lower in winner:
-            won_any = True
-        else:
-            return True  # explicit loss in a 1v1
+        if winner:
+            return name_lower not in winner  # lost if winner isn't them
 
-    if won_any:
-        return False  # won at least one fight, not eliminated
-
-    # No explicit winner info. Use score-based completion as proxy.
-    # If at least one of their fights is completed (score present) and they have
-    # no upcoming fights, they were eliminated (winners advance to next fight).
-    any_completed = any(f.get("completed") for f in fights_with_athlete)
-    return any_completed
+    # No explicit winner — use completion as fallback
+    return any(f.get("completed") for f in fights_with_athlete)
 
 
 _MEDAL_POS = {"1", "2", "3"}

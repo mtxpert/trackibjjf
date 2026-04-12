@@ -221,6 +221,50 @@ def parse_bracket_state(text, category_id, category_name="", grey_names=None):
     except StopIteration:
         pass  # no Swaps section — tournament in progress
 
+    # ── Derive live placements from grey names + phase ────────────────────────
+    # Grey name = lost that fight.
+    #   Lost FINAL        → 2nd (Silver)
+    #   Lost SEMI-FINAL   → 3rd (Bronze)
+    #   Lost earlier      → Eliminated (no podium)
+    #   Won FINAL (not grey in final) → 1st (Gold)
+    # Only fills in gaps not already covered by the placement block.
+    if not results_final and grey_names:
+        grey = grey_names  # set of lowercase names
+        derived = {}  # name_lower -> pos_str
+
+        _is_final = re.compile(r'^FINAL$', re.IGNORECASE)
+        _is_semi  = re.compile(r'SEMI', re.IGNORECASE)
+
+        for fight in fights:
+            phase = fight.get("phase", "")
+            comps = fight.get("competitors", [])
+            if len(comps) != 2:
+                continue  # skip pool fights
+
+            c0 = comps[0]["name"].lower()
+            c1 = comps[1]["name"].lower()
+            c0_grey = c0 in grey
+            c1_grey = c1 in grey
+
+            if _is_final.match(phase):
+                if c0_grey:
+                    derived[c0] = "2"   # Silver
+                    derived[c1] = "1"   # Gold (not grey in final)
+                elif c1_grey:
+                    derived[c1] = "2"
+                    derived[c0] = "1"
+            elif _is_semi.search(phase):
+                if c0_grey:
+                    derived[c0] = "3"   # Bronze
+                if c1_grey:
+                    derived[c1] = "3"
+
+        if derived:
+            existing_names = {e["name"].lower() for e in ranking}
+            for name, pos in derived.items():
+                if name not in existing_names:
+                    ranking.append({"pos": pos, "name": name})
+
     return {
         "category_id":    category_id,
         "division":       division,
