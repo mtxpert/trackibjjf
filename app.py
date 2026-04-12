@@ -548,30 +548,46 @@ def _fight_is_upcoming(fight):
 
 def _check_eliminated(name_lower, state):
     """
-    An athlete is eliminated when:
-      - They appeared in a completed (or past-dated) fight
-      - We have a confirmed 1v1 winner who is NOT them
-      - They have no upcoming fights (today or future)
-    Pool fights (multi-person, winner="") are inconclusive — don't eliminate.
+    Elimination logic (single-elimination brackets):
+    1. Explicit win   → not eliminated
+    2. Explicit loss  → eliminated
+    3. Completed fight (score) + no upcoming fights → eliminated
+       (if they won, they'd appear in a later fight or results_final would be True)
+    4. Pool/multi-person fights (winner="") → inconclusive, skip
     """
-    in_completed = in_upcoming = won_fight = has_known_loss = False
+    fights_with_athlete = []
     for fight in state.get("fights", []):
         for comp in fight.get("competitors", []):
             if name_lower in comp["name"].lower():
-                if _fight_is_upcoming(fight):
-                    in_upcoming = True
-                else:
-                    in_completed = True
-                    winner = fight.get("winner", "")
-                    if winner:
-                        if name_lower in winner:
-                            won_fight = True
-                        else:
-                            has_known_loss = True  # 1v1 fight, known winner, not them
-    if in_upcoming or won_fight:
+                fights_with_athlete.append(fight)
+                break
+
+    if not fights_with_athlete:
         return False
-    # Only eliminate if we saw a definitive 1v1 loss (winner field populated, not them)
-    return in_completed and has_known_loss
+
+    # If any fight is upcoming → still in it
+    if any(_fight_is_upcoming(f) for f in fights_with_athlete):
+        return False
+
+    # All their fights are in the past. Check explicit winner fields first.
+    won_any = False
+    for fight in fights_with_athlete:
+        winner = fight.get("winner", "")
+        if not winner:
+            continue
+        if name_lower in winner:
+            won_any = True
+        else:
+            return True  # explicit loss in a 1v1
+
+    if won_any:
+        return False  # won at least one fight, not eliminated
+
+    # No explicit winner info. Use score-based completion as proxy.
+    # If at least one of their fights is completed (score present) and they have
+    # no upcoming fights, they were eliminated (winners advance to next fight).
+    any_completed = any(f.get("completed") for f in fights_with_athlete)
+    return any_completed
 
 
 _MEDAL_POS = {"1", "2", "3"}
