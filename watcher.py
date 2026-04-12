@@ -41,7 +41,7 @@ def parse_bracket_html(html, category_id, category_name=""):
     Parse IBJJF bracket HTML into structured state.
     Returns: {category_id, division, fights, ranking, results_final, ...}
     """
-    soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, "lxml")
 
     # Division name from page title area
     division = category_name

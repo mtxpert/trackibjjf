@@ -35,7 +35,7 @@ def get_tournaments():
     """Fetch all currently listed tournaments from bjjcompsystem.com."""
     resp = requests.get(f"{BASE}/tournaments", headers=HEADERS, timeout=12)
     resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+    soup = BeautifulSoup(resp.text, "lxml")
     result = []
     for block in soup.find_all("div", id=re.compile(r"^tournament-display-\d+$")):
         tid  = re.search(r"tournament-display-(\d+)$", block["id"]).group(1)
@@ -50,7 +50,7 @@ def get_category_ids(tournament_id):
     resp = requests.get(f"{BASE}/tournaments/{tournament_id}/categories",
                         headers=HEADERS, timeout=12)
     resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+    soup = BeautifulSoup(resp.text, "lxml")
     seen, cats = set(), []
     pat = re.compile(rf"/tournaments/{tournament_id}/categories/(\d+)")
     for a in soup.find_all("a", href=pat):
