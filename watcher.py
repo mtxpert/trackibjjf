@@ -401,6 +401,46 @@ async def fetch_bracket(tournament_id, category_id, category_name=""):
     return parse_bracket_state(text, category_id, category_name, grey_names=grey_names)
 
 
+# ── Concurrent batch fetch (shared browser — use for background poller) ────────
+
+async def fetch_brackets_batch(items, concurrency=8):
+    """
+    Fetch multiple brackets concurrently with a single shared browser.
+    items: list of (tournament_id, category_id, category_name) tuples
+    Returns: dict of category_id -> state
+    """
+    if not items:
+        return {}
+
+    results = {}
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True)
+        context = await browser.new_context()
+        sem = asyncio.Semaphore(concurrency)
+
+        async def fetch_one(tid, cid, name):
+            async with sem:
+                page = await context.new_page()
+                try:
+                    url = f"{BASE}/tournaments/{tid}/categories/{cid}"
+                    await page.goto(url, wait_until="networkidle", timeout=20000)
+                    text = await page.inner_text("body")
+                    grey_names = await _extract_grey_names(page)
+                    return cid, parse_bracket_state(text, cid, name, grey_names=grey_names)
+                except Exception as e:
+                    return cid, {"category_id": cid, "error": str(e)}
+                finally:
+                    await page.close()
+
+        tasks = [fetch_one(tid, cid, name) for tid, cid, name in items]
+        for coro in asyncio.as_completed(tasks):
+            cid, state = await coro
+            results[cid] = state
+
+        await browser.close()
+    return results
+
+
 async def fetch_multiple(tournament_id, category_ids, concurrency=6):
     """Fetch multiple categories concurrently."""
     async with async_playwright() as pw:

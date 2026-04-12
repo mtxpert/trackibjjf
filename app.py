@@ -122,38 +122,67 @@ def register_watch(tournament_id, category_id, interval_sec=90):
         }
 
 
+def _process_batch_results(batch_results, tid_by_cid):
+    """
+    After a fetch_brackets_batch run: update shared state, push SSE events,
+    remove completed brackets from the watch registry.
+    """
+    from watcher import diff_states, save_state, load_state
+
+    for cid, state in batch_results.items():
+        tournament_id = tid_by_cid.get(cid, "")
+        if "error" in state:
+            continue
+        try:
+            old     = _brackets.get(cid) or load_state(cid)
+            changes = diff_states(old, state) if old else []
+            save_state(cid, state)
+            state["changes"]     = changes
+            state["bracket_url"] = f"{BASE_URL}/tournaments/{tournament_id}/categories/{cid}"
+            _brackets[cid]       = state
+
+            if state.get("results_final"):
+                with _watch_lock:
+                    _watch_registry.pop(cid, None)
+            else:
+                with _watch_lock:
+                    if cid in _watch_registry:
+                        _watch_registry[cid]["last_fetched"] = time.time()
+
+            if changes:
+                _sse_push(tournament_id, {
+                    "type":        "bracket_update",
+                    "category_id": cid,
+                    "changes":     changes,
+                })
+        except Exception:
+            pass
+
+
 def _background_poller():
     """
     Single long-running daemon thread.
-    Refreshes stale brackets, pushes changes via SSE.
-    Automatically removes completed brackets from the registry.
+    Fetches all stale brackets concurrently (shared browser, 8 pages),
+    pushes changes via SSE, removes completed brackets from the registry.
     """
+    from watcher import fetch_brackets_batch
+
     while True:
         now = time.time()
-        to_refresh = []
+        to_refresh  = []   # (tournament_id, category_id, "")
+        tid_by_cid  = {}
+
         with _watch_lock:
             for cid, info in list(_watch_registry.items()):
                 if (now - info["last_fetched"]) >= info["interval_sec"]:
-                    to_refresh.append((info["tournament_id"], cid))
+                    tid = info["tournament_id"]
+                    to_refresh.append((tid, cid, ""))
+                    tid_by_cid[cid] = tid
 
-        for tournament_id, cid in to_refresh:
+        if to_refresh:
             try:
-                state = refresh_bracket(tournament_id, cid)
-                if "error" not in state:
-                    if state.get("results_final"):
-                        # Bracket complete — stop polling it
-                        with _watch_lock:
-                            _watch_registry.pop(cid, None)
-                    else:
-                        with _watch_lock:
-                            if cid in _watch_registry:
-                                _watch_registry[cid]["last_fetched"] = time.time()
-                    if state.get("changes"):
-                        _sse_push(tournament_id, {
-                            "type":        "bracket_update",
-                            "category_id": cid,
-                            "changes":     state["changes"],
-                        })
+                batch_results = asyncio.run(fetch_brackets_batch(to_refresh, concurrency=8))
+                _process_batch_results(batch_results, tid_by_cid)
             except Exception:
                 pass
 
