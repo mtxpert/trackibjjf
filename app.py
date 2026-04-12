@@ -231,31 +231,52 @@ def _auto_discover():
     """
     Runs at startup (and every hour thereafter):
       1. Fetch all tournaments listed on bjjcompsystem.com
-      2. Build roster cache for each in parallel (requests+BS4, no Playwright)
+      2. Build roster cache only for tournaments not already cached
       3. Register every non-final bracket for background watching
+    Processes one tournament at a time to stay within memory limits.
     """
     import time as _time
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    _time.sleep(2)   # let Flask finish starting
+    from scraper import load_roster_cache
+    _time.sleep(5)   # let Flask finish starting
 
     while True:
         try:
             from scraper import get_tournaments
             tournaments = get_tournaments()
 
-            # Build all tournaments in parallel (up to 4 at once)
-            with ThreadPoolExecutor(max_workers=4) as ex:
-                futures = [ex.submit(_build_one_tournament, t) for t in tournaments]
-                for f in as_completed(futures):
-                    try:
-                        f.result()
-                    except Exception:
-                        pass
+            for t in tournaments:
+                try:
+                    # Skip if already cached — seed_cache covers known tournaments
+                    if load_roster_cache(t["id"]):
+                        # Still ingest bracket states for SSE watching
+                        _ingest_existing_cache(t["id"])
+                    else:
+                        _build_one_tournament(t)
+                    _time.sleep(1)   # brief pause between tournaments
+                except Exception:
+                    pass
 
         except Exception:
             pass
 
         _time.sleep(3600)   # re-discover every hour
+
+
+def _ingest_existing_cache(tid):
+    """Load an already-built roster cache and register brackets for watching."""
+    from scraper import load_roster_cache
+    from watcher import load_state, fetch_brackets_batch
+    from scraper import get_category_ids
+    try:
+        cats = get_category_ids(tid)
+        # Only fetch brackets that aren't final yet (check saved states)
+        incomplete = [(tid, c["id"], c["name"]) for c in cats
+                      if not (load_state(c["id"]) or {}).get("results_final")]
+        if incomplete:
+            results = fetch_brackets_batch(incomplete, concurrency=5)
+            _ingest_bracket_results(tid, results)
+    except Exception:
+        pass
 
 
 threading.Thread(target=_auto_discover, daemon=True).start()

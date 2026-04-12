@@ -75,7 +75,7 @@ def build_roster(tournament_id, job):
     job["current_cat"] = "Fetching brackets…"
 
     items           = [(tournament_id, cat["id"], cat["name"]) for cat in cats]
-    bracket_results = fetch_brackets_batch(items, concurrency=20)
+    bracket_results = fetch_brackets_batch(items, concurrency=5)
 
     job["progress"] = len(cats)
 
