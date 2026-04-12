@@ -14,6 +14,18 @@ from bs4 import BeautifulSoup
 _instance = Path(__file__).parent / "instance"
 ROSTER_DIR = (_instance / "bracket_states") if _instance.exists() else (Path(__file__).parent / "bracket_states")
 ROSTER_DIR.mkdir(parents=True, exist_ok=True)
+SEED_DIR = Path(__file__).parent / "seed_cache"
+
+def _seed_rosters():
+    """Copy seed_cache/*.json into ROSTER_DIR on first boot (won't overwrite existing)."""
+    if not SEED_DIR.exists():
+        return
+    for src in SEED_DIR.glob("*_roster.json"):
+        dst = ROSTER_DIR / src.name
+        if not dst.exists():
+            dst.write_bytes(src.read_bytes())
+
+_seed_rosters()
 
 BASE    = "https://www.bjjcompsystem.com"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
