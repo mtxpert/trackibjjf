@@ -940,11 +940,17 @@ function _pickStatusBadge(a) {
   if (medal) return `<div class="pick-status ps-medal">${medal}</div>`;
   if (a.eliminated) return `<div class="pick-status ps-elim">❌ Eliminated</div>`;
   if (a.fight_time) {
-    const timeStr = a.fight_time_utc
-      ? new Date(a.fight_time_utc).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})
-      : (a.fight_time.match(/at\s+(.+)$/i)||[])[1] || a.fight_time;
-    const matStr = a.mat ? `Mat ${a.mat}` : '';
-    return `<div class="pick-status ps-fight">${matStr ? matStr + '<br>' : ''}${timeStr}</div>`;
+    // Don't show stale times for fights already in the past
+    const pastCutoff = a.fight_time_utc
+      ? new Date(a.fight_time_utc) < new Date(Date.now() - 30 * 60 * 1000)
+      : false;
+    if (!pastCutoff) {
+      const timeStr = a.fight_time_utc
+        ? new Date(a.fight_time_utc).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})
+        : (a.fight_time.match(/at\s+(.+)$/i)||[])[1] || a.fight_time;
+      const matStr = a.mat ? `Mat ${a.mat}` : '';
+      return `<div class="pick-status ps-fight">${matStr ? matStr + '<br>' : ''}${timeStr}</div>`;
+    }
   }
   // Has been checked but no fight time and not eliminated = in progress
   if (typeof a.eliminated !== 'undefined') return `<div class="pick-status ps-progress">In Progress</div>`;
@@ -1013,6 +1019,12 @@ async function refreshPickStatuses() {
       data.updated.forEach(a => { updMap[a.name.toLowerCase()] = a; });
       allAthletes = allAthletes.map(a => updMap[a.name.toLowerCase()] ? {...a, ...updMap[a.name.toLowerCase()]} : a);
       filterPick();
+    }
+    // If any athletes still lack placement/eliminated data, the brackets are still
+    // loading in the background — retry after 15s to pick up live results.
+    const stillPending = allAthletes.some(a => !a.placement && typeof a.eliminated === 'undefined');
+    if (stillPending && document.getElementById('screen-pick').classList.contains('active')) {
+      setTimeout(refreshPickStatuses, 15000);
     }
   } catch(e) {}
   finally { _pickRefreshing = false; }
