@@ -70,6 +70,12 @@
     .tourney-meta { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
 
     /* School input */
+    .mode-btn {
+      flex: 1; padding: 10px; border-radius: 10px; font-size: 0.9rem; font-weight: 600;
+      border: 2px solid var(--border); background: var(--card); color: var(--muted); cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .mode-btn--active { border-color: var(--red); color: var(--text); background: rgba(192,57,43,0.12); }
     .school-input-wrap { position: relative; margin-bottom: 4px; }
     .school-input-wrap input {
       width: 100%; padding: 14px 16px; border-radius: 12px;
@@ -348,6 +354,10 @@
 <!-- ── Screen 2: Enter School ── -->
 <div class="screen" id="screen-school">
   <div class="setup-wrap">
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button id="mode-team" class="mode-btn mode-btn--active" onclick="setSearchMode('team')">Team</button>
+      <button id="mode-athlete" class="mode-btn" onclick="setSearchMode('athlete')">Athlete</button>
+    </div>
     <div class="school-input-wrap">
       <input type="text" id="school-input" value=""
         placeholder="Type your school name…"
@@ -435,41 +445,24 @@ let refreshing = false;
 let sseConnection = null;  // EventSource for bracket push updates
 let _pickRefreshing = false;
 
-// ─── localStorage roster cache ─────────────────────────────────────────────
-const ROSTER_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+// ─── Search mode + suggestion caches ─────────────────────────────────────────
+let _searchMode       = 'team';   // 'team' | 'athlete'
+let _teamSuggestions  = [];       // [{name, count}]
+let _athleteSugg      = [];       // [{name, team}]
 
-function getCachedRoster(tournamentId) {
-  try {
-    const raw = localStorage.getItem(`roster_${tournamentId}`);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (Date.now() - (data._saved_at || 0) > ROSTER_TTL_MS) {
-      localStorage.removeItem(`roster_${tournamentId}`);
-      return null;
-    }
-    return data;
-  } catch(e) { return null; }
-}
-
-function setCachedRoster(tournamentId, rosterData) {
-  try {
-    localStorage.setItem(`roster_${tournamentId}`, JSON.stringify({
-      ...rosterData,
-      _saved_at: Date.now()
-    }));
-  } catch(e) {} // storage full — ignore
-}
-
-function filterRosterLocally(athletes, school) {
-  const sl = school.toLowerCase().trim();
-  const seen = {};
-  for (const a of athletes) {
-    if ((a.team || '').toLowerCase().includes(sl) || a.name.toLowerCase().includes(sl)) {
-      const key = a.name.toLowerCase();
-      if (!seen[key]) seen[key] = a;
-    }
-  }
-  return Object.values(seen);
+function setSearchMode(mode) {
+  _searchMode   = mode;
+  _athleteQueue = [];
+  const qEl = document.getElementById('athlete-queue');
+  const bEl = document.getElementById('athlete-watch-btn');
+  if (qEl) qEl.innerHTML = '';
+  if (bEl) bEl.style.display = 'none';
+  document.getElementById('mode-team').classList.toggle('mode-btn--active', mode === 'team');
+  document.getElementById('mode-athlete').classList.toggle('mode-btn--active', mode === 'athlete');
+  const inp = document.getElementById('school-input');
+  inp.placeholder = mode === 'team' ? 'Type your school name…' : 'Type athlete name…';
+  inp.value = '';
+  hideSuggestions();
 }
 
 function timeSince(isoStr) {
@@ -626,35 +619,29 @@ function selectTournament(id, el) {
   hideSuggestions();
   document.getElementById('school-input').value = '';
   clearTimeout(_schoolTimer);
+  setSearchMode('team');
   showScreen('screen-school');
-  checkCacheStatus(id);
+  loadTeamSuggestions(id);
 }
 
-async function checkCacheStatus(tournamentId) {
+async function loadTeamSuggestions(tournamentId) {
   const el = document.getElementById('cache-status');
-  if (!el) return;
-
-  const local = getCachedRoster(tournamentId);
-  if (local) {
-    el.textContent = `⚡ Roster ready (${timeSince(new Date(local._saved_at).toISOString())})`;
-    return;
-  }
-
-  el.textContent = '';
+  _teamSuggestions = [];
+  _athleteSugg     = [];
+  if (el) el.textContent = 'Loading…';
   try {
-    const r = await fetch(`/api/cache/${tournamentId}`);
+    const r    = await fetch(`/api/teams/${tournamentId}`);
     const data = await r.json();
-    if (data.status === 'ready') {
-      el.textContent = 'Downloading roster…';
-      const rosterResp = await fetch(`/api/roster/${tournamentId}`);
-      const roster = await rosterResp.json();
-      setCachedRoster(tournamentId, roster);
-      el.textContent = `✓ ${data.athlete_count} athletes ready — start typing`;
+    if (data.teams) {
+      _teamSuggestions = data.teams;
+      _athleteSugg     = data.athletes || [];
+      if (el) el.textContent = `✓ ${data.athlete_count} athletes — start typing`;
     } else {
-      el.textContent = 'Roster not pre-built yet — typeahead unavailable';
+      if (el) el.textContent = 'Building roster… try again shortly';
+      setTimeout(() => loadTeamSuggestions(tournamentId), 4000);
     }
   } catch(e) {
-    el.textContent = '';
+    if (el) el.textContent = '';
   }
 }
 
@@ -666,44 +653,53 @@ function onSchoolInput() {
   clearTimeout(_schoolTimer);
   _suggIndex = -1;
   const val = document.getElementById('school-input').value.trim();
-
   if (val.length < 1) { hideSuggestions(); return; }
-
-  const local = selectedTournament ? getCachedRoster(selectedTournament.id) : null;
-  if (!local) {
-    hideSuggestions();
-    // Show the search button as fallback
-    document.getElementById('btn-search').style.display = '';
-    return;
-  }
-
-  // Aggregate unique teams that match the query
   const vl = val.toLowerCase();
-  const teamMap = {};
-  for (const a of local.athletes || []) {
-    const team = (a.team || '').trim();
-    if (!team) continue;
-    if (team.toLowerCase().includes(vl)) {
-      teamMap[team] = (teamMap[team] || 0) + 1;
-    }
+
+  if (_searchMode === 'athlete') {
+    const matches = _athleteSugg
+      .filter(a => a.name.toLowerCase().includes(vl))
+      .sort((a, b) => {
+        const aS = a.name.toLowerCase().startsWith(vl) ? 0 : 1;
+        const bS = b.name.toLowerCase().startsWith(vl) ? 0 : 1;
+        return aS !== bS ? aS - bS : a.name.localeCompare(b.name);
+      })
+      .slice(0, 12);
+    if (!matches.length) { hideSuggestions(); return; }
+    showAthletesSuggestions(matches, val);
+  } else {
+    const teams = _teamSuggestions
+      .filter(t => t.name.toLowerCase().includes(vl))
+      .sort((a, b) => {
+        const aStarts = a.name.toLowerCase().startsWith(vl) ? 0 : 1;
+        const bStarts = b.name.toLowerCase().startsWith(vl) ? 0 : 1;
+        if (aStarts !== bStarts) return aStarts - bStarts;
+        return b.count - a.count;
+      })
+      .slice(0, 12);
+    if (!teams.length) { hideSuggestions(); return; }
+    showSuggestions(teams.map(t => [t.name, t.count]), val);
   }
+}
 
-  const teams = Object.entries(teamMap)
-    .sort((a, b) => {
-      // Exact prefix match first, then by count desc
-      const aStarts = a[0].toLowerCase().startsWith(vl) ? 0 : 1;
-      const bStarts = b[0].toLowerCase().startsWith(vl) ? 0 : 1;
-      if (aStarts !== bStarts) return aStarts - bStarts;
-      return b[1] - a[1];
-    })
-    .slice(0, 12);
+function showAthletesSuggestions(athletes, query) {
+  const box = document.getElementById('school-suggestions');
+  const inp = document.getElementById('school-input');
+  const vl  = query.toLowerCase();
 
-  if (!teams.length) {
-    hideSuggestions();
-    return;
-  }
+  box.innerHTML = athletes.map(a => {
+    const idx = a.name.toLowerCase().indexOf(vl);
+    const hi  = idx >= 0
+      ? a.name.slice(0,idx) + '<mark>' + a.name.slice(idx, idx+query.length) + '</mark>' + a.name.slice(idx+query.length)
+      : a.name;
+    return `<div class="sugg-item" data-name="${a.name.replace(/"/g,'&quot;')}" onclick="selectSchool(this)">
+      <span class="sugg-name">${hi}</span>
+      <span class="sugg-count" style="font-size:0.72rem">${a.team || ''}</span>
+    </div>`;
+  }).join('');
 
-  showSuggestions(teams, val);
+  box.style.display = 'block';
+  inp.classList.add('has-suggestions');
 }
 
 function onSchoolKey(e) {
@@ -772,7 +768,111 @@ function selectSchool(el) {
   const name = el.dataset.name;
   document.getElementById('school-input').value = name;
   hideSuggestions();
-  startSearch();
+  if (_searchMode === 'athlete') {
+    addAthleteToList(name);
+  } else {
+    startSearch();
+  }
+}
+
+// ─── Athlete-mode list (build up before watching) ─────────────────────────
+let _athleteQueue = [];   // [{name, team}] accumulated in athlete mode
+
+async function addAthleteToList(name) {
+  const existing = _athleteQueue.find(a => a.name.toLowerCase() === name.toLowerCase());
+  if (existing) { showToast(`${name} already added`); return; }
+  const meta = Object.assign({}, _athleteSugg.find(a => a.name.toLowerCase() === name.toLowerCase()) || {name, team:''});
+  meta._loading = true;
+  _athleteQueue.push(meta);
+  document.getElementById('school-input').value = '';
+  renderAthleteQueue();
+  // Fetch bracket data in background
+  try {
+    const r = await fetch('/api/search', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ tournament_id: selectedTournament.id, school_name: name })
+    });
+    const d = await r.json();
+    const jid = d.job_id;
+    if (jid) {
+      const jr = await fetch(`/api/search/${encodeURIComponent(jid)}`);
+      const jd = await jr.json();
+      const match = (jd.athletes || []).find(a => a.name.toLowerCase() === name.toLowerCase());
+      if (match) Object.assign(meta, match);
+    }
+  } catch(e) {}
+  meta._loading = false;
+  renderAthleteQueue();
+}
+
+function removeAthleteFromQueue(idx) {
+  _athleteQueue.splice(idx, 1);
+  renderAthleteQueue();
+}
+
+function renderAthleteQueue() {
+  let el = document.getElementById('athlete-queue');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'athlete-queue';
+    el.style.cssText = 'margin-top:10px;display:flex;flex-direction:column;gap:6px;';
+    document.getElementById('cache-status').after(el);
+  }
+  if (!_athleteQueue.length) { el.innerHTML = ''; return; }
+  el.innerHTML = _athleteQueue.map((a, i) => `
+    <div style="display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:0.9rem;font-weight:600">${a.name}</div>
+        ${a.team ? `<div style="font-size:0.73rem;color:var(--muted)">${a.team}</div>` : ''}
+      </div>
+      ${a._loading ? '<div style="font-size:0.75rem;color:var(--muted)">…</div>' : _pickStatusBadge(a)}
+      <button onclick="removeAthleteFromQueue(${i})" style="background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:2px 4px">✕</button>
+    </div>`).join('');
+
+  // Show/hide watch button
+  let btn = document.getElementById('athlete-watch-btn');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'athlete-watch-btn';
+    btn.className = 'btn-primary';
+    btn.style.marginTop = '10px';
+    btn.onclick = startAthleteQueueSearch;
+    el.after(btn);
+  }
+  btn.textContent = `Done — Watch ${_athleteQueue.length} Athlete${_athleteQueue.length > 1 ? 's' : ''} →`;
+  btn.style.display = '';
+}
+
+async function startAthleteQueueSearch() {
+  if (!_athleteQueue.length || !selectedTournament) return;
+  // Merge results for all athletes in the queue
+  const results = [];
+  const seen    = new Set();
+  for (const a of _athleteQueue) {
+    try {
+      const r    = await fetch('/api/search', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({tournament_id: selectedTournament.id, school_name: a.name}),
+      });
+      const data = await r.json();
+      if (data.job_id) {
+        const jr  = await fetch(`/api/search/${data.job_id}`);
+        const job = await jr.json();
+        for (const athlete of (job.athletes || [])) {
+          const k = athlete.name.toLowerCase();
+          if (!seen.has(k)) { seen.add(k); results.push(athlete); }
+        }
+      }
+    } catch(e) {}
+  }
+  allAthletes  = results;
+  selectedKeys = new Set(_athleteQueue.map(a => a.name.toLowerCase()));
+  _athleteQueue = [];
+  const qEl = document.getElementById('athlete-queue');
+  const bEl = document.getElementById('athlete-watch-btn');
+  if (qEl) qEl.innerHTML = '';
+  if (bEl) bEl.style.display = 'none';
+  goWatch();
 }
 
 // Close suggestions when tapping outside
@@ -791,78 +891,32 @@ async function startSearch() {
   document.getElementById('header-sub').textContent =
     school + ' · ' + selectedTournament.name.split(' ').slice(0,3).join(' ') + '...';
 
-  // ── Instant path 1: localStorage ──────────────────────────────────────────
-  const local = getCachedRoster(selectedTournament.id);
-  if (local) {
-    allAthletes  = filterRosterLocally(local.athletes || [], school);
-    selectedKeys = new Set();
-    showPick();
-    return;
-  }
-
-  // ── Instant path 2: server roster cache → download + cache locally ─────────
+  // Server-side search — no local caching
   try {
-    const cacheCheck = await fetch(`/api/cache/${selectedTournament.id}`);
-    const cacheInfo  = await cacheCheck.json();
-    if (cacheInfo.status === 'ready') {
-      showToast('Loading roster…');
-      const rosterResp = await fetch(`/api/roster/${selectedTournament.id}`);
-      const roster     = await rosterResp.json();
-      setCachedRoster(selectedTournament.id, roster);
-      allAthletes  = filterRosterLocally(roster.athletes || [], school);
+    const r   = await fetch('/api/search', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ tournament_id: selectedTournament.id, school_name: school }),
+    });
+    const data = await r.json();
+    if (r.status === 503) {
+      showToast('Roster building… retrying shortly');
+      setTimeout(() => startSearch(), 3000);
+      return;
+    }
+    if (data.job_id) {
+      const jr = await fetch(`/api/search/${data.job_id}`);
+      const job = await jr.json();
+      allAthletes  = job.athletes || [];
       selectedKeys = new Set();
       showPick();
       return;
     }
-  } catch(e) { /* fall through to live scrape */ }
-
-  // ── Slow path: live Playwright scrape (first ever search for this tournament) ─
-  showScreen('screen-progress');
-  document.getElementById('progress-fill').style.width = '0%';
-  document.getElementById('progress-count').textContent = '';
-  document.getElementById('progress-cat').textContent = 'Starting…';
-
-  try {
-    const r = await fetch('/api/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tournament_id: selectedTournament.id, school_name: school })
-    });
-    const { job_id } = await r.json();
-    currentJobId = job_id;
-    pollTimer = setInterval(pollJob, 1500);
   } catch(e) {
-    showScreen('screen-school');
     showToast('Search failed — try again');
   }
 }
 
-async function pollJob() {
-  if (!currentJobId) return;
-  try {
-    const r = await fetch(`/api/search/${currentJobId}`);
-    const job = await r.json();
-
-    const pct = job.total > 0 ? Math.round((job.progress / job.total) * 100) : 0;
-    document.getElementById('progress-fill').style.width = pct + '%';
-    document.getElementById('progress-cat').textContent = job.current_cat || 'Scanning...';
-    document.getElementById('progress-count').textContent =
-      job.total > 0 ? `${job.progress} / ${job.total} divisions` : '';
-
-    if (job.status === 'done') {
-      clearInterval(pollTimer);
-      pollTimer = null;
-      allAthletes = job.athletes || [];
-      selectedKeys = new Set();
-      showPick();
-    } else if (job.status === 'error') {
-      clearInterval(pollTimer);
-      pollTimer = null;
-      showScreen('screen-school');
-      showToast('Error: ' + (job.error || 'Unknown error'));
-    }
-  } catch(e) { /* keep polling */ }
-}
 
 // ─── Pick screen ───────────────────────────────────────────────────────────
 function showPick() {

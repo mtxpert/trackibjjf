@@ -8,7 +8,8 @@ Scalable architecture:
 """
 
 from flask import Flask, render_template, jsonify, request, Response, send_file
-import os, threading, time, json, asyncio, queue, re
+import os, threading, time, json, queue, re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
@@ -107,7 +108,7 @@ def _sse_push(tournament_id, event_data):
             pass   # slow client — drop event rather than block
 
 
-def register_watch(tournament_id, category_id, interval_sec=90):
+def register_watch(tournament_id, category_id, interval_sec=30):
     """Register a category for background polling. Skips if already marked complete."""
     with _watch_lock:
         # Don't re-add brackets we already know are finished
@@ -155,6 +156,8 @@ def _process_batch_results(batch_results, tid_by_cid):
                     "category_id": cid,
                     "changes":     changes,
                 })
+                # Clear immediately so /api/refresh doesn't show them again
+                state["changes"] = []
         except Exception:
             pass
 
@@ -162,15 +165,16 @@ def _process_batch_results(batch_results, tid_by_cid):
 def _background_poller():
     """
     Single long-running daemon thread.
-    Fetches all stale brackets concurrently (shared browser, 8 pages),
+    Fetches all stale brackets concurrently via thread pool (no Playwright),
     pushes changes via SSE, removes completed brackets from the registry.
+    ~2s to refresh 166 brackets; polls every 30s.
     """
     from watcher import fetch_brackets_batch
 
     while True:
         now = time.time()
-        to_refresh  = []   # (tournament_id, category_id, "")
-        tid_by_cid  = {}
+        to_refresh = []
+        tid_by_cid = {}
 
         with _watch_lock:
             for cid, info in list(_watch_registry.items()):
@@ -181,36 +185,91 @@ def _background_poller():
 
         if to_refresh:
             try:
-                batch_results = asyncio.run(fetch_brackets_batch(to_refresh, concurrency=8))
+                batch_results = fetch_brackets_batch(to_refresh, concurrency=20)
                 _process_batch_results(batch_results, tid_by_cid)
             except Exception:
                 pass
 
-        time.sleep(15)   # check every 15 s for newly stale entries
+        time.sleep(10)   # check every 10s for newly stale entries
 
 
 # Start background poller once at import time
 threading.Thread(target=_background_poller, daemon=True).start()
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+def _ingest_bracket_results(tid, bracket_results):
+    """Store bracket states and register non-final ones for watching."""
+    from watcher import save_state as _save_state
+    for cid, state in bracket_results.items():
+        if "error" in state:
+            continue
+        _save_state(cid, state)
+        state["bracket_url"] = f"{BASE_URL}/tournaments/{tid}/categories/{cid}"
+        _brackets[cid] = state
+        if not state.get("results_final"):
+            register_watch(tid, cid)
 
-def run_search(job_id, tournament_id, school_name):
-    from scraper import run_search as _scraper_run, save_roster_cache, load_roster_cache, parse_all_athletes
-    _scraper_run(tournament_id, school_name, _jobs[job_id])
+
+def _build_one_tournament(t):
+    """Build roster + ingest brackets for a single tournament. Runs in thread pool."""
+    from scraper import build_roster
+    tid    = t["id"]
+    job_id = f"roster_{tid}"
+    if _build_jobs.get(job_id, {}).get("status") == "running":
+        return
+    job = {"status": "running", "progress": 0, "total": 0, "current_cat": ""}
+    _build_jobs[job_id] = job
+    try:
+        bracket_results = build_roster(tid, job)
+        _ingest_bracket_results(tid, bracket_results)
+    except Exception as e:
+        job["status"] = "error"
+        job["error"]  = str(e)
+
+
+def _auto_discover():
+    """
+    Runs at startup (and every hour thereafter):
+      1. Fetch all tournaments listed on bjjcompsystem.com
+      2. Build roster cache for each in parallel (requests+BS4, no Playwright)
+      3. Register every non-final bracket for background watching
+    """
+    import time as _time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    _time.sleep(2)   # let Flask finish starting
+
+    while True:
+        try:
+            from scraper import get_tournaments
+            tournaments = get_tournaments()
+
+            # Build all tournaments in parallel (up to 4 at once)
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                futures = [ex.submit(_build_one_tournament, t) for t in tournaments]
+                for f in as_completed(futures):
+                    try:
+                        f.result()
+                    except Exception:
+                        pass
+
+        except Exception:
+            pass
+
+        _time.sleep(3600)   # re-discover every hour
+
+
+threading.Thread(target=_auto_discover, daemon=True).start()
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def refresh_bracket(tournament_id, category_id, category_name=""):
-    """Fetch a bracket page and store the shared state. Called from background thread."""
-    import asyncio
+    """Fetch a bracket page and store the shared state."""
     from watcher import fetch_bracket, diff_states, save_state, load_state
-
-    async def _fetch():
-        return await fetch_bracket(tournament_id, category_id, category_name)
-
     try:
-        state = asyncio.run(_fetch())
-        old   = _brackets.get(category_id) or load_state(category_id)
+        state   = fetch_bracket(tournament_id, category_id, category_name)
+        old     = _brackets.get(category_id) or load_state(category_id)
         changes = diff_states(old, state) if old else []
         save_state(category_id, state)
         state["changes"]     = changes
@@ -267,6 +326,32 @@ def api_roster(tournament_id):
     resp = jsonify(cache)
     resp.headers["Cache-Control"] = "public, max-age=3600"
     return resp
+
+
+@app.route("/api/teams/<tournament_id>")
+def api_teams(tournament_id):
+    """
+    Return unique team names + athlete counts for typeahead.
+    Small payload (~2KB) — no full roster sent to client.
+    """
+    from scraper import load_roster_cache
+    cache = load_roster_cache(tournament_id)
+    if not cache:
+        return jsonify({"error": "building"}), 503
+    team_map = {}
+    for a in cache.get("athletes", []):
+        t = (a.get("team") or "").strip()
+        if t:
+            team_map[t] = team_map.get(t, 0) + 1
+    teams = sorted(
+        [{"name": t, "count": c} for t, c in team_map.items()],
+        key=lambda x: -x["count"]
+    )
+    athletes = sorted(
+        [{"name": a["name"], "team": a.get("team", "")} for a in cache.get("athletes", [])],
+        key=lambda x: x["name"]
+    )
+    return jsonify({"teams": teams, "athletes": athletes, "athlete_count": len(athletes)})
 
 
 @app.route("/api/cache/<tournament_id>", methods=["GET"])
@@ -369,7 +454,6 @@ def api_search():
 
     job_id = f"{tournament_id}_{school_name.replace(' ', '_')}_{int(time.time())}"
 
-    # ── Fast path: filter cached roster locally ──────────────────────────────
     from scraper import load_roster_cache, filter_roster
     cache = load_roster_cache(tournament_id)
     if cache:
@@ -384,10 +468,8 @@ def api_search():
         }
         return jsonify({"job_id": job_id})
 
-    # ── Slow path: live Playwright scrape ─────────────────────────────────────
-    _jobs[job_id] = {"status": "running", "progress": 0, "total": 0, "current_cat": "", "athletes": []}
-    threading.Thread(target=run_search, args=(job_id, tournament_id, school_name), daemon=True).start()
-    return jsonify({"job_id": job_id})
+    # Roster still building at startup — tell client to retry shortly
+    return jsonify({"error": "roster_building", "retry_ms": 3000}), 503
 
 
 @app.route("/api/search/<job_id>")
@@ -550,7 +632,7 @@ def _fight_is_upcoming(fight):
     # Date check
     dm = _DATE_IN_TIME_RE.search(time_str)
     if not dm:
-        return True  # no date — assume upcoming
+        return False  # no date/time info — don't block elimination detection
     fight_date = date(date.today().year, int(dm.group(1)), int(dm.group(2)))
     today = date.today()
     if fight_date > today:
@@ -593,17 +675,17 @@ def _check_eliminated(name_lower, state):
     if not fights_with_athlete:
         return False
 
+    # Lost any fight → eliminated (check before upcoming, grey-name winner is definitive)
+    for fight in fights_with_athlete:
+        winner = fight.get("winner", "")
+        if winner and name_lower not in winner:
+            return True
+
     # Upcoming fight → still in it
     if any(_fight_is_upcoming(f) for f in fights_with_athlete):
         return False
 
-    # Explicit winner in any fight
-    for fight in fights_with_athlete:
-        winner = fight.get("winner", "")
-        if winner:
-            return name_lower not in winner  # lost if winner isn't them
-
-    # No explicit winner — use completion as fallback
+    # No explicit winner — use completion as fallback (all fights past, at least one done)
     return any(f.get("completed") for f in fights_with_athlete)
 
 

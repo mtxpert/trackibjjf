@@ -1,27 +1,231 @@
 """
 IBJJF Bracket Watcher
-Polls category bracket pages on a schedule, detects changes in:
-  - Match times (as schedule shifts during the day)
-  - New rounds starting (QF → SF → Final)
-  - Match results / scores (as fights complete)
-  - Newly assigned mat numbers
+Uses requests + BeautifulSoup — no Playwright needed.
+~2s to fetch all brackets from a live tournament (20 concurrent workers).
 
-Usage:
-  python watcher.py --tournament 3106 --category 2817108 --interval 5
-  python watcher.py --tournament 3106 --auto-find --min-competitors 6 --interval 5
+Phase detection uses DOM column classes:
+  tournament-category__sf / sf--right  → SEMI-FINAL
+  non-SF card with fight# + 2 comps    → FINAL (identified by SF winner presence)
+  everything else                       → earlier round
+
+Loser detection uses: match-competitor--loser CSS class (server-rendered HTML).
 """
 
-import asyncio
 import json
 import argparse
 import time
 import re
-import os
+import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from bs4 import BeautifulSoup
 from datetime import datetime, date
 from pathlib import Path
-from playwright.async_api import async_playwright
 
 _FIGHT_DATE_RE = re.compile(r'(\d{2})/(\d{2})')
+_FIGHT_TIME_RE = re.compile(r'((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)\s+\d{2}/\d{2}\s+at\s+\d{1,2}:\d{2}\s*[AP]M)', re.IGNORECASE)
+_FIGHT_NUM_RE  = re.compile(r'Fight\s+(\d+)', re.IGNORECASE)
+_MAT_RE        = re.compile(r'Mat\s+(\d+)', re.IGNORECASE)
+
+BASE = "https://www.bjjcompsystem.com"
+_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+_instance = Path(__file__).parent / "instance"
+STATE_DIR = (_instance / "bracket_states") if _instance.exists() else (Path(__file__).parent / "bracket_states")
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ── HTML parser ───────────────────────────────────────────────────────────────
+
+def parse_bracket_html(html, category_id, category_name=""):
+    """
+    Parse IBJJF bracket HTML into structured state.
+    Returns: {category_id, division, fights, ranking, results_final, ...}
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Division name from page title area
+    division = category_name
+    title_el = soup.select_one(".tournament-category__title, h1, h2")
+    if title_el:
+        t = title_el.get_text(" ", strip=True)
+        if any(b in t.upper() for b in ["WHITE","BLUE","PURPLE","BROWN","BLACK","NO-GI","NOGI","MASTER","ADULT"]):
+            division = t
+    if not division:
+        # fallback: find first text with belt color
+        for el in soup.select("h1,h2,h3,.breadcrumb"):
+            t = el.get_text(" ", strip=True)
+            if any(b in t.upper() for b in ["WHITE","BLUE","PURPLE","BROWN","BLACK"]):
+                division = t
+                break
+
+    # ── Parse fight cards ─────────────────────────────────────────────────────
+    fights = []
+    sf_winners = set()   # names of SF winners (to identify the FINAL fight)
+
+    for match_container in soup.select(".tournament-category__match"):
+        # Determine phase from parent column classes
+        phase = _get_phase(match_container)
+
+        # Fight metadata from container text
+        txt = match_container.get_text(" ", strip=True)
+        fn_m  = _FIGHT_NUM_RE.search(txt)
+        tm_m  = _FIGHT_TIME_RE.search(txt)
+        mat_m = _MAT_RE.search(txt)
+
+        fight_num  = fn_m.group(1)  if fn_m  else ""
+        fight_time = tm_m.group(1)  if tm_m  else ""
+        mat        = mat_m.group(1) if mat_m else ""
+
+        # Competitors from match card
+        competitors = []
+        card = match_container.select_one(".match-card")
+        if not card:
+            continue
+
+        for desc in card.select(".match-card__competitor-description"):
+            # Skip BYE slots
+            if desc.select_one(".match-card__bye"):
+                continue
+            name_el = desc.select_one(".match-card__competitor-name")
+            club_el = desc.select_one(".match-card__club-name")
+            if not name_el:
+                continue
+            name  = name_el.get_text(strip=True)
+            team  = club_el.get_text(strip=True) if club_el else ""
+            loser = "match-competitor--loser" in desc.get("class", [])
+            competitors.append({"name": name, "team": team, "loser": loser})
+
+        if not competitors:
+            continue
+
+        completed = any(c["loser"] for c in competitors)
+        winner = ""
+        if completed:
+            non_losers = [c for c in competitors if not c["loser"]]
+            if len(non_losers) == 1:
+                winner = non_losers[0]["name"].lower()
+
+        # Track SF winners so we can later identify the FINAL fight
+        if phase == "SEMI-FINAL":
+            for c in competitors:
+                if not c["loser"]:
+                    sf_winners.add(c["name"].lower())
+
+        fights.append({
+            "fight_num":   fight_num,
+            "mat":         mat,
+            "time":        fight_time,
+            "phase":       phase,
+            "completed":   completed,
+            "winner":      winner,
+            "competitors": [{"name": c["name"], "team": c["team"], "loser": c["loser"]} for c in competitors],
+        })
+
+    # ── Promote non-SF fights to FINAL only when ALL competitors are SF winners ─
+    # A fight where only one competitor is an SF winner is an earlier round.
+    # The true FINAL has exactly 2 competitors who are both SF winners.
+    if sf_winners:
+        for f in fights:
+            if f["phase"] in ("SEMI-FINAL", "FINAL"):
+                continue
+            if not f["fight_num"]:
+                continue
+            real_comps = [c for c in f["competitors"] if c["name"].lower() != "bye"]
+            comp_names = {c["name"].lower() for c in real_comps}
+            if len(comp_names) == 2 and comp_names.issubset(sf_winners):
+                f["phase"] = "FINAL"
+
+    # ── Small bracket fallback: no SF fights means 2 or 3 person bracket ───────
+    # When sf_winners is empty, the only real fight IS the final.
+    # Also covers 3-person brackets where only 1 fight reaches the final column.
+    if not sf_winners:
+        non_sf_fights = [
+            f for f in fights
+            if f["fight_num"] and f["phase"] not in ("SEMI-FINAL", "FINAL")
+        ]
+        # If exactly 1 fight with 2 real competitors → that fight is the FINAL
+        real_fights = [
+            f for f in non_sf_fights
+            if len([c for c in f["competitors"] if c["name"].lower() != "bye"]) == 2
+        ]
+        if len(real_fights) == 1:
+            real_fights[0]["phase"] = "FINAL"
+
+    # ── Derive live placements from FINAL/SF results ──────────────────────────
+    # Only assign placement when the fight is completed (has a loser).
+    ranking = []
+    results_final = False
+
+    for f in fights:
+        if not f["completed"]:
+            continue
+        if f["phase"] == "FINAL":
+            # Loser of FINAL = Silver, Winner = Gold
+            for c in f["competitors"]:
+                pos = "2" if c["loser"] else "1"
+                if not any(e["name"].lower() == c["name"].lower() for e in ranking):
+                    ranking.append({"pos": pos, "name": c["name"].lower()})
+        elif f["phase"] == "SEMI-FINAL":
+            # Loser of SF = Bronze
+            for c in f["competitors"]:
+                if c["loser"]:
+                    if not any(e["name"].lower() == c["name"].lower() for e in ranking):
+                        ranking.append({"pos": "3", "name": c["name"].lower()})
+
+    # results_final = True when Gold has been awarded (FINAL completed)
+    final_fights = [f for f in fights if f["phase"] == "FINAL"]
+    if final_fights and all(f["completed"] for f in final_fights):
+        results_final = True
+
+    # ── Walkover: sole competitor in bracket = default Gold ───────────────────
+    if not ranking:
+        real_fighters = {
+            c["name"].lower()
+            for f in fights
+            for c in f["competitors"]
+            if c["name"].lower() not in ("bye", "")
+        }
+        if len(real_fighters) == 1:
+            ranking      = [{"pos": "1", "name": next(iter(real_fighters))}]
+            results_final = True
+
+    # ── Fallback: official placement block (medalists section) ───────────────
+    # If IBJJF has published the official podium, use that instead.
+    medalists = soup.select_one(".tournament-category__medalists, .tournament-category__podium")
+    if medalists and not results_final:
+        official = _parse_medalists(medalists)
+        if official:
+            ranking = official
+            results_final = True
+
+    has_upcoming = any(_fight_is_upcoming(f) for f in fights)
+    if has_upcoming:
+        results_final = False   # still fights to go
+
+    return {
+        "category_id":      category_id,
+        "division":         division,
+        "fetched_at":       datetime.now().isoformat(),
+        "fights":           fights,
+        "ranking":          ranking,
+        "results_final":    results_final,
+        "total_fights":     len([f for f in fights if f["fight_num"]]),
+        "completed_fights": sum(1 for f in fights if f["completed"]),
+    }
+
+
+def _get_phase(match_container):
+    """Determine bracket phase from parent column CSS classes."""
+    el = match_container.parent
+    while el and el.name != "body":
+        cls = " ".join(el.get("class", []))
+        if "tournament-category__sf" in cls:
+            return "SEMI-FINAL"
+        if "col-qf" in cls:
+            return "QUARTER-FINAL"
+        el = el.parent
+    return "ROUND"
+
 
 def _fight_is_upcoming(fight):
     """True if fight is not completed AND scheduled today or later."""
@@ -34,286 +238,95 @@ def _fight_is_upcoming(fight):
     fight_date = date(today.year, int(m.group(1)), int(m.group(2)))
     return fight_date >= today
 
-BASE = "https://www.bjjcompsystem.com"
-_instance = Path(__file__).parent / "instance"
-STATE_DIR = (_instance / "bracket_states") if _instance.exists() else (Path(__file__).parent / "bracket_states")
-STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+def _parse_medalists(container):
+    """Parse official podium block into [{pos, name}] list."""
+    results = []
+    # Look for numbered entries: 1/2/3 + name pairs
+    entries = container.select("li, .medalist, [class*=medalist], [class*=podium-item]")
+    for entry in entries:
+        txt = entry.get_text(" ", strip=True)
+        m = re.match(r'^(\d)\s+(.+)$', txt)
+        if m and m.group(1) in ("1","2","3"):
+            results.append({"pos": m.group(1), "name": m.group(2).lower()})
+    return results
 
 
-# ── Page parser ───────────────────────────────────────────────────────────────
+# ── Fetch functions ───────────────────────────────────────────────────────────
 
-def parse_bracket_state(text, category_id, category_name="", grey_names=None):
-    """
-    Parse a rendered bracket page into a structured state dict.
-    Returns: { division, fights: [{num, mat, time, phase, competitors}], ranking: [...] }
-    """
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
-
-    # Division name
-    division = category_name
-    for ln in lines[:15]:
-        if any(b in ln.upper() for b in ["WHITE","BLUE","PURPLE","BROWN","BLACK","NO-GI","NOGI"]):
-            division = ln
-            break
-
-    # Parse fight blocks
-    fight_re  = re.compile(r"^FIGHT\s+(\d+)\s*:\s*Mat\s+(\d+)$", re.IGNORECASE)
-    phase_re  = re.compile(r"^(FINAL|SEMI.FINAL|QUARTER.FINAL|SF|QF|ROUND\s+\d+)$", re.IGNORECASE)
-    time_re   = re.compile(r"^(\w{3}\s+\d{2}/\d{2}\s+at\s+\d{1,2}:\d{2}\s+[AP]M)$", re.IGNORECASE)
-    score_re  = re.compile(r"^(\d+)\s*[x\-]\s*(\d+)$")
-    seed_re   = re.compile(r"^\d{1,2}$")
-
-    fights = []
-    i = 0
-    current_phase = ""
-
-    while i < len(lines):
-        # Track phase labels
-        if phase_re.match(lines[i]):
-            current_phase = lines[i]
-            i += 1
-            continue
-
-        m = fight_re.match(lines[i])
-        if not m:
-            i += 1
-            continue
-
-        fight_num = m.group(1)
-        mat       = m.group(2)
-        fight_time = ""
-        score     = ""
-        competitors = []
-
-        j = i + 1
-        if j < len(lines) and time_re.match(lines[j]):
-            fight_time = lines[j]; j += 1
-
-        # Collect athletes until next fight or section
-        # Note: completed fights show each athlete TWICE (bracket slot + result repeat).
-        # Upcoming fights show each athlete only once.
-        while j < len(lines) and not fight_re.match(lines[j]) and not phase_re.match(lines[j]):
-            ln = lines[j]
-            # Score line e.g. "4 - 2" or "4x2"
-            if score_re.match(ln.replace(" ","")):
-                score = ln; j += 1; continue
-            # Seed + name + team triplet
-            if seed_re.match(ln) and j+1 < len(lines):
-                name_ln = lines[j+1] if j+1 < len(lines) else ""
-                team_ln = lines[j+2] if j+2 < len(lines) else ""
-                if name_ln and name_ln.upper() == name_ln and name_ln not in ("BYE",):
-                    competitors.append({
-                        "seed": ln,
-                        "name": name_ln.title(),
-                        "team": team_ln if not seed_re.match(team_ln) else ""
-                    })
-                    j += 3 if (team_ln and not seed_re.match(team_ln)) else 2
-                    continue
-            j += 1
-
-        # Detect completion:
-        #   1. Score present (IBJJF shows score when fight is done)
-        #   2. Any competitor is grey/muted (loser coloring)
-        #   3. Athlete appears twice (result-repeat section)
-        name_count = {}
-        for c in competitors:
-            nl = c["name"].lower()
-            name_count[nl] = name_count.get(nl, 0) + 1
-
-        grey = grey_names or set()
-        any_grey = any(c["name"].lower() in grey for c in competitors)
-        completed = bool(score) or any_grey or any(v >= 2 for v in name_count.values())
-
-        # Identify winner:
-        #   - Grey names = losers; non-grey competitor is winner
-        #   - Fallback: first name in result-repeat section
-        winner = ""
-        if completed and len(competitors) == 2:
-            if any_grey:
-                for c in competitors:
-                    if c["name"].lower() not in grey:
-                        winner = c["name"].lower()
-                        break
-            else:
-                unique_names = list(dict.fromkeys(c["name"].lower() for c in competitors))
-                n_uniq = len(unique_names)
-                if len(competitors) >= 2 * n_uniq and n_uniq > 0:
-                    winner = competitors[n_uniq]["name"].lower()
-
-        # Deduplicate: keep only first occurrence of each name
-        seen_c = set()
-        deduped = []
-        for c in competitors:
-            if c["name"].lower() not in seen_c:
-                seen_c.add(c["name"].lower())
-                deduped.append(c)
-        competitors = deduped
-
-        fights.append({
-            "fight_num":   fight_num,
-            "mat":         mat,
-            "time":        fight_time,
-            "phase":       current_phase,
-            "score":       score,
-            "competitors": competitors,
-            "completed":   completed,
-            "winner":      winner,
-        })
-        i = j
-
-    # Parse the placement block that sits immediately above "Swaps".
-    # This is the actual bracket result (Gold/Silver/Bronze), NOT the
-    # Grand Slam Points table which sorts alphabetically when pts are equal.
-    #
-    # Scan backwards from "Swaps": collect (pos, ALL-CAPS-name, team) triples.
-    # Stop when we hit a date/time line or a FIGHT header.
-    #
-    # COMPLETED vs UPCOMING detection:
-    #   A completed bracket shows each athlete TWICE (bracket slot + result repeat).
-    #   An upcoming fight shows each athlete ONCE (just the bracket slot).
-    #   We count how many athletes appear more than once; if any do, the
-    #   category is done and these positions are real placements.
-    #   If every athlete appears only once, these are just seed numbers in an
-    #   upcoming fight — treat the category as still in progress.
-    ranking      = []
-    results_final = False
-    _NON_NAME = frozenset({'BYE', 'FINAL', 'SWAPS', 'RANKING', 'BJJCOMPSYSTEM'})
-    _DATE_RE  = re.compile(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s', re.IGNORECASE)
-    _seen = {}  # name_lower -> pos
+def fetch_bracket(tournament_id, category_id, category_name=""):
+    """Fetch and parse a single bracket. Synchronous, ~0.5s."""
+    url = f"{BASE}/tournaments/{tournament_id}/categories/{category_id}"
     try:
-        swaps_idx = next(k for k, l in enumerate(lines) if l.lower() == "swaps")
-        k = swaps_idx - 1
-        while k >= 2:
-            team_l = lines[k]
-            name_l = lines[k - 1]
-            pos_l  = lines[k - 2]
-            # Hard stop at fight headers or date/time lines
-            if _DATE_RE.match(team_l) or _DATE_RE.match(name_l):
-                break
-            if re.match(r'^FIGHT\s+\d+', team_l, re.IGNORECASE):
-                break
-            # Valid triple: digit pos + ALL-CAPS name + mixed-case team
-            if (re.match(r'^\d+$', pos_l) and
-                    name_l.isupper() and name_l not in _NON_NAME and
-                    team_l and not team_l.isupper() and '\t' not in team_l):
-                nl = name_l.lower()
-                if nl not in _seen:
-                    _seen[nl] = pos_l
-                k -= 3
-                # Position 1 is the top of the placement block — stop here to
-                # avoid scanning into bracket seed slots which share the same
-                # number format and corrupt the results.
-                if pos_l == '1':
-                    break
-            else:
-                k -= 1
+        r = requests.get(url, headers=_HEADERS, timeout=15)
+        r.raise_for_status()
+        return parse_bracket_html(r.text, category_id, category_name)
+    except Exception as e:
+        return {"category_id": category_id, "error": str(e)}
 
-        # Trust placements when:
-        #   1. Placement block is complete: has both a 1st and 2nd place entry
-        #   2. No fights are still scheduled today or later (guards multi-day brackets
-        #      where Saturday's completed rounds sit above Sunday's pending ones)
-        pos_values = set(_seen.values())
-        has_placement_block = '1' in pos_values and '2' in pos_values
-        has_upcoming = any(_fight_is_upcoming(f) for f in fights)
-        if has_placement_block and not has_upcoming:
-            ranking       = [{"pos": pos, "name": name} for name, pos in _seen.items()]
-            results_final = True
-    except StopIteration:
-        pass  # no Swaps section — tournament in progress
 
-    # ── Derive live placements from grey names + phase ────────────────────────
-    # Grey name = lost that fight.
-    #   Lost FINAL        → 2nd (Silver)
-    #   Lost SEMI-FINAL   → 3rd (Bronze)
-    #   Lost earlier      → Eliminated (no podium)
-    #   Won FINAL (not grey in final) → 1st (Gold)
-    # Only fills in gaps not already covered by the placement block.
-    if not results_final and grey_names:
-        grey = grey_names  # set of lowercase names
-        derived = {}  # name_lower -> pos_str
+def fetch_brackets_batch(items, concurrency=20):
+    """
+    Fetch multiple brackets concurrently using a thread pool.
+    items: list of (tournament_id, category_id, category_name) tuples
+    Returns: dict of category_id -> state
+    ~2s for 166 brackets at concurrency=20.
+    """
+    if not items:
+        return {}
 
-        _is_final = re.compile(r'^FINAL$', re.IGNORECASE)
-        _is_semi  = re.compile(r'SEMI', re.IGNORECASE)
+    results = {}
 
-        for fight in fights:
-            phase = fight.get("phase", "")
-            comps = fight.get("competitors", [])
-            if len(comps) != 2:
-                continue  # skip pool fights
+    def fetch_one(args):
+        tid, cid, name = args
+        return cid, fetch_bracket(tid, cid, name)
 
-            c0 = comps[0]["name"].lower()
-            c1 = comps[1]["name"].lower()
-            c0_grey = c0 in grey
-            c1_grey = c1 in grey
+    with ThreadPoolExecutor(max_workers=concurrency) as ex:
+        futures = {ex.submit(fetch_one, item): item for item in items}
+        for future in as_completed(futures):
+            try:
+                cid, state = future.result()
+                results[cid] = state
+            except Exception as e:
+                item = futures[future]
+                results[item[1]] = {"category_id": item[1], "error": str(e)}
 
-            if _is_final.match(phase):
-                if c0_grey:
-                    derived[c0] = "2"   # Silver
-                    derived[c1] = "1"   # Gold (not grey in final)
-                elif c1_grey:
-                    derived[c1] = "2"
-                    derived[c0] = "1"
-            elif _is_semi.search(phase):
-                if c0_grey:
-                    derived[c0] = "3"   # Bronze
-                if c1_grey:
-                    derived[c1] = "3"
-
-        if derived:
-            existing_names = {e["name"].lower() for e in ranking}
-            for name, pos in derived.items():
-                if name not in existing_names:
-                    ranking.append({"pos": pos, "name": name})
-
-    return {
-        "category_id":    category_id,
-        "division":       division,
-        "fetched_at":     datetime.now().isoformat(),
-        "fights":         fights,
-        "ranking":        ranking,
-        "results_final":  results_final,
-        "total_fights":   len(fights),
-        "completed_fights": sum(1 for f in fights if f["completed"]),
-    }
+    return results
 
 
 # ── Change detector ───────────────────────────────────────────────────────────
 
 def diff_states(old, new):
-    """Compare two bracket states and return a list of human-readable change strings."""
+    """Compare two bracket states, return list of human-readable change strings."""
     changes = []
-
-    old_fights = {f["fight_num"]: f for f in old.get("fights", [])}
-    new_fights = {f["fight_num"]: f for f in new.get("fights", [])}
+    old_fights = {f["fight_num"]: f for f in old.get("fights", []) if f.get("fight_num")}
+    new_fights = {f["fight_num"]: f for f in new.get("fights", []) if f.get("fight_num")}
 
     for num, nf in new_fights.items():
         of = old_fights.get(num)
         if of is None:
-            changes.append(f"🆕 Fight {num} appeared — Mat {nf['mat']} {nf['time']} {nf['phase']}")
+            changes.append(f"New fight {num} — Mat {nf['mat']} {nf['time']} [{nf['phase']}]")
             continue
-
-        # Time changed
         if nf["time"] != of["time"] and nf["time"]:
-            changes.append(f"⏰ Fight {num} time updated: {of['time'] or 'TBD'} → {nf['time']}")
-
-        # Mat changed
+            changes.append(f"Fight {num} time: {of['time'] or 'TBD'} → {nf['time']}")
         if nf["mat"] != of["mat"] and nf["mat"]:
-            changes.append(f"📍 Fight {num} mat changed: {of['mat'] or '?'} → {nf['mat']}")
-
-        # Fight completed (score appeared)
+            changes.append(f"Fight {num} mat: {of['mat'] or '?'} → {nf['mat']}")
         if nf["completed"] and not of.get("completed"):
             names = " vs ".join(c["name"] for c in nf["competitors"])
-            changes.append(f"✅ Fight {num} FINISHED: {names} — Score: {nf['score']}")
+            winner = nf.get("winner", "")
+            changes.append(f"Fight {num} FINISHED [{nf['phase']}]: {names}" +
+                           (f" — winner: {winner}" if winner else ""))
+        if nf["phase"] != of.get("phase") and nf["phase"] not in ("ROUND", ""):
+            changes.append(f"Fight {num} advanced to {nf['phase']}")
 
-        # Phase progression
-        if nf["phase"] != of.get("phase") and nf["phase"]:
-            changes.append(f"🏆 Fight {num} phase: {of.get('phase','?')} → {nf['phase']}")
-
-    # New completed fights count
     old_done = old.get("completed_fights", 0)
     new_done = new.get("completed_fights", 0)
     if new_done > old_done:
-        changes.append(f"📊 Progress: {new_done}/{new.get('total_fights',0)} fights complete")
+        changes.append(f"Progress: {new_done}/{new.get('total_fights',0)} fights done")
+
+    if new.get("results_final") and not old.get("results_final"):
+        gold = next((e["name"] for e in new.get("ranking",[]) if e["pos"]=="1"), "")
+        changes.append(f"BRACKET COMPLETE — Gold: {gold}")
 
     return changes
 
@@ -323,7 +336,10 @@ def diff_states(old, new):
 def load_state(category_id):
     path = STATE_DIR / f"{category_id}.json"
     if path.exists():
-        return json.loads(path.read_text())
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return None
     return None
 
 def save_state(category_id, state):
@@ -342,220 +358,46 @@ def append_history(category_id, entry):
         f.write(json.dumps(entry) + "\n")
 
 
-# ── Grey-name extractor (losers have grey/muted name text) ────────────────────
-
-async def _extract_grey_names(page):
-    """
-    Return a set of lowercase athlete names whose text color is grey/muted,
-    indicating they lost their fight on the IBJJF bracket page.
-    """
-    try:
-        names = await page.evaluate("""
-            () => {
-                const grey = new Set();
-                // IBJJF renders loser names with reduced opacity or grey color.
-                // Check all elements that contain uppercase athlete names.
-                document.querySelectorAll('*').forEach(el => {
-                    if (el.children.length > 0) return;  // skip non-leaf nodes
-                    const txt = el.textContent.trim();
-                    if (!txt || txt.length < 3 || txt !== txt.toUpperCase()) return;
-                    if (!/^[A-Z][A-Z '\\-]+$/.test(txt)) return;
-                    const style = window.getComputedStyle(el);
-                    const color = style.color;
-                    const opacity = parseFloat(style.opacity);
-                    // Grey detection: low RGB values or muted class or low opacity
-                    const rgb = color.match(/\\d+/g);
-                    if (rgb) {
-                        const [r, g, b] = rgb.map(Number);
-                        const brightness = (r + g + b) / 3;
-                        if (brightness < 150 && Math.abs(r-g) < 30 && Math.abs(g-b) < 30) {
-                            grey.add(txt.toLowerCase());
-                        }
-                    }
-                    if (opacity < 0.7) grey.add(txt.toLowerCase());
-                    if (el.classList.contains('text-muted') ||
-                        el.classList.contains('loser') ||
-                        el.closest('.loser')) {
-                        grey.add(txt.toLowerCase());
-                    }
-                });
-                return Array.from(grey);
-            }
-        """)
-        return set(names)
-    except Exception:
-        return set()
-
-
-# ── Single fetch ──────────────────────────────────────────────────────────────
-
-async def fetch_bracket(tournament_id, category_id, category_name=""):
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
-        page = await browser.new_page()
-        url = f"{BASE}/tournaments/{tournament_id}/categories/{category_id}"
-        await page.goto(url, wait_until="networkidle", timeout=25000)
-        text = await page.inner_text("body")
-        grey_names = await _extract_grey_names(page)
-        await browser.close()
-    return parse_bracket_state(text, category_id, category_name, grey_names=grey_names)
-
-
-# ── Concurrent batch fetch (shared browser — use for background poller) ────────
-
-async def fetch_brackets_batch(items, concurrency=8):
-    """
-    Fetch multiple brackets concurrently with a single shared browser.
-    items: list of (tournament_id, category_id, category_name) tuples
-    Returns: dict of category_id -> state
-    """
-    if not items:
-        return {}
-
-    results = {}
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
-        context = await browser.new_context()
-        sem = asyncio.Semaphore(concurrency)
-
-        async def fetch_one(tid, cid, name):
-            async with sem:
-                page = await context.new_page()
-                try:
-                    url = f"{BASE}/tournaments/{tid}/categories/{cid}"
-                    await page.goto(url, wait_until="networkidle", timeout=20000)
-                    text = await page.inner_text("body")
-                    grey_names = await _extract_grey_names(page)
-                    return cid, parse_bracket_state(text, cid, name, grey_names=grey_names)
-                except Exception as e:
-                    return cid, {"category_id": cid, "error": str(e)}
-                finally:
-                    await page.close()
-
-        tasks = [fetch_one(tid, cid, name) for tid, cid, name in items]
-        for coro in asyncio.as_completed(tasks):
-            cid, state = await coro
-            results[cid] = state
-
-        await browser.close()
-    return results
-
-
-async def fetch_multiple(tournament_id, category_ids, concurrency=6):
-    """Fetch multiple categories concurrently."""
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
-        context = await browser.new_context()
-        sem = asyncio.Semaphore(concurrency)
-
-        async def fetch_one(cid, name=""):
-            async with sem:
-                page = await context.new_page()
-                try:
-                    url = f"{BASE}/tournaments/{tournament_id}/categories/{cid}"
-                    await page.goto(url, wait_until="networkidle", timeout=20000)
-                    text = await page.inner_text("body")
-                    grey_names = await _extract_grey_names(page)
-                    return parse_bracket_state(text, cid, name, grey_names=grey_names)
-                except Exception as e:
-                    return {"category_id": cid, "error": str(e)}
-                finally:
-                    await page.close()
-
-        results = await asyncio.gather(*[
-            fetch_one(cid) for cid in category_ids
-        ])
-        await browser.close()
-    return results
-
-
-# ── Poll loop ─────────────────────────────────────────────────────────────────
-
-async def poll_bracket(tournament_id, category_id, category_name="", interval_minutes=5, log_fn=None):
-    """
-    Continuously poll a bracket page, detect and log changes.
-    Stops when bracket is fully complete.
-    """
-    log = log_fn or print
-    log(f"\n{'='*60}")
-    log(f"WATCHING: {category_name or category_id}")
-    log(f"URL: {BASE}/tournaments/{tournament_id}/categories/{category_id}")
-    log(f"Polling every {interval_minutes} min")
-    log(f"{'='*60}")
-
-    while True:
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-        try:
-            state = await fetch_bracket(tournament_id, category_id, category_name)
-            old_state = load_state(category_id)
-
-            if old_state:
-                changes = diff_states(old_state, state)
-                if changes:
-                    log(f"\n[{ts}] CHANGES DETECTED:")
-                    for c in changes:
-                        log(f"  {c}")
-                    append_history(category_id, {
-                        "ts": ts, "changes": changes,
-                        "completed": state["completed_fights"],
-                        "total": state["total_fights"]
-                    })
-                else:
-                    log(f"[{ts}] No changes — {state['completed_fights']}/{state['total_fights']} fights done")
-            else:
-                log(f"[{ts}] Initial snapshot — {state['total_fights']} fights, "
-                    f"{state['completed_fights']} already done")
-                log(f"  Division: {state['division']}")
-                for f in state['fights'][:3]:
-                    c_names = ", ".join(c["name"] for c in f["competitors"])
-                    log(f"  Fight {f['fight_num']}: Mat {f['mat']} @ {f['time']} — {c_names}")
-
-            save_state(category_id, state)
-
-            # Done when all fights complete
-            if state["total_fights"] > 0 and state["completed_fights"] >= state["total_fights"]:
-                log(f"\n[{ts}] 🏆 BRACKET COMPLETE — all {state['total_fights']} fights finished")
-                break
-
-        except Exception as e:
-            log(f"[{ts}] ERROR: {e}")
-
-        await asyncio.sleep(interval_minutes * 60)
-
-
 # ── CLI entry point ───────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="IBJJF Bracket Watcher")
-    parser.add_argument("--tournament", required=True, help="Tournament ID")
-    parser.add_argument("--category",  help="Specific category ID to watch")
+    parser.add_argument("--tournament", required=True)
+    parser.add_argument("--category",   help="Single category ID")
     parser.add_argument("--categories", nargs="+", help="Multiple category IDs")
-    parser.add_argument("--interval",  type=int, default=5, help="Poll interval in minutes")
-    parser.add_argument("--once",      action="store_true", help="Fetch once and exit")
+    parser.add_argument("--interval",   type=int, default=30, help="Poll interval seconds")
+    parser.add_argument("--once",       action="store_true", help="Fetch once and exit")
     args = parser.parse_args()
 
+    cids = ([args.category] if args.category else []) + (args.categories or [])
+    if not cids:
+        print("Provide --category or --categories")
+        return
+
     if args.once:
-        cid = args.category or (args.categories[0] if args.categories else None)
-        if not cid:
-            print("Need --category for --once mode")
-            return
-        state = asyncio.run(fetch_bracket(args.tournament, cid))
+        state = fetch_bracket(args.tournament, cids[0])
         print(json.dumps(state, indent=2))
         return
 
-    if args.categories:
-        # Watch multiple brackets concurrently
-        async def watch_all():
-            await asyncio.gather(*[
-                poll_bracket(args.tournament, cid, interval_minutes=args.interval)
-                for cid in args.categories
-            ])
-        asyncio.run(watch_all())
-    elif args.category:
-        asyncio.run(poll_bracket(args.tournament, args.category,
-                                  interval_minutes=args.interval))
-    else:
-        print("Provide --category or --categories")
+    print(f"Watching {len(cids)} brackets, polling every {args.interval}s")
+    while True:
+        items = [(args.tournament, cid, "") for cid in cids]
+        results = fetch_brackets_batch(items)
+        ts = datetime.now().strftime("%H:%M:%S")
+        for cid, state in results.items():
+            if "error" in state:
+                print(f"[{ts}] {cid}: ERROR {state['error']}")
+                continue
+            old = load_state(cid)
+            changes = diff_states(old, state) if old else []
+            save_state(cid, state)
+            if changes:
+                print(f"[{ts}] {state.get('division', cid)}:")
+                for c in changes:
+                    print(f"  {c}")
+            else:
+                print(f"[{ts}] {state.get('division', cid)}: {state['completed_fights']}/{state['total_fights']} done, no changes")
+        time.sleep(args.interval)
 
 
 if __name__ == "__main__":
