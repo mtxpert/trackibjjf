@@ -12,7 +12,11 @@ import requests
 from bs4 import BeautifulSoup
 
 _instance = Path(__file__).parent / "instance"
-ROSTER_DIR = (_instance / "bracket_states") if _instance.exists() else (Path(__file__).parent / "bracket_states")
+if _instance.exists():
+    ROSTER_DIR = _instance / "bracket_states"
+else:
+    # Render: use /tmp which is always writable
+    ROSTER_DIR = Path("/tmp/bracket_states")
 ROSTER_DIR.mkdir(parents=True, exist_ok=True)
 SEED_DIR = Path(__file__).parent / "seed_cache"
 

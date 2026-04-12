@@ -30,7 +30,10 @@ BASE = "https://www.bjjcompsystem.com"
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 _instance = Path(__file__).parent / "instance"
-STATE_DIR = (_instance / "bracket_states") if _instance.exists() else (Path(__file__).parent / "bracket_states")
+if _instance.exists():
+    STATE_DIR = _instance / "bracket_states"
+else:
+    STATE_DIR = Path("/tmp/bracket_states")
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 
