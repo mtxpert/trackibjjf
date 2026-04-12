@@ -9,6 +9,8 @@ services:
         generateValue: true
       - key: DATABASE_URL
         value: sqlite:///ibjjf.db
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/project/src/.playwright-browsers
     disk:
       name: ibjjf-data
       mountPath: /opt/render/project/src/instance
