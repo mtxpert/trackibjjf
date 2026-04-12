@@ -2,8 +2,8 @@ services:
   - type: web
     name: trackibjjf
     env: python
-    buildCommand: chmod +x build.sh && ./build.sh
-    startCommand: PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/.playwright-browsers gunicorn app:app --worker-class gevent --workers 2 --worker-connections 1000 --bind 0.0.0.0:$PORT --timeout 120
+    buildCommand: chmod +x build.sh start.sh && ./build.sh
+    startCommand: ./start.sh
     disk:
       name: ibjjf-data
       mountPath: /opt/render/project/src/instance
