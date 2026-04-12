@@ -11,6 +11,7 @@ Phase detection uses DOM column classes:
 Loser detection uses: match-competitor--loser CSS class (server-rendered HTML).
 """
 
+import sys
 import json
 import argparse
 import time
@@ -18,6 +19,9 @@ import re
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
+
+# gevent greenlets have a smaller default stack — raise limit for deep HTML parsing
+sys.setrecursionlimit(10000)
 from datetime import datetime, date
 from pathlib import Path
 
