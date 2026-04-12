@@ -4,4 +4,4 @@ beautifulsoup4==4.12.2
 python-dotenv==1.0.0
 gunicorn==21.2.0
 playwright==1.49.0
-eventlet
+gevent==24.2.1
