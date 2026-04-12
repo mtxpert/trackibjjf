@@ -17,9 +17,22 @@ import argparse
 import time
 import re
 import os
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 from playwright.async_api import async_playwright
+
+_FIGHT_DATE_RE = re.compile(r'(\d{2})/(\d{2})')
+
+def _fight_is_upcoming(fight):
+    """True if fight is not completed AND scheduled today or later."""
+    if fight.get("completed"):
+        return False
+    m = _FIGHT_DATE_RE.search(fight.get("time") or "")
+    if not m:
+        return False
+    today = date.today()
+    fight_date = date(today.year, int(m.group(1)), int(m.group(2)))
+    return fight_date >= today
 
 BASE = "https://www.bjjcompsystem.com"
 STATE_DIR = Path(__file__).parent / "bracket_states"
@@ -76,6 +89,8 @@ def parse_bracket_state(text, category_id, category_name=""):
             fight_time = lines[j]; j += 1
 
         # Collect athletes until next fight or section
+        # Note: completed fights show each athlete TWICE (bracket slot + result repeat).
+        # Upcoming fights show each athlete only once.
         while j < len(lines) and not fight_re.match(lines[j]) and not phase_re.match(lines[j]):
             ln = lines[j]
             # Score line e.g. "4 - 2" or "4x2"
@@ -95,6 +110,29 @@ def parse_bracket_state(text, category_id, category_name=""):
                     continue
             j += 1
 
+        # Detect completion: any athlete appears twice (result-repeat section)
+        name_count = {}
+        for c in competitors:
+            nl = c["name"].lower()
+            name_count[nl] = name_count.get(nl, 0) + 1
+        completed = any(v >= 2 for v in name_count.values())
+
+        # Identify winner: first name in the result section (second half of list)
+        winner = ""
+        unique_names = list(dict.fromkeys(c["name"].lower() for c in competitors))
+        n_uniq = len(unique_names)
+        if completed and len(competitors) >= 2 * n_uniq and n_uniq > 0:
+            winner = competitors[n_uniq]["name"].lower()
+
+        # Deduplicate: keep only first occurrence of each name
+        seen_c = set()
+        deduped = []
+        for c in competitors:
+            if c["name"].lower() not in seen_c:
+                seen_c.add(c["name"].lower())
+                deduped.append(c)
+        competitors = deduped
+
         fights.append({
             "fight_num":   fight_num,
             "mat":         mat,
@@ -102,33 +140,79 @@ def parse_bracket_state(text, category_id, category_name=""):
             "phase":       current_phase,
             "score":       score,
             "competitors": competitors,
-            "completed":   bool(score),
+            "completed":   completed,
+            "winner":      winner,
         })
         i = j
 
-    # Parse ranking table (at bottom of page)
-    ranking = []
+    # Parse the placement block that sits immediately above "Swaps".
+    # This is the actual bracket result (Gold/Silver/Bronze), NOT the
+    # Grand Slam Points table which sorts alphabetically when pts are equal.
+    #
+    # Scan backwards from "Swaps": collect (pos, ALL-CAPS-name, team) triples.
+    # Stop when we hit a date/time line or a FIGHT header.
+    #
+    # COMPLETED vs UPCOMING detection:
+    #   A completed bracket shows each athlete TWICE (bracket slot + result repeat).
+    #   An upcoming fight shows each athlete ONCE (just the bracket slot).
+    #   We count how many athletes appear more than once; if any do, the
+    #   category is done and these positions are real placements.
+    #   If every athlete appears only once, these are just seed numbers in an
+    #   upcoming fight — treat the category as still in progress.
+    ranking      = []
+    results_final = False
+    _NON_NAME = frozenset({'BYE', 'FINAL', 'SWAPS', 'RANKING', 'BJJCOMPSYSTEM'})
+    _DATE_RE  = re.compile(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s', re.IGNORECASE)
+    _seen = {}  # name_lower -> pos
     try:
-        rank_idx = next(k for k,l in enumerate(lines) if l.lower() == "ranking")
-        k = rank_idx + 2
-        while k < len(lines) - 1:
-            if not re.match(r"^\d+$", lines[k]): break
-            pos  = lines[k]
-            name = lines[k+1] if k+1 < len(lines) else ""
-            team_pts = lines[k+2] if k+2 < len(lines) else ""
-            team = team_pts.split("\t")[0].strip()
-            ranking.append({"pos": pos, "name": name, "team": team})
-            k += 3
+        swaps_idx = next(k for k, l in enumerate(lines) if l.lower() == "swaps")
+        k = swaps_idx - 1
+        while k >= 2:
+            team_l = lines[k]
+            name_l = lines[k - 1]
+            pos_l  = lines[k - 2]
+            # Hard stop at fight headers or date/time lines
+            if _DATE_RE.match(team_l) or _DATE_RE.match(name_l):
+                break
+            if re.match(r'^FIGHT\s+\d+', team_l, re.IGNORECASE):
+                break
+            # Valid triple: digit pos + ALL-CAPS name + mixed-case team
+            if (re.match(r'^\d+$', pos_l) and
+                    name_l.isupper() and name_l not in _NON_NAME and
+                    team_l and not team_l.isupper() and '\t' not in team_l):
+                nl = name_l.lower()
+                if nl not in _seen:
+                    _seen[nl] = pos_l
+                k -= 3
+                # Position 1 is the top of the placement block — stop here to
+                # avoid scanning into bracket seed slots which share the same
+                # number format and corrupt the results.
+                if pos_l == '1':
+                    break
+            else:
+                k -= 1
+
+        # Trust placements when:
+        #   1. Placement block is complete: has both a 1st and 2nd place entry
+        #   2. No fights are still scheduled today or later (guards multi-day brackets
+        #      where Saturday's completed rounds sit above Sunday's pending ones)
+        pos_values = set(_seen.values())
+        has_placement_block = '1' in pos_values and '2' in pos_values
+        has_upcoming = any(_fight_is_upcoming(f) for f in fights)
+        if has_placement_block and not has_upcoming:
+            ranking       = [{"pos": pos, "name": name} for name, pos in _seen.items()]
+            results_final = True
     except StopIteration:
-        pass
+        pass  # no Swaps section — tournament in progress
 
     return {
-        "category_id": category_id,
-        "division":    division,
-        "fetched_at":  datetime.now().isoformat(),
-        "fights":      fights,
-        "ranking":     ranking,
-        "total_fights":    len(fights),
+        "category_id":    category_id,
+        "division":       division,
+        "fetched_at":     datetime.now().isoformat(),
+        "fights":         fights,
+        "ranking":        ranking,
+        "results_final":  results_final,
+        "total_fights":   len(fights),
         "completed_fights": sum(1 for f in fights if f["completed"]),
     }
 

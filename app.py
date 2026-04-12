@@ -8,7 +8,8 @@ Scalable architecture:
 """
 
 from flask import Flask, render_template, jsonify, request, Response, send_file
-import os, threading, time, json, asyncio, queue
+import os, threading, time, json, asyncio, queue, re
+from datetime import date
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -43,8 +44,13 @@ def _sse_push(tournament_id, event_data):
             pass   # slow client — drop event rather than block
 
 
-def register_watch(tournament_id, category_id, interval_sec=300):
+def register_watch(tournament_id, category_id, interval_sec=90):
+    """Register a category for background polling. Skips if already marked complete."""
     with _watch_lock:
+        # Don't re-add brackets we already know are finished
+        cached = _brackets.get(category_id)
+        if cached and cached.get("results_final"):
+            return
         existing = _watch_registry.get(category_id, {})
         _watch_registry[category_id] = {
             "tournament_id": tournament_id,
@@ -57,7 +63,7 @@ def _background_poller():
     """
     Single long-running daemon thread.
     Refreshes stale brackets, pushes changes via SSE.
-    No per-user Playwright — one run serves everyone.
+    Automatically removes completed brackets from the registry.
     """
     while True:
         now = time.time()
@@ -71,9 +77,14 @@ def _background_poller():
             try:
                 state = refresh_bracket(tournament_id, cid)
                 if "error" not in state:
-                    with _watch_lock:
-                        if cid in _watch_registry:
-                            _watch_registry[cid]["last_fetched"] = time.time()
+                    if state.get("results_final"):
+                        # Bracket complete — stop polling it
+                        with _watch_lock:
+                            _watch_registry.pop(cid, None)
+                    else:
+                        with _watch_lock:
+                            if cid in _watch_registry:
+                                _watch_registry[cid]["last_fetched"] = time.time()
                     if state.get("changes"):
                         _sse_push(tournament_id, {
                             "type":        "bracket_update",
@@ -83,7 +94,7 @@ def _background_poller():
             except Exception:
                 pass
 
-        time.sleep(20)   # check every 20 s for newly stale entries
+        time.sleep(15)   # check every 15 s for newly stale entries
 
 
 # Start background poller once at import time
@@ -336,20 +347,32 @@ def api_refresh():
         a["bracket_url"] = f"{BASE_URL}/tournaments/{tournament_id}/categories/{cid}" if cid else ""
 
         if state:
-            name_lower = athlete["name"].lower()
-            for fight in state.get("fights", []):
-                if fight.get("completed"):
-                    continue
-                for comp in fight.get("competitors", []):
-                    if name_lower in comp["name"].lower():
-                        a["mat"]        = fight["mat"]
-                        a["fight_time"] = fight["time"]
-                        a["fight_num"]  = fight["fight_num"]
-                        break
-                else:
-                    continue
-                break
-            a["eliminated"] = _check_eliminated(name_lower, state)
+            name_lower    = athlete["name"].lower()
+            results_final = state.get("results_final", False)
+            placement     = _get_placement(name_lower, state)
+
+            # Only show fight info for upcoming fights (today/future, not completed)
+            if not results_final:
+                for fight in state.get("fights", []):
+                    if not _fight_is_upcoming(fight):
+                        continue
+                    for comp in fight.get("competitors", []):
+                        if name_lower in comp["name"].lower():
+                            a["mat"]        = fight["mat"]
+                            a["fight_time"] = fight["time"]
+                            a["fight_num"]  = fight["fight_num"]
+                            break
+                    else:
+                        continue
+                    break
+
+            a["placement"]  = placement
+            if placement:
+                a["eliminated"] = False
+            elif results_final:
+                a["eliminated"] = True
+            else:
+                a["eliminated"] = _check_eliminated(name_lower, state)
             if state.get("changes"):
                 all_changes.extend(state["changes"])
 
@@ -399,16 +422,70 @@ def api_events(tournament_id):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+_DATE_IN_TIME_RE = re.compile(r'(\d{2})/(\d{2})')
+
+def _fight_is_upcoming(fight):
+    """
+    A fight is upcoming if it's not completed AND its date is today or later.
+    Fights from yesterday that failed to parse as completed are NOT upcoming.
+    """
+    if fight.get("completed"):
+        return False
+    m = _DATE_IN_TIME_RE.search(fight.get("time") or "")
+    if not m:
+        return True  # no date info — assume upcoming
+    fight_date = date(date.today().year, int(m.group(1)), int(m.group(2)))
+    return fight_date >= date.today()
+
+
 def _check_eliminated(name_lower, state):
-    in_completed = in_future = False
+    """
+    An athlete is eliminated when:
+      - They appeared in a completed (or past-dated) fight
+      - We have a confirmed 1v1 winner who is NOT them
+      - They have no upcoming fights (today or future)
+    Pool fights (multi-person, winner="") are inconclusive — don't eliminate.
+    """
+    in_completed = in_upcoming = won_fight = has_known_loss = False
     for fight in state.get("fights", []):
         for comp in fight.get("competitors", []):
             if name_lower in comp["name"].lower():
-                if fight["completed"]:
-                    in_completed = True
+                if _fight_is_upcoming(fight):
+                    in_upcoming = True
                 else:
-                    in_future = True
-    return in_completed and not in_future
+                    in_completed = True
+                    winner = fight.get("winner", "")
+                    if winner:
+                        if name_lower in winner:
+                            won_fight = True
+                        else:
+                            has_known_loss = True  # 1v1 fight, known winner, not them
+    if in_upcoming or won_fight:
+        return False
+    # Only eliminate if we saw a definitive 1v1 loss (winner field populated, not them)
+    return in_completed and has_known_loss
+
+
+_MEDAL_POS = {"1", "2", "3"}
+
+def _get_placement(name_lower, state):
+    """
+    Returns medal position string ("1","2","3") if athlete appears
+    in the ranking table at a podium position, else None.
+    """
+    for entry in state.get("ranking", []):
+        if name_lower in entry.get("name", "").lower():
+            pos = entry.get("pos", "")
+            return pos if pos in _MEDAL_POS else None
+    return None
+
+
+def _in_ranking(name_lower, state):
+    """Returns True if athlete appears anywhere in the ranking table."""
+    for entry in state.get("ranking", []):
+        if name_lower in entry.get("name", "").lower():
+            return True
+    return False
 
 
 if __name__ == "__main__":
