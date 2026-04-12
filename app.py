@@ -504,6 +504,16 @@ def api_search_status(job_id):
     return jsonify(job)
 
 
+# ── Debug: synchronous bracket fetch ─────────────────────────────────────────
+
+@app.route("/api/debug/bracket/<tournament_id>/<category_id>")
+def api_debug_bracket(tournament_id, category_id):
+    """Synchronous bracket fetch for debugging — returns result or error directly."""
+    from watcher import fetch_bracket
+    state = fetch_bracket(tournament_id, category_id)
+    return jsonify(state)
+
+
 # ── Bracket (single category) ─────────────────────────────────────────────────
 
 @app.route("/api/bracket/<tournament_id>/<category_id>")
