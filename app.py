@@ -9,7 +9,8 @@ Scalable architecture:
 
 from flask import Flask, render_template, jsonify, request, Response, send_file
 import os, threading, time, json, asyncio, queue, re
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,6 +19,68 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ibjjf-tracker-key")
 
 BASE_URL = "https://www.bjjcompsystem.com"
+
+# ── Tournament timezone lookup ────────────────────────────────────────────────
+
+_TOURNEY_TZ = {
+    'houston':       'America/Chicago',
+    'dallas':        'America/Chicago',
+    'chicago':       'America/Chicago',
+    'new york':      'America/New_York',
+    'miami':         'America/New_York',
+    'atlanta':       'America/New_York',
+    'boston':        'America/New_York',
+    'washington':    'America/New_York',
+    'los angeles':   'America/Los_Angeles',
+    'orange county': 'America/Los_Angeles',
+    'san francisco': 'America/Los_Angeles',
+    'seattle':       'America/Los_Angeles',
+    'denver':        'America/Denver',
+    'phoenix':       'America/Phoenix',
+    'milan':         'Europe/Rome',
+    'rome':          'Europe/Rome',
+    'paris':         'Europe/Paris',
+    'london':        'Europe/London',
+    'portugal':      'Europe/Lisbon',
+    'lisbon':        'Europe/Lisbon',
+    'madrid':        'Europe/Madrid',
+    'barcelona':     'Europe/Madrid',
+    'recife':        'America/Recife',
+    'rio':           'America/Sao_Paulo',
+    'sao paulo':     'America/Sao_Paulo',
+    'toronto':       'America/Toronto',
+    'montreal':      'America/Toronto',
+    'dubai':         'Asia/Dubai',
+    'abu dhabi':     'Asia/Dubai',
+    'tokyo':         'Asia/Tokyo',
+    'sydney':        'Australia/Sydney',
+}
+
+def _tournament_tz(tournament_name):
+    name_lower = (tournament_name or '').lower()
+    for kw, tz in _TOURNEY_TZ.items():
+        if kw in name_lower:
+            return tz
+    return 'America/New_York'   # IBJJF HQ default
+
+_FIGHT_TIME_RE = re.compile(
+    r'\w{3}\s+(\d{2})/(\d{2})\s+at\s+(\d{1,2}:\d{2}\s*[AP]M)', re.IGNORECASE
+)
+
+def _fight_time_to_utc(fight_time_str, tz_name):
+    """Convert 'Sat 04/12 at 2:30 PM' (tournament-local) → UTC ISO string."""
+    m = _FIGHT_TIME_RE.search(fight_time_str or '')
+    if not m:
+        return None
+    try:
+        month, day, time_str = int(m.group(1)), int(m.group(2)), m.group(3).strip()
+        year = datetime.now().year
+        tz   = ZoneInfo(tz_name)
+        dt   = datetime.strptime(f"{year}-{month:02d}-{day:02d} {time_str}", "%Y-%m-%d %I:%M %p")
+        return dt.replace(tzinfo=tz).astimezone(ZoneInfo('UTC')).isoformat()
+    except Exception:
+        return None
+
 
 # ── In-memory stores ──────────────────────────────────────────────────────────
 _jobs        = {}   # search jobs (legacy live-scrape path)
@@ -314,12 +377,15 @@ def api_refresh():
     Registers categories for background watching; poller updates them automatically.
     At 10K users this endpoint does zero Playwright — just dict lookups.
     """
-    data          = request.json or {}
-    tournament_id = data.get("tournament_id", "")
-    athletes      = data.get("athletes", [])
+    data             = request.json or {}
+    tournament_id    = data.get("tournament_id", "")
+    tournament_name  = data.get("tournament_name", "")
+    athletes         = data.get("athletes", [])
 
     if not tournament_id or not athletes:
         return jsonify({"error": "tournament_id and athletes required"}), 400
+
+    tz_name = _tournament_tz(tournament_name)
 
     cat_ids = list({a["category_id"] for a in athletes if a.get("category_id")})
     if not cat_ids:
@@ -358,9 +424,10 @@ def api_refresh():
                         continue
                     for comp in fight.get("competitors", []):
                         if name_lower in comp["name"].lower():
-                            a["mat"]        = fight["mat"]
-                            a["fight_time"] = fight["time"]
-                            a["fight_num"]  = fight["fight_num"]
+                            a["mat"]           = fight["mat"]
+                            a["fight_time"]    = fight["time"]
+                            a["fight_time_utc"] = _fight_time_to_utc(fight["time"], tz_name)
+                            a["fight_num"]     = fight["fight_num"]
                             break
                     else:
                         continue

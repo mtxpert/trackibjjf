@@ -360,7 +360,7 @@
       🔍 Search Brackets
     </button>
     <div style="margin-top:10px;font-size:0.8rem;color:var(--muted)" id="school-tourney-name"></div>
-    <div id="cache-status" style="margin:12px 0 4px;font-size:0.8rem;min-height:36px"></div>
+    <div id="cache-status" style="margin:12px 0 4px;font-size:0.78rem;color:var(--muted);min-height:18px"></div>
     <div style="margin-top: 8px; text-align: center;">
       <button onclick="showScreen('screen-tournament')" style="background:none;border:none;color:var(--muted);font-size:0.82rem;cursor:pointer">
         ← Change Tournament
@@ -634,56 +634,27 @@ async function checkCacheStatus(tournamentId) {
   const el = document.getElementById('cache-status');
   if (!el) return;
 
-  // Check localStorage first (no server call)
   const local = getCachedRoster(tournamentId);
   if (local) {
-    el.innerHTML = `<span style="color:var(--green)">⚡ Roster ready in browser (${timeSince(new Date(local._saved_at).toISOString())})</span>
-      <button onclick="rebuildCache('${tournamentId}')" style="background:none;border:none;color:var(--muted);font-size:0.78rem;cursor:pointer;margin-left:8px">↻ Rebuild</button>`;
+    el.textContent = `⚡ Roster ready (${timeSince(new Date(local._saved_at).toISOString())})`;
     return;
   }
 
-  el.innerHTML = '<span style="color:var(--muted);font-size:0.78rem">Loading roster…</span>';
+  el.textContent = '';
   try {
     const r = await fetch(`/api/cache/${tournamentId}`);
     const data = await r.json();
     if (data.status === 'ready') {
-      // Auto-download roster to localStorage so typeahead works immediately
-      el.innerHTML = '<span style="color:var(--muted);font-size:0.78rem">Downloading roster…</span>';
+      el.textContent = 'Downloading roster…';
       const rosterResp = await fetch(`/api/roster/${tournamentId}`);
       const roster = await rosterResp.json();
       setCachedRoster(tournamentId, roster);
-      el.innerHTML = `<span style="color:var(--green)">✓ ${data.athlete_count} athletes ready — start typing</span>
-        <button onclick="rebuildCache('${tournamentId}')" style="background:none;border:none;color:var(--muted);font-size:0.78rem;cursor:pointer;margin-left:8px">↻ Rebuild</button>`;
+      el.textContent = `✓ ${data.athlete_count} athletes ready — start typing`;
     } else {
-      el.innerHTML = `<span style="color:var(--yellow)">No cache — first search ~2 min</span>
-        &nbsp;<button onclick="rebuildCache('${tournamentId}')" style="background:none;border:1px solid var(--border);color:var(--text);font-size:0.78rem;cursor:pointer;padding:3px 10px;border-radius:6px">Pre-build Roster</button>`;
+      el.textContent = 'Roster not pre-built yet — typeahead unavailable';
     }
   } catch(e) {
-    el.innerHTML = '';
-  }
-}
-
-async function rebuildCache(tournamentId) {
-  const el = document.getElementById('cache-status');
-  // Clear local cache so we force a fresh download after build
-  localStorage.removeItem(`roster_${tournamentId}`);
-  el.innerHTML = '<span style="color:var(--muted)">Building roster cache…</span><div id="build-bar" style="height:3px;background:var(--border);border-radius:2px;margin-top:6px"><div id="build-fill" style="height:100%;background:var(--red);border-radius:2px;width:0%;transition:width 0.5s"></div></div>';
-  try {
-    await fetch(`/api/cache/${tournamentId}`, { method: 'POST' });
-    const poll = setInterval(async () => {
-      const r = await fetch(`/api/cache/${tournamentId}/status`);
-      const job = await r.json();
-      const pct = job.total > 0 ? Math.round(job.progress / job.total * 100) : 0;
-      const fill = document.getElementById('build-fill');
-      if (fill) fill.style.width = pct + '%';
-      el.querySelector('span').textContent = `Building… ${job.progress||0}/${job.total||'?'} divisions (${pct}%)`;
-      if (job.status === 'done' || job.status === 'error') {
-        clearInterval(poll);
-        checkCacheStatus(tournamentId);
-      }
-    }, 1500);
-  } catch(e) {
-    if (el) el.innerHTML = '<span style="color:var(--red)">Build failed — try again</span>';
+    el.textContent = '';
   }
 }
 
@@ -915,9 +886,9 @@ function _pickStatusBadge(a) {
   if (medal) return `<div class="pick-status ps-medal">${medal}</div>`;
   if (a.eliminated) return `<div class="pick-status ps-elim">❌ Eliminated</div>`;
   if (a.fight_time) {
-    // e.g. "Sat 04/12 at 2:30 PM" → show "Mat X\n2:30 PM"
-    const timeMatch = a.fight_time.match(/at\s+(.+)$/i);
-    const timeStr = timeMatch ? timeMatch[1] : a.fight_time;
+    const timeStr = a.fight_time_utc
+      ? new Date(a.fight_time_utc).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})
+      : (a.fight_time.match(/at\s+(.+)$/i)||[])[1] || a.fight_time;
     const matStr = a.mat ? `Mat ${a.mat}` : '';
     return `<div class="pick-status ps-fight">${matStr ? matStr + '<br>' : ''}${timeStr}</div>`;
   }
@@ -976,7 +947,11 @@ async function refreshPickStatuses() {
     const r = await fetch('/api/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tournament_id: selectedTournament.id, athletes: allAthletes })
+      body: JSON.stringify({
+        tournament_id:   selectedTournament.id,
+        tournament_name: selectedTournament.name,
+        athletes:        allAthletes
+      })
     });
     const data = await r.json();
     if (data.updated) {
@@ -1115,9 +1090,19 @@ function watchCard(a) {
   } else {
     const matVal   = a.mat       ? `<div class="info-val">${a.mat}</div>`        : `<div class="info-val tbd">TBD</div>`;
     const fightVal = a.fight_num ? `<div class="info-val">#${a.fight_num}</div>` : `<div class="info-val tbd">—</div>`;
-    const timeVal  = a.fight_time
-      ? `<div class="info-val time-val">${a.fight_time}</div>`
-      : `<div class="info-val tbd">TBD</div>`;
+    let timeVal;
+    if (a.fight_time) {
+      const localTime = a.fight_time_utc
+        ? new Date(a.fight_time_utc).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})
+        : null;
+      const rawMatch = a.fight_time.match(/at\s+(.+)$/i);
+      const rawTime  = rawMatch ? rawMatch[1] : a.fight_time;
+      timeVal = localTime && localTime !== rawTime
+        ? `<div class="info-val time-val">${localTime}<div style="font-size:0.68rem;font-weight:400;color:var(--muted);margin-top:1px">${rawTime} tourney</div></div>`
+        : `<div class="info-val time-val">${rawTime}</div>`;
+    } else {
+      timeVal = `<div class="info-val tbd">TBD</div>`;
+    }
     middleHtml = `
       <div class="fight-row">
         <div class="info-box mat-box"><div class="info-label">Mat</div>${matVal}</div>
