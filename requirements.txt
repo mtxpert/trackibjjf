@@ -1,7 +1,7 @@
-Flask==2.3.3
-requests==2.31.0
-beautifulsoup4==4.12.2
-python-dotenv==1.0.0
-gunicorn==21.2.0
-playwright==1.49.0
-gevent==24.2.1
+Flask
+requests
+beautifulsoup4
+python-dotenv
+gunicorn
+playwright
+gevent
