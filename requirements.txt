@@ -4,4 +4,3 @@ beautifulsoup4
 lxml
 python-dotenv
 gunicorn
-gevent
