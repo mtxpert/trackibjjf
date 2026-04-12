@@ -531,12 +531,17 @@ async function checkCacheStatus(tournamentId) {
     return;
   }
 
-  el.innerHTML = '<span style="color:var(--muted);font-size:0.78rem">Checking cache…</span>';
+  el.innerHTML = '<span style="color:var(--muted);font-size:0.78rem">Loading roster…</span>';
   try {
     const r = await fetch(`/api/cache/${tournamentId}`);
     const data = await r.json();
     if (data.status === 'ready') {
-      el.innerHTML = `<span style="color:var(--green)">✓ Roster cached · ${data.athlete_count} athletes · built ${timeSince(data.built_at)}</span>
+      // Auto-download roster to localStorage so typeahead works immediately
+      el.innerHTML = '<span style="color:var(--muted);font-size:0.78rem">Downloading roster…</span>';
+      const rosterResp = await fetch(`/api/roster/${tournamentId}`);
+      const roster = await rosterResp.json();
+      setCachedRoster(tournamentId, roster);
+      el.innerHTML = `<span style="color:var(--green)">✓ ${data.athlete_count} athletes ready — start typing</span>
         <button onclick="rebuildCache('${tournamentId}')" style="background:none;border:none;color:var(--muted);font-size:0.78rem;cursor:pointer;margin-left:8px">↻ Rebuild</button>`;
     } else {
       el.innerHTML = `<span style="color:var(--yellow)">No cache — first search ~2 min</span>
