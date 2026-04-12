@@ -70,13 +70,48 @@
     .tourney-meta { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
 
     /* School input */
-    .school-input-wrap { position: relative; margin-bottom: 16px; }
+    .school-input-wrap { position: relative; margin-bottom: 4px; }
     .school-input-wrap input {
       width: 100%; padding: 14px 16px; border-radius: 12px;
       border: 2px solid var(--border); background: var(--card);
       color: var(--text); font-size: 1rem; outline: none;
     }
     .school-input-wrap input:focus { border-color: var(--red); }
+    .school-input-wrap input.has-suggestions {
+      border-radius: 12px 12px 0 0;
+      border-color: var(--red);
+      border-bottom-color: var(--border);
+    }
+
+    /* ── School suggestions dropdown ── */
+    #school-suggestions {
+      display: none;
+      position: absolute;
+      left: 0; right: 0; top: 100%;
+      background: var(--card);
+      border: 2px solid var(--red);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      overflow: hidden;
+      z-index: 200;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .sugg-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+    .sugg-item:last-child { border-bottom: none; }
+    .sugg-item:active, .sugg-item:hover { background: var(--gray); }
+    .sugg-name { font-size: 0.92rem; font-weight: 600; }
+    .sugg-name mark { background: none; color: var(--red); font-weight: 800; }
+    .sugg-count { font-size: 0.75rem; color: var(--muted); flex-shrink: 0; margin-left: 10px; }
+    .sugg-item.active-sugg { background: var(--gray); }
 
     .btn-primary {
       width: 100%; padding: 15px; border-radius: 12px;
@@ -299,13 +334,13 @@
   <div class="setup-wrap">
     <div class="school-input-wrap">
       <input type="text" id="school-input" value=""
-        placeholder="e.g. Gracie Barra, Alliance, Atos..."
+        placeholder="Type your school name…"
         autocomplete="off" spellcheck="false"
         oninput="onSchoolInput()"
-        onkeydown="if(event.key==='Enter') startSearch()">
+        onkeydown="onSchoolKey(event)">
+      <div id="school-suggestions"></div>
     </div>
-    <div id="school-preview" style="min-height:22px;margin-bottom:10px;font-size:0.85rem"></div>
-    <button class="btn-primary" id="btn-search" onclick="startSearch()">
+    <button class="btn-primary" id="btn-search" onclick="startSearch()" style="display:none">
       🔍 Search Brackets
     </button>
     <div style="margin-top:10px;font-size:0.8rem;color:var(--muted)" id="school-tourney-name"></div>
@@ -477,7 +512,7 @@ function selectTournament(id, el) {
   el.classList.add('selected');
   selectedTournament = allTournaments.find(t => t.id === id);
   document.getElementById('school-tourney-name').textContent = selectedTournament.name;
-  document.getElementById('school-preview').innerHTML = '';
+  hideSuggestions();
   document.getElementById('school-input').value = '';
   clearTimeout(_schoolTimer);
   showScreen('screen-school');
@@ -536,38 +571,132 @@ async function rebuildCache(tournamentId) {
   }
 }
 
-// ─── School auto-filter ────────────────────────────────────────────────────
+// ─── School typeahead ──────────────────────────────────────────────────────
 let _schoolTimer = null;
+let _suggIndex  = -1;
 
 function onSchoolInput() {
   clearTimeout(_schoolTimer);
+  _suggIndex = -1;
   const val = document.getElementById('school-input').value.trim();
-  const preview = document.getElementById('school-preview');
 
-  if (val.length < 2) { preview.innerHTML = ''; return; }
+  if (val.length < 1) { hideSuggestions(); return; }
 
-  // Only auto-filter if we have a cached roster (instant)
   const local = selectedTournament ? getCachedRoster(selectedTournament.id) : null;
   if (!local) {
-    preview.innerHTML = '<span style="color:var(--muted);font-size:0.78rem">Press Search to scan brackets</span>';
+    hideSuggestions();
+    // Show the search button as fallback
+    document.getElementById('btn-search').style.display = '';
     return;
   }
 
-  // Show live count immediately
-  const matches = filterRosterLocally(local.athletes || [], val);
-  if (!matches.length) {
-    preview.innerHTML = `<span style="color:var(--muted)">No athletes found for "${val}"</span>`;
+  // Aggregate unique teams that match the query
+  const vl = val.toLowerCase();
+  const teamMap = {};
+  for (const a of local.athletes || []) {
+    const team = (a.team || '').trim();
+    if (!team) continue;
+    if (team.toLowerCase().includes(vl)) {
+      teamMap[team] = (teamMap[team] || 0) + 1;
+    }
+  }
+
+  const teams = Object.entries(teamMap)
+    .sort((a, b) => {
+      // Exact prefix match first, then by count desc
+      const aStarts = a[0].toLowerCase().startsWith(vl) ? 0 : 1;
+      const bStarts = b[0].toLowerCase().startsWith(vl) ? 0 : 1;
+      if (aStarts !== bStarts) return aStarts - bStarts;
+      return b[1] - a[1];
+    })
+    .slice(0, 12);
+
+  if (!teams.length) {
+    hideSuggestions();
     return;
   }
-  preview.innerHTML = `<span style="color:var(--green)">⚡ ${matches.length} athlete${matches.length>1?'s':''} found</span>`;
 
-  // Auto-navigate after 600 ms of no further typing
-  _schoolTimer = setTimeout(startSearch, 600);
+  showSuggestions(teams, val);
 }
+
+function onSchoolKey(e) {
+  const items = document.querySelectorAll('.sugg-item');
+  if (!items.length) {
+    if (e.key === 'Enter') startSearch();
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _suggIndex = Math.min(_suggIndex + 1, items.length - 1);
+    highlightSugg(items);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _suggIndex = Math.max(_suggIndex - 1, -1);
+    highlightSugg(items);
+  } else if (e.key === 'Enter') {
+    if (_suggIndex >= 0 && items[_suggIndex]) {
+      items[_suggIndex].click();
+    } else {
+      startSearch();
+    }
+  } else if (e.key === 'Escape') {
+    hideSuggestions();
+  }
+}
+
+function highlightSugg(items) {
+  items.forEach((el, i) => el.classList.toggle('active-sugg', i === _suggIndex));
+  if (_suggIndex >= 0) {
+    const name = items[_suggIndex].dataset.name;
+    document.getElementById('school-input').value = name;
+  }
+}
+
+function showSuggestions(teams, query) {
+  const box  = document.getElementById('school-suggestions');
+  const inp  = document.getElementById('school-input');
+  const vl   = query.toLowerCase();
+
+  box.innerHTML = teams.map(([name, count]) => {
+    // Bold the matching substring
+    const idx  = name.toLowerCase().indexOf(vl);
+    const hi   = idx >= 0
+      ? name.slice(0, idx) + '<mark>' + name.slice(idx, idx + query.length) + '</mark>' + name.slice(idx + query.length)
+      : name;
+    return `<div class="sugg-item" data-name="${name.replace(/"/g,'&quot;')}" onclick="selectSchool(this)">
+      <span class="sugg-name">${hi}</span>
+      <span class="sugg-count">${count} athlete${count>1?'s':''}</span>
+    </div>`;
+  }).join('');
+
+  box.style.display = 'block';
+  inp.classList.add('has-suggestions');
+}
+
+function hideSuggestions() {
+  const box = document.getElementById('school-suggestions');
+  const inp = document.getElementById('school-input');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+  if (inp) inp.classList.remove('has-suggestions');
+  _suggIndex = -1;
+}
+
+function selectSchool(el) {
+  const name = el.dataset.name;
+  document.getElementById('school-input').value = name;
+  hideSuggestions();
+  startSearch();
+}
+
+// Close suggestions when tapping outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.school-input-wrap')) hideSuggestions();
+});
 
 // ─── Search ────────────────────────────────────────────────────────────────
 async function startSearch() {
   clearTimeout(_schoolTimer);
+  hideSuggestions();
   const school = document.getElementById('school-input').value.trim();
   if (!school) { showToast('Enter a school name'); return; }
   if (!selectedTournament) { showScreen('screen-tournament'); return; }
