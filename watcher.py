@@ -111,12 +111,14 @@ def parse_bracket_state(text, category_id, category_name=""):
                     continue
             j += 1
 
-        # Detect completion: any athlete appears twice (result-repeat section)
+        # Detect completion:
+        #   1. Score present (most reliable — IBJJF shows score when fight is done)
+        #   2. Athlete appears twice (result-repeat section, less common)
         name_count = {}
         for c in competitors:
             nl = c["name"].lower()
             name_count[nl] = name_count.get(nl, 0) + 1
-        completed = any(v >= 2 for v in name_count.values())
+        completed = bool(score) or any(v >= 2 for v in name_count.values())
 
         # Identify winner: first name in the result section (second half of list)
         winner = ""

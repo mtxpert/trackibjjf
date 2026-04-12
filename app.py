@@ -504,19 +504,46 @@ def api_events(tournament_id):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 _DATE_IN_TIME_RE = re.compile(r'(\d{2})/(\d{2})')
+_TIME_OF_DAY_RE  = re.compile(r'at\s+(\d{1,2}):(\d{2})\s*([AP]M)', re.IGNORECASE)
 
 def _fight_is_upcoming(fight):
     """
-    A fight is upcoming if it's not completed AND its date is today or later.
-    Fights from yesterday that failed to parse as completed are NOT upcoming.
+    A fight is upcoming if ALL of:
+      - not marked completed (score present or name-repeat)
+      - scheduled today or later
+      - scheduled time has not yet passed (with 30-min grace for fights in progress)
     """
     if fight.get("completed"):
         return False
-    m = _DATE_IN_TIME_RE.search(fight.get("time") or "")
-    if not m:
-        return True  # no date info — assume upcoming
-    fight_date = date(date.today().year, int(m.group(1)), int(m.group(2)))
-    return fight_date >= date.today()
+
+    time_str = fight.get("time") or ""
+
+    # Date check
+    dm = _DATE_IN_TIME_RE.search(time_str)
+    if not dm:
+        return True  # no date — assume upcoming
+    fight_date = date(date.today().year, int(dm.group(1)), int(dm.group(2)))
+    today = date.today()
+    if fight_date > today:
+        return True
+    if fight_date < today:
+        return False
+
+    # Same day — check time (use UTC-5 as conservative tournament timezone)
+    tm = _TIME_OF_DAY_RE.search(time_str)
+    if not tm:
+        return True
+    hour, minute, ampm = int(tm.group(1)), int(tm.group(2)), tm.group(3).upper()
+    if ampm == 'PM' and hour != 12:
+        hour += 12
+    elif ampm == 'AM' and hour == 12:
+        hour = 0
+    now = datetime.utcnow()
+    # Convert fight time to UTC using UTC-5 (Central) as default — 30 min grace
+    fight_utc_hour = hour + 5
+    fight_minutes  = fight_utc_hour * 60 + minute
+    now_minutes    = now.hour * 60 + now.minute
+    return now_minutes < (fight_minutes + 30)
 
 
 def _check_eliminated(name_lower, state):
