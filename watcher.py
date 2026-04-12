@@ -42,7 +42,7 @@ STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Page parser ───────────────────────────────────────────────────────────────
 
-def parse_bracket_state(text, category_id, category_name=""):
+def parse_bracket_state(text, category_id, category_name="", grey_names=None):
     """
     Parse a rendered bracket page into a structured state dict.
     Returns: { division, fights: [{num, mat, time, phase, competitors}], ranking: [...] }
@@ -112,20 +112,33 @@ def parse_bracket_state(text, category_id, category_name=""):
             j += 1
 
         # Detect completion:
-        #   1. Score present (most reliable — IBJJF shows score when fight is done)
-        #   2. Athlete appears twice (result-repeat section, less common)
+        #   1. Score present (IBJJF shows score when fight is done)
+        #   2. Any competitor is grey/muted (loser coloring)
+        #   3. Athlete appears twice (result-repeat section)
         name_count = {}
         for c in competitors:
             nl = c["name"].lower()
             name_count[nl] = name_count.get(nl, 0) + 1
-        completed = bool(score) or any(v >= 2 for v in name_count.values())
 
-        # Identify winner: first name in the result section (second half of list)
+        grey = grey_names or set()
+        any_grey = any(c["name"].lower() in grey for c in competitors)
+        completed = bool(score) or any_grey or any(v >= 2 for v in name_count.values())
+
+        # Identify winner:
+        #   - Grey names = losers; non-grey competitor is winner
+        #   - Fallback: first name in result-repeat section
         winner = ""
-        unique_names = list(dict.fromkeys(c["name"].lower() for c in competitors))
-        n_uniq = len(unique_names)
-        if completed and len(competitors) >= 2 * n_uniq and n_uniq > 0:
-            winner = competitors[n_uniq]["name"].lower()
+        if completed and len(competitors) == 2:
+            if any_grey:
+                for c in competitors:
+                    if c["name"].lower() not in grey:
+                        winner = c["name"].lower()
+                        break
+            else:
+                unique_names = list(dict.fromkeys(c["name"].lower() for c in competitors))
+                n_uniq = len(unique_names)
+                if len(competitors) >= 2 * n_uniq and n_uniq > 0:
+                    winner = competitors[n_uniq]["name"].lower()
 
         # Deduplicate: keep only first occurrence of each name
         seen_c = set()
@@ -285,6 +298,51 @@ def append_history(category_id, entry):
         f.write(json.dumps(entry) + "\n")
 
 
+# ── Grey-name extractor (losers have grey/muted name text) ────────────────────
+
+async def _extract_grey_names(page):
+    """
+    Return a set of lowercase athlete names whose text color is grey/muted,
+    indicating they lost their fight on the IBJJF bracket page.
+    """
+    try:
+        names = await page.evaluate("""
+            () => {
+                const grey = new Set();
+                // IBJJF renders loser names with reduced opacity or grey color.
+                // Check all elements that contain uppercase athlete names.
+                document.querySelectorAll('*').forEach(el => {
+                    if (el.children.length > 0) return;  // skip non-leaf nodes
+                    const txt = el.textContent.trim();
+                    if (!txt || txt.length < 3 || txt !== txt.toUpperCase()) return;
+                    if (!/^[A-Z][A-Z '\\-]+$/.test(txt)) return;
+                    const style = window.getComputedStyle(el);
+                    const color = style.color;
+                    const opacity = parseFloat(style.opacity);
+                    // Grey detection: low RGB values or muted class or low opacity
+                    const rgb = color.match(/\\d+/g);
+                    if (rgb) {
+                        const [r, g, b] = rgb.map(Number);
+                        const brightness = (r + g + b) / 3;
+                        if (brightness < 150 && Math.abs(r-g) < 30 && Math.abs(g-b) < 30) {
+                            grey.add(txt.toLowerCase());
+                        }
+                    }
+                    if (opacity < 0.7) grey.add(txt.toLowerCase());
+                    if (el.classList.contains('text-muted') ||
+                        el.classList.contains('loser') ||
+                        el.closest('.loser')) {
+                        grey.add(txt.toLowerCase());
+                    }
+                });
+                return Array.from(grey);
+            }
+        """)
+        return set(names)
+    except Exception:
+        return set()
+
+
 # ── Single fetch ──────────────────────────────────────────────────────────────
 
 async def fetch_bracket(tournament_id, category_id, category_name=""):
@@ -294,8 +352,9 @@ async def fetch_bracket(tournament_id, category_id, category_name=""):
         url = f"{BASE}/tournaments/{tournament_id}/categories/{category_id}"
         await page.goto(url, wait_until="networkidle", timeout=25000)
         text = await page.inner_text("body")
+        grey_names = await _extract_grey_names(page)
         await browser.close()
-    return parse_bracket_state(text, category_id, category_name)
+    return parse_bracket_state(text, category_id, category_name, grey_names=grey_names)
 
 
 async def fetch_multiple(tournament_id, category_ids, concurrency=6):
@@ -312,7 +371,8 @@ async def fetch_multiple(tournament_id, category_ids, concurrency=6):
                     url = f"{BASE}/tournaments/{tournament_id}/categories/{cid}"
                     await page.goto(url, wait_until="networkidle", timeout=20000)
                     text = await page.inner_text("body")
-                    return parse_bracket_state(text, cid, name)
+                    grey_names = await _extract_grey_names(page)
+                    return parse_bracket_state(text, cid, name, grey_names=grey_names)
                 except Exception as e:
                     return {"category_id": cid, "error": str(e)}
                 finally:
