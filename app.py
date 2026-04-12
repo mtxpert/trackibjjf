@@ -288,23 +288,23 @@ def index():
 
 @app.route("/api/tournaments")
 def api_tournaments():
-    from scraper import _TOURNEY_CACHE_FILE
+    from pathlib import Path as _Path
     import json as _json
-    # Return cache immediately if available; refresh in background
-    if _TOURNEY_CACHE_FILE.exists():
-        try:
-            cached = _json.loads(_TOURNEY_CACHE_FILE.read_text())
-            def _refresh():
-                try:
-                    from scraper import get_tournaments
-                    get_tournaments()
-                except Exception:
-                    pass
-            threading.Thread(target=_refresh, daemon=True).start()
-            return jsonify(cached)
-        except Exception:
-            pass
-    # No cache — block and fetch (first ever boot)
+    # Try seed cache first (instant, no network)
+    for seed in [
+        _Path(__file__).parent / "seed_cache" / "tournaments.json",
+        _Path("/tmp") / "tournaments.json",
+    ]:
+        if seed.exists():
+            try:
+                return app.response_class(
+                    response=seed.read_text(),
+                    status=200,
+                    mimetype='application/json'
+                )
+            except Exception:
+                pass
+    # Fallback: live fetch
     try:
         from scraper import get_tournaments
         return jsonify(get_tournaments())
