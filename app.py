@@ -13,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
+import watcher as _watcher
+import scraper as _scraper
 
 load_dotenv()
 
