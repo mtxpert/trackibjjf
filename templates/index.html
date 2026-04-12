@@ -940,10 +940,22 @@ function _pickStatusBadge(a) {
   if (medal) return `<div class="pick-status ps-medal">${medal}</div>`;
   if (a.eliminated) return `<div class="pick-status ps-elim">❌ Eliminated</div>`;
   if (a.fight_time) {
-    // Don't show stale times for fights already in the past
-    const pastCutoff = a.fight_time_utc
-      ? new Date(a.fight_time_utc) < new Date(Date.now() - 30 * 60 * 1000)
-      : false;
+    // Determine if fight is in the past — use UTC if available, else parse raw string
+    let pastCutoff = false;
+    if (a.fight_time_utc) {
+      pastCutoff = new Date(a.fight_time_utc) < new Date(Date.now() - 30 * 60 * 1000);
+    } else {
+      // Parse "Sun 04/12 at 03:42 PM" — assume current year, treat as local time
+      const m = a.fight_time.match(/(\d{2})\/(\d{2})\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+      if (m) {
+        const [, mo, dy, hr, mn, ap] = m;
+        let h = parseInt(hr);
+        if (ap.toUpperCase() === 'PM' && h !== 12) h += 12;
+        if (ap.toUpperCase() === 'AM' && h === 12) h = 0;
+        const ft = new Date(new Date().getFullYear(), parseInt(mo)-1, parseInt(dy), h, parseInt(mn));
+        pastCutoff = ft < new Date(Date.now() - 30 * 60 * 1000);
+      }
+    }
     if (!pastCutoff) {
       const timeStr = a.fight_time_utc
         ? new Date(a.fight_time_utc).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})
