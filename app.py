@@ -229,32 +229,37 @@ def _build_one_tournament(t):
 
 def _auto_discover():
     """
-    Runs at startup (and every hour thereafter):
-      - Builds roster cache only for tournaments NOT already seeded.
-      - Bracket data is fetched lazily when users connect to the watch screen.
-    One tournament at a time, concurrency=5 to stay within Render memory limits.
+    Reads the seeded tournament list and builds rosters for any not yet cached.
+    Uses the seed_cache/tournaments.json to avoid any live network calls at startup.
     """
     import time as _time
+    import json as _json
+    from pathlib import Path as _Path
     from scraper import load_roster_cache
-    _time.sleep(5)   # let Flask finish starting
+    _time.sleep(10)   # let Flask fully start and serve initial requests
 
     while True:
         try:
-            from scraper import get_tournaments
-            tournaments = get_tournaments()
+            # Read from seed file — no live network call on startup
+            seed = _Path(__file__).parent / "seed_cache" / "tournaments.json"
+            if seed.exists():
+                tournaments = _json.loads(seed.read_text())
+            else:
+                from scraper import get_tournaments
+                tournaments = get_tournaments()
 
             for t in tournaments:
                 try:
                     if not load_roster_cache(t["id"]):
                         _build_one_tournament(t)
-                        _time.sleep(2)
+                        _time.sleep(5)   # pause between builds
                 except Exception:
                     pass
 
         except Exception:
             pass
 
-        _time.sleep(3600)   # re-check every hour for new tournaments
+        _time.sleep(3600)
 
 
 threading.Thread(target=_auto_discover, daemon=True).start()
