@@ -261,7 +261,7 @@ def fetch_bracket(tournament_id, category_id, category_name=""):
     """Fetch and parse a single bracket. Synchronous, ~0.5s."""
     url = f"{BASE}/tournaments/{tournament_id}/categories/{category_id}"
     try:
-        r = requests.get(url, headers=_HEADERS, timeout=15)
+        r = requests.get(url, headers=_HEADERS, timeout=(5, 15))
         r.raise_for_status()
         return parse_bracket_html(r.text, category_id, category_name)
     except Exception as e:

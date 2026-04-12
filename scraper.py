@@ -19,15 +19,23 @@ else:
     ROSTER_DIR = Path("/tmp/bracket_states")
 ROSTER_DIR.mkdir(parents=True, exist_ok=True)
 SEED_DIR = Path(__file__).parent / "seed_cache"
+_TOURNEY_CACHE_FILE = ROSTER_DIR.parent / "tournaments.json"
 
 def _seed_rosters():
-    """Copy seed_cache/*.json into ROSTER_DIR on first boot (won't overwrite existing)."""
+    """Copy seed_cache files into runtime dirs on first boot (won't overwrite existing)."""
     if not SEED_DIR.exists():
         return
     for src in SEED_DIR.glob("*_roster.json"):
         dst = ROSTER_DIR / src.name
         if not dst.exists():
             dst.write_bytes(src.read_bytes())
+    # Seed tournament list cache
+    t_src = SEED_DIR / "tournaments.json"
+    if t_src.exists() and not _TOURNEY_CACHE_FILE.exists():
+        try:
+            _TOURNEY_CACHE_FILE.write_bytes(t_src.read_bytes())
+        except Exception:
+            pass
 
 _seed_rosters()
 
@@ -39,10 +47,15 @@ _BLOCK_RE = re.compile(r"id=['\"]tournament-display-(\d+)['\"]", re.DOTALL)
 _IMG_ALT  = re.compile(r'alt=["\']([^"\']+)["\']')
 _CAT_HREF = re.compile(r'/tournaments/(\d+)/categories/(\d+)["\']')
 
-def get_tournaments():
+def get_tournaments(use_cache_on_fail=True):
     """Fetch all currently listed tournaments from bjjcompsystem.com (regex, no BS4)."""
-    resp = requests.get(f"{BASE}/tournaments", headers=HEADERS, timeout=12)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(f"{BASE}/tournaments", headers=HEADERS, timeout=(5, 12))
+        resp.raise_for_status()
+    except Exception:
+        if use_cache_on_fail and _TOURNEY_CACHE_FILE.exists():
+            return json.loads(_TOURNEY_CACHE_FILE.read_text())
+        raise
     html   = resp.text
     result = []
     seen   = set()
@@ -56,13 +69,18 @@ def get_tournaments():
         img_m = _IMG_ALT.search(block)
         name  = img_m.group(1) if img_m else f"Tournament {tid}"
         result.append({"id": tid, "name": name})
+    if result:
+        try:
+            _TOURNEY_CACHE_FILE.write_text(json.dumps(result))
+        except Exception:
+            pass
     return result
 
 
 def get_category_ids(tournament_id):
     """Return list of {id, name} for all bracket categories (regex, no BS4)."""
     resp = requests.get(f"{BASE}/tournaments/{tournament_id}/categories",
-                        headers=HEADERS, timeout=12)
+                        headers=HEADERS, timeout=(5, 12))
     resp.raise_for_status()
     seen, cats = set(), []
     for m in _CAT_HREF.finditer(resp.text):
