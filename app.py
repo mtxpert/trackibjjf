@@ -1,0 +1,415 @@
+"""
+IBJJF Tournament Tracker
+Scalable architecture:
+  - Roster cache: one Playwright scrape per tournament serves all users
+  - Client-side filtering: search is a JS .filter(), zero server load
+  - Shared bracket state: background poller updates once per interval for all users
+  - Server-Sent Events: pushes bracket changes to all connected clients simultaneously
+"""
+
+from flask import Flask, render_template, jsonify, request, Response, send_file
+import os, threading, time, json, asyncio, queue
+from dotenv import load_dotenv
+
+load_dotenv()
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "ibjjf-tracker-key")
+
+BASE_URL = "https://www.bjjcompsystem.com"
+
+# ── In-memory stores ──────────────────────────────────────────────────────────
+_jobs        = {}   # search jobs (legacy live-scrape path)
+_build_jobs  = {}   # roster build jobs
+_brackets    = {}   # category_id -> latest bracket state (shared by all users)
+
+# ── Shared bracket watcher ────────────────────────────────────────────────────
+# category_id -> {tournament_id, last_fetched, interval_sec}
+_watch_registry = {}
+_watch_lock     = threading.Lock()
+
+# SSE subscriber queues: tournament_id -> list[queue.Queue]
+_sse_clients = {}
+_sse_lock    = threading.Lock()
+
+
+def _sse_push(tournament_id, event_data):
+    with _sse_lock:
+        qs = list(_sse_clients.get(tournament_id, []))
+    for q in qs:
+        try:
+            q.put_nowait(event_data)
+        except queue.Full:
+            pass   # slow client — drop event rather than block
+
+
+def register_watch(tournament_id, category_id, interval_sec=300):
+    with _watch_lock:
+        existing = _watch_registry.get(category_id, {})
+        _watch_registry[category_id] = {
+            "tournament_id": tournament_id,
+            "last_fetched":  existing.get("last_fetched", 0),
+            "interval_sec":  interval_sec,
+        }
+
+
+def _background_poller():
+    """
+    Single long-running daemon thread.
+    Refreshes stale brackets, pushes changes via SSE.
+    No per-user Playwright — one run serves everyone.
+    """
+    while True:
+        now = time.time()
+        to_refresh = []
+        with _watch_lock:
+            for cid, info in list(_watch_registry.items()):
+                if (now - info["last_fetched"]) >= info["interval_sec"]:
+                    to_refresh.append((info["tournament_id"], cid))
+
+        for tournament_id, cid in to_refresh:
+            try:
+                state = refresh_bracket(tournament_id, cid)
+                if "error" not in state:
+                    with _watch_lock:
+                        if cid in _watch_registry:
+                            _watch_registry[cid]["last_fetched"] = time.time()
+                    if state.get("changes"):
+                        _sse_push(tournament_id, {
+                            "type":        "bracket_update",
+                            "category_id": cid,
+                            "changes":     state["changes"],
+                        })
+            except Exception:
+                pass
+
+        time.sleep(20)   # check every 20 s for newly stale entries
+
+
+# Start background poller once at import time
+threading.Thread(target=_background_poller, daemon=True).start()
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def run_search(job_id, tournament_id, school_name):
+    from scraper import run_search as _scraper_run, save_roster_cache, load_roster_cache, parse_all_athletes
+    _scraper_run(tournament_id, school_name, _jobs[job_id])
+
+
+def refresh_bracket(tournament_id, category_id, category_name=""):
+    """Fetch a bracket page and store the shared state. Called from background thread."""
+    import asyncio
+    from watcher import fetch_bracket, diff_states, save_state, load_state
+
+    async def _fetch():
+        return await fetch_bracket(tournament_id, category_id, category_name)
+
+    try:
+        state = asyncio.run(_fetch())
+        old   = _brackets.get(category_id) or load_state(category_id)
+        changes = diff_states(old, state) if old else []
+        save_state(category_id, state)
+        state["changes"]     = changes
+        state["bracket_url"] = f"{BASE_URL}/tournaments/{tournament_id}/categories/{category_id}"
+        _brackets[category_id] = state
+        return state
+    except Exception as e:
+        return {"error": str(e), "category_id": category_id}
+
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+@app.route("/api/tournaments")
+def api_tournaments():
+    try:
+        from scraper import get_tournaments
+        return jsonify(get_tournaments())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Roster cache endpoints ────────────────────────────────────────────────────
+
+@app.route("/api/roster/<tournament_id>")
+def api_roster(tournament_id):
+    """
+    Serve the full tournament roster JSON.
+    Client downloads once, stores in localStorage, filters entirely in JS.
+    """
+    from scraper import load_roster_cache
+    cache = load_roster_cache(tournament_id)
+    if not cache:
+        return jsonify({"error": "No roster cache — trigger a build first"}), 404
+    # Allow browsers/CDN to cache for up to 1 hour
+    resp = jsonify(cache)
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
+@app.route("/api/cache/<tournament_id>", methods=["GET"])
+def api_cache_status(tournament_id):
+    from scraper import load_roster_cache
+    cache = load_roster_cache(tournament_id)
+    if not cache:
+        return jsonify({"status": "none"})
+    return jsonify({
+        "status":        "ready",
+        "built_at":      cache.get("built_at"),
+        "total_cats":    cache.get("total_cats", 0),
+        "athlete_count": len(cache.get("athletes", [])),
+    })
+
+
+@app.route("/api/cache/<tournament_id>", methods=["POST"])
+def api_cache_build(tournament_id):
+    from scraper import build_roster
+    job_id = f"roster_{tournament_id}"
+    if job_id in _build_jobs and _build_jobs[job_id].get("status") == "running":
+        return jsonify({"job_id": job_id, "already_running": True})
+    _build_jobs[job_id] = {"status": "running", "progress": 0, "total": 0, "current_cat": ""}
+    threading.Thread(
+        target=build_roster,
+        args=(tournament_id, _build_jobs[job_id]),
+        daemon=True,
+    ).start()
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/cache/<tournament_id>/status")
+def api_cache_job_status(tournament_id):
+    job = _build_jobs.get(f"roster_{tournament_id}")
+    if not job:
+        return jsonify({"status": "none"})
+    return jsonify(job)
+
+
+@app.route("/api/cache/all", methods=["POST"])
+def api_cache_build_all():
+    """
+    Rebuild roster cache for every active tournament.
+    Called by the nightly cron — no client ever triggers a slow scrape.
+    Runs builds sequentially to avoid hammering bjjcompsystem with
+    multiple concurrent Playwright browsers.
+    """
+    from scraper import get_tournaments, build_roster
+
+    def run_all():
+        try:
+            tournaments = get_tournaments()
+        except Exception as e:
+            _build_jobs["__all__"]["error"] = str(e)
+            _build_jobs["__all__"]["status"] = "error"
+            return
+
+        _build_jobs["__all__"]["tournaments"] = [t["id"] for t in tournaments]
+        results = []
+        for t in tournaments:
+            tid    = t["id"]
+            job_id = f"roster_{tid}"
+            if _build_jobs.get(job_id, {}).get("status") == "running":
+                results.append({"id": tid, "skipped": "already running"})
+                continue
+            job = {"status": "running", "progress": 0, "total": 0, "current_cat": ""}
+            _build_jobs[job_id] = job
+            build_roster(tid, job)   # sequential — blocks until done
+            results.append({"id": tid, "status": job.get("status"), "athletes": job.get("athlete_count", 0)})
+
+        _build_jobs["__all__"]["status"]  = "done"
+        _build_jobs["__all__"]["results"] = results
+
+    if _build_jobs.get("__all__", {}).get("status") == "running":
+        return jsonify({"already_running": True})
+
+    _build_jobs["__all__"] = {"status": "running", "tournaments": [], "results": []}
+    threading.Thread(target=run_all, daemon=True).start()
+    return jsonify({"started": True})
+
+
+@app.route("/api/cache/all/status")
+def api_cache_all_status():
+    job = _build_jobs.get("__all__")
+    if not job:
+        return jsonify({"status": "none"})
+    return jsonify(job)
+
+
+# ── Search (live scrape fallback) ─────────────────────────────────────────────
+
+@app.route("/api/search", methods=["POST"])
+def api_search():
+    data          = request.json or {}
+    tournament_id = data.get("tournament_id", "").strip()
+    school_name   = data.get("school_name", "").strip()
+
+    if not tournament_id or not school_name:
+        return jsonify({"error": "tournament_id and school_name are required"}), 400
+
+    job_id = f"{tournament_id}_{school_name.replace(' ', '_')}_{int(time.time())}"
+
+    # ── Fast path: filter cached roster locally ──────────────────────────────
+    from scraper import load_roster_cache, filter_roster
+    cache = load_roster_cache(tournament_id)
+    if cache:
+        athletes = filter_roster(cache, school_name)
+        _jobs[job_id] = {
+            "status":      "done",
+            "progress":    cache.get("total_cats", 0),
+            "total":       cache.get("total_cats", 0),
+            "current_cat": f"Cached · built {cache.get('built_at','')[:10]}",
+            "athletes":    athletes,
+            "from_cache":  True,
+        }
+        return jsonify({"job_id": job_id})
+
+    # ── Slow path: live Playwright scrape ─────────────────────────────────────
+    _jobs[job_id] = {"status": "running", "progress": 0, "total": 0, "current_cat": "", "athletes": []}
+    threading.Thread(target=run_search, args=(job_id, tournament_id, school_name), daemon=True).start()
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/search/<job_id>")
+def api_search_status(job_id):
+    job = _jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify(job)
+
+
+# ── Bracket (single category) ─────────────────────────────────────────────────
+
+@app.route("/api/bracket/<tournament_id>/<category_id>")
+def api_bracket(tournament_id, category_id):
+    cached = _brackets.get(category_id)
+    if cached:
+        return jsonify(cached)
+    state = {"category_id": category_id, "status": "fetching",
+             "bracket_url": f"{BASE_URL}/tournaments/{tournament_id}/categories/{category_id}"}
+    threading.Thread(target=refresh_bracket, args=(tournament_id, category_id), daemon=True).start()
+    return jsonify(state)
+
+
+# ── Refresh (lightweight — reads shared state, schedules background fetch) ────
+
+@app.route("/api/refresh", methods=["POST"])
+def api_refresh():
+    """
+    Returns cached bracket state instantly (no Playwright per request).
+    Registers categories for background watching; poller updates them automatically.
+    At 10K users this endpoint does zero Playwright — just dict lookups.
+    """
+    data          = request.json or {}
+    tournament_id = data.get("tournament_id", "")
+    athletes      = data.get("athletes", [])
+
+    if not tournament_id or not athletes:
+        return jsonify({"error": "tournament_id and athletes required"}), 400
+
+    cat_ids = list({a["category_id"] for a in athletes if a.get("category_id")})
+    if not cat_ids:
+        return jsonify({"updated": athletes, "changes": []})
+
+    # Register for background watching (idempotent)
+    for cid in cat_ids:
+        register_watch(tournament_id, cid)
+
+    # Check if any categories have never been fetched — kick off an immediate fetch
+    for cid in cat_ids:
+        if cid not in _brackets:
+            threading.Thread(target=refresh_bracket, args=(tournament_id, cid), daemon=True).start()
+
+    # Return current cached state (instant)
+    all_changes = []
+    updated     = []
+    from scraper import load_roster_cache  # noqa — only for typing hints
+    from watcher import load_state
+
+    for athlete in athletes:
+        cid   = athlete.get("category_id", "")
+        state = _brackets.get(cid) or load_state(cid)
+        a     = dict(athlete)
+        a["bracket_url"] = f"{BASE_URL}/tournaments/{tournament_id}/categories/{cid}" if cid else ""
+
+        if state:
+            name_lower = athlete["name"].lower()
+            for fight in state.get("fights", []):
+                if fight.get("completed"):
+                    continue
+                for comp in fight.get("competitors", []):
+                    if name_lower in comp["name"].lower():
+                        a["mat"]        = fight["mat"]
+                        a["fight_time"] = fight["time"]
+                        a["fight_num"]  = fight["fight_num"]
+                        break
+                else:
+                    continue
+                break
+            a["eliminated"] = _check_eliminated(name_lower, state)
+            if state.get("changes"):
+                all_changes.extend(state["changes"])
+
+        updated.append(a)
+
+    # Clear consumed changes so they don't repeat on next poll
+    for cid in cat_ids:
+        if cid in _brackets and _brackets[cid].get("changes"):
+            _brackets[cid]["changes"] = []
+
+    return jsonify({"updated": updated, "changes": all_changes})
+
+
+# ── Server-Sent Events — push bracket changes to all connected clients ─────────
+
+@app.route("/api/events/<tournament_id>")
+def api_events(tournament_id):
+    """
+    SSE stream. Client connects once; server pushes when brackets change.
+    All 10K users watching the same tournament share ONE Playwright run per interval.
+    """
+    q = queue.Queue(maxsize=50)
+    with _sse_lock:
+        _sse_clients.setdefault(tournament_id, []).append(q)
+
+    def generate():
+        try:
+            yield f"data: {json.dumps({'type': 'connected'})}\n\n"
+            while True:
+                try:
+                    event = q.get(timeout=25)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except queue.Empty:
+                    yield "data: {\"type\":\"heartbeat\"}\n\n"  # keep-alive
+        finally:
+            with _sse_lock:
+                clients = _sse_clients.get(tournament_id, [])
+                if q in clients:
+                    clients.remove(q)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _check_eliminated(name_lower, state):
+    in_completed = in_future = False
+    for fight in state.get("fights", []):
+        for comp in fight.get("competitors", []):
+            if name_lower in comp["name"].lower():
+                if fight["completed"]:
+                    in_completed = True
+                else:
+                    in_future = True
+    return in_completed and not in_future
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+instance/
+bracket_states/
+.playwright-cli/
+*.db
+*.sqlite
+node_modules/
+.DS_Store

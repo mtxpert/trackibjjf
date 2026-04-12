@@ -1,0 +1,247 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - img [ref=e5]
+      - generic [ref=e6]: BJJCOMPSYSTEM
+      - generic [ref=e8]:
+        - link "Home" [ref=e9] [cursor=pointer]:
+          - /url: /tournaments
+        - text: "|"
+        - link "Divisions" [ref=e10] [cursor=pointer]:
+          - /url: /tournaments/3105/categories
+        - text: "|AD/M/BLU/MD"
+    - list [ref=e11]:
+      - listitem [ref=e12]:
+        - button [ref=e13] [cursor=pointer]:
+          - img [ref=e14]
+  - generic [ref=e16]:
+    - generic [ref=e21]:
+      - generic [ref=e22]: Adult
+      - generic [ref=e23]:
+        - generic [ref=e24]: 
+        - text: Male
+      - generic [ref=e25]: BLUE
+      - generic [ref=e27]:
+        - generic [ref=e28]: 
+        - text: Middle
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - generic [ref=e33]:
+          - generic [ref=e35]:
+            - generic [ref=e36]: "FIGHT 1: Mat 6"
+            - generic [ref=e37]: Sat 04/11 at 09:30 AM
+          - generic [ref=e39] [cursor=pointer]:
+            - generic [ref=e40]:
+              - generic [ref=e41]: "6"
+              - generic [ref=e42]:
+                - generic [ref=e43]: Brandon James-Laidley Lavin
+                - generic [ref=e44]: Texas Punishment Crew
+            - separator [ref=e45]
+            - generic [ref=e46]:
+              - generic [ref=e47]: "2"
+              - generic [ref=e48]:
+                - generic [ref=e49]: Cameron Michael Ferro
+                - generic [ref=e50]: Gracie Barra BJJ
+        - generic [ref=e52]:
+          - generic [ref=e53]:
+            - generic [ref=e54]: Final
+            - generic [ref=e55]:
+              - generic [ref=e56]: "FIGHT 11: Mat 6"
+              - generic [ref=e57]: Sat 04/11 at 10:40 AM
+          - generic [ref=e59] [cursor=pointer]:
+            - generic [ref=e60]:
+              - generic [ref=e61]: "6"
+              - generic [ref=e62]:
+                - generic [ref=e63]: Brandon James-Laidley Lavin
+                - generic [ref=e64]: Texas Punishment Crew
+            - separator [ref=e65]
+            - generic [ref=e66]:
+              - generic [ref=e67]: "7"
+              - generic [ref=e68]:
+                - generic [ref=e69]: Miguel Angel Guevara Miranda
+                - generic [ref=e70]: Gracie Barra BJJ
+        - generic [ref=e72]:
+          - generic [ref=e74]:
+            - generic [ref=e75]: "FIGHT 4: Mat 6"
+            - generic [ref=e76]: Sat 04/11 at 09:53 AM
+          - generic [ref=e78] [cursor=pointer]:
+            - generic [ref=e79]:
+              - generic [ref=e80]: "7"
+              - generic [ref=e81]:
+                - generic [ref=e82]: Miguel Angel Guevara Miranda
+                - generic [ref=e83]: Gracie Barra BJJ
+            - separator [ref=e84]
+            - generic [ref=e85]:
+              - generic [ref=e86]: "4"
+              - generic [ref=e87]:
+                - generic [ref=e88]: Bennett Joseph Krampe
+                - generic [ref=e89]: 10/50
+      - generic [ref=e90]:
+        - generic [ref=e92]:
+          - generic [ref=e94]:
+            - generic [ref=e95]: "FIGHT 6: Mat 6"
+            - generic [ref=e96]: Sat 04/11 at 10:06 AM
+          - generic [ref=e98] [cursor=pointer]:
+            - generic [ref=e99]:
+              - generic [ref=e100]: "6"
+              - generic [ref=e101]:
+                - generic [ref=e102]: Brandon James-Laidley Lavin
+                - generic [ref=e103]: Texas Punishment Crew
+            - separator [ref=e104]
+            - generic [ref=e105]:
+              - generic [ref=e106]: "3"
+              - generic [ref=e107]:
+                - generic [ref=e108]: Efrain Nicolas Rosales
+                - generic [ref=e109]: Alliance
+        - generic [ref=e111]:
+          - generic [ref=e113]:
+            - generic [ref=e114]: "FIGHT 9: Mat 6"
+            - generic [ref=e115]: Sat 04/11 at 10:38 AM
+          - generic [ref=e117] [cursor=pointer]:
+            - generic [ref=e118]:
+              - generic [ref=e119]: "7"
+              - generic [ref=e120]:
+                - generic [ref=e121]: Miguel Angel Guevara Miranda
+                - generic [ref=e122]: Gracie Barra BJJ
+            - separator [ref=e123]
+            - generic [ref=e124]:
+              - generic [ref=e125]: "1"
+              - generic [ref=e126]:
+                - generic [ref=e127]: Diego Christian Gotay
+                - generic [ref=e128]: Gracie Barra
+                - generic [ref=e129]: "!"
+      - generic [ref=e130]:
+        - generic [ref=e132]:
+          - generic [ref=e134]:
+            - generic [ref=e135]: "FIGHT 3: Mat 6"
+            - generic [ref=e136]: Sat 04/11 at 09:46 AM
+          - generic [ref=e138] [cursor=pointer]:
+            - generic [ref=e139]:
+              - generic [ref=e140]: "5"
+              - generic [ref=e141]:
+                - generic [ref=e142]: Esteban Angel Herman Betancourt
+                - generic [ref=e143]: Gracie Barra
+            - separator [ref=e144]
+            - generic [ref=e145]:
+              - generic [ref=e146]: "3"
+              - generic [ref=e147]:
+                - generic [ref=e148]: Efrain Nicolas Rosales
+                - generic [ref=e149]: Alliance
+        - generic [ref=e153] [cursor=pointer]:
+          - generic [ref=e154]:
+            - generic [ref=e155]: "1"
+            - generic [ref=e156]:
+              - generic [ref=e157]: Diego Christian Gotay
+              - generic [ref=e158]: Gracie Barra
+          - separator [ref=e159]
+          - generic [ref=e162]: BYE
+      - img
+      - img
+      - img
+      - img
+      - img
+      - img
+    - generic [ref=e171]:
+      - generic [ref=e172]:
+        - generic [ref=e173]:
+          - text: "1"
+          - generic [ref=e174]: 
+        - generic [ref=e175]:
+          - generic [ref=e176]: Brandon James-Laidley Lavin
+          - generic [ref=e177]: Texas Punishment Crew
+      - generic [ref=e178]:
+        - generic [ref=e179]:
+          - text: "2"
+          - generic [ref=e180]: 
+        - generic [ref=e181]:
+          - generic [ref=e182]: Miguel Angel Guevara Miranda
+          - generic [ref=e183]: Gracie Barra BJJ
+      - generic [ref=e184]:
+        - generic [ref=e185]:
+          - text: "3"
+          - generic [ref=e186]: 
+        - generic [ref=e187]:
+          - generic [ref=e188]: Efrain Nicolas Rosales
+          - generic [ref=e189]: Alliance
+      - generic [ref=e190]:
+        - generic [ref=e191]:
+          - text: "3"
+          - generic [ref=e192]: 
+        - generic [ref=e193]:
+          - generic [ref=e194]: Bennett Joseph Krampe
+          - generic [ref=e195]: 10/50
+    - generic [ref=e197]:
+      - heading "Swaps" [level=3] [ref=e198]
+      - list [ref=e199]:
+        - listitem [ref=e200]:
+          - text: 7 - Miguel Angel Guevara Miranda
+          - generic [ref=e201]: 
+          - text: 6 - Brandon James-Laidley Lavin
+    - generic [ref=e203]:
+      - heading "Ranking" [level=3] [ref=e204]
+      - table [ref=e206]:
+        - rowgroup [ref=e207]:
+          - row "Nº — Competitor Team Grand Slam Pts  Overall PTS " [ref=e208]:
+            - columnheader "Nº — Competitor" [ref=e209]
+            - columnheader "Team" [ref=e210]
+            - columnheader "Grand Slam Pts " [ref=e211]:
+              - generic [ref=e212]:
+                - text: Grand Slam Pts
+                - generic: 
+            - columnheader "Overall PTS " [ref=e213]:
+              - generic [ref=e214]:
+                - text: Overall PTS
+                - generic: 
+        - rowgroup [ref=e215]:
+          - row "1 Diego Christian Gotay Gracie Barra 0 3" [ref=e216]:
+            - rowheader "1 Diego Christian Gotay" [ref=e217]:
+              - generic [ref=e218]: "1"
+              - generic [ref=e219]: Diego Christian Gotay
+            - cell "Gracie Barra" [ref=e220]
+            - cell "0" [ref=e221]
+            - cell "3" [ref=e222]
+          - row "2 Cameron Michael Ferro Gracie Barra BJJ 0 0" [ref=e223]:
+            - rowheader "2 Cameron Michael Ferro" [ref=e224]:
+              - generic [ref=e225]: "2"
+              - generic [ref=e226]: Cameron Michael Ferro
+            - cell "Gracie Barra BJJ" [ref=e227]
+            - cell "0" [ref=e228]
+            - cell "0" [ref=e229]
+          - row "3 Efrain Nicolas Rosales Alliance 0 0" [ref=e230]:
+            - rowheader "3 Efrain Nicolas Rosales" [ref=e231]:
+              - generic [ref=e232]: "3"
+              - generic [ref=e233]: Efrain Nicolas Rosales
+            - cell "Alliance" [ref=e234]
+            - cell "0" [ref=e235]
+            - cell "0" [ref=e236]
+          - row "4 Bennett Joseph Krampe 10/50 0 0" [ref=e237]:
+            - rowheader "4 Bennett Joseph Krampe" [ref=e238]:
+              - generic [ref=e239]: "4"
+              - generic [ref=e240]: Bennett Joseph Krampe
+            - cell "10/50" [ref=e241]
+            - cell "0" [ref=e242]
+            - cell "0" [ref=e243]
+          - row "5 Esteban Angel Herman Betancourt Gracie Barra 0 0" [ref=e244]:
+            - rowheader "5 Esteban Angel Herman Betancourt" [ref=e245]:
+              - generic [ref=e246]: "5"
+              - generic [ref=e247]: Esteban Angel Herman Betancourt
+            - cell "Gracie Barra" [ref=e248]
+            - cell "0" [ref=e249]
+            - cell "0" [ref=e250]
+          - row "6 Brandon James-Laidley Lavin Texas Punishment Crew 0 0" [ref=e251]:
+            - rowheader "6 Brandon James-Laidley Lavin" [ref=e252]:
+              - generic [ref=e253]: "6"
+              - generic [ref=e254]: Brandon James-Laidley Lavin
+            - cell "Texas Punishment Crew" [ref=e255]
+            - cell "0" [ref=e256]
+            - cell "0" [ref=e257]
+          - row "7 Miguel Angel Guevara Miranda Gracie Barra BJJ 0 0" [ref=e258]:
+            - rowheader "7 Miguel Angel Guevara Miranda" [ref=e259]:
+              - generic [ref=e260]: "7"
+              - generic [ref=e261]: Miguel Angel Guevara Miranda
+            - cell "Gracie Barra BJJ" [ref=e262]
+            - cell "0" [ref=e263]
+            - cell "0" [ref=e264]
+        - rowgroup [ref=e265]:
+          - row [ref=e266]:
+            - cell [ref=e267]

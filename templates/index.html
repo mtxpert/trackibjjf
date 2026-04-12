@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>trackIBJJF</title>
+  <style>
+    :root {
+      --red: #c0392b;
+      --bg: #0f0f1a;
+      --card: #1e1e30;
+      --gray: #2d2d44;
+      --text: #f0f0f0;
+      --muted: #777799;
+      --border: #333355;
+      --green: #27ae60;
+      --yellow: #f39c12;
+      --blue: #2980b9;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── Header ── */
+    .header {
+      background: var(--red);
+      padding: 14px 16px 12px;
+      display: flex; align-items: center; gap: 10px;
+      position: sticky; top: 0; z-index: 50;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    }
+    .header h1 { font-size: 1.1rem; font-weight: 700; }
+    .header-sub { font-size: 0.72rem; opacity: 0.85; margin-top: 1px; }
+
+    /* ── Screens ── */
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* ── Step 1 & 2 layout ── */
+    .setup-wrap {
+      padding: 14px 16px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    .setup-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .setup-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+    }
+
+    /* Tournament list */
+    .tourney-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+    .tourney-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .tourney-item:active { background: var(--gray); }
+    .tourney-item.selected { border-color: var(--red); background: rgba(192,57,43,0.12); }
+    .tourney-name { font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
+    .tourney-meta { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
+
+    /* School input */
+    .school-input-wrap { position: relative; margin-bottom: 16px; }
+    .school-input-wrap input {
+      width: 100%; padding: 14px 16px; border-radius: 12px;
+      border: 2px solid var(--border); background: var(--card);
+      color: var(--text); font-size: 1rem; outline: none;
+    }
+    .school-input-wrap input:focus { border-color: var(--red); }
+
+    .btn-primary {
+      width: 100%; padding: 15px; border-radius: 12px;
+      background: var(--red); color: white; border: none;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+      letter-spacing: 0.3px;
+    }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Progress screen ── */
+    .progress-wrap { padding: 40px 24px; text-align: center; }
+    .progress-wrap h2 { font-size: 1.2rem; margin-bottom: 8px; }
+    .progress-label { font-size: 0.82rem; color: var(--muted); margin-bottom: 20px; min-height: 20px; }
+    .progress-bar { height: 6px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--red); border-radius: 4px; transition: width 0.4s ease; }
+    .progress-count { font-size: 0.78rem; color: var(--muted); margin-top: 10px; }
+    .spinner {
+      width: 40px; height: 40px; border: 3px solid var(--border);
+      border-top-color: var(--red); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Results screen ── */
+    .results-header {
+      background: var(--gray);
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 60px; z-index: 40;
+    }
+    .results-meta {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 10px;
+    }
+    .results-meta span { font-size: 0.85rem; }
+    .results-meta .back-btn {
+      background: none; border: none; color: var(--muted);
+      font-size: 0.82rem; cursor: pointer; padding: 4px 8px;
+      border: 1px solid var(--border); border-radius: 6px;
+    }
+    .search-input {
+      width: 100%; padding: 10px 14px; border-radius: 24px;
+      border: 1px solid var(--border); background: var(--card);
+      color: var(--text); font-size: 0.95rem; outline: none;
+    }
+    .search-input:focus { border-color: var(--red); }
+
+    .athletes-list { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+    /* ── Athlete card ── */
+    .athlete-card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 14px 16px;
+      border-left: 4px solid var(--border);
+    }
+    .athlete-card.done { opacity: 0.55; border-left-color: var(--green); }
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+    .athlete-name { font-size: 1rem; font-weight: 700; line-height: 1.2; }
+    .athlete-div {
+      font-size: 0.72rem; color: var(--muted); margin-top: 3px;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .belt-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .belt-white  { background: #ddd; }
+    .belt-blue   { background: #2980b9; }
+    .belt-purple { background: #8e44ad; }
+    .belt-brown  { background: #7b4b28; }
+    .belt-black  { background: #222; border: 1px solid #666; }
+
+    /* ── Fight info boxes ── */
+    .fight-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .info-box {
+      flex: 1; background: var(--gray); border-radius: 8px;
+      padding: 8px 10px; text-align: center;
+    }
+    .info-box.mat-box { flex: 0 0 72px; }
+    .info-box.fight-box { flex: 0 0 72px; background: rgba(192,57,43,0.15); }
+    .info-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 3px; }
+    .info-val { font-size: 1.5rem; font-weight: 800; line-height: 1; }
+    .info-val.tbd { font-size: 0.8rem; color: var(--muted); font-weight: 400; }
+    .info-val.time-val { font-size: 0.95rem; font-weight: 700; }
+    .fight-box .info-val { color: var(--red); }
+
+    /* ── Status row ── */
+    .status-row { display: flex; gap: 8px; }
+    .status-btn {
+      flex: 1; padding: 8px 6px; border-radius: 8px; border: none;
+      font-size: 0.78rem; font-weight: 600; cursor: pointer;
+      background: var(--gray); color: var(--muted);
+    }
+    .status-btn.active-btn { background: var(--red); color: white; }
+    .status-btn.done-btn { background: rgba(39,174,96,0.2); color: var(--green); }
+
+    /* ── Empty / error states ── */
+    .state-msg { text-align: center; padding: 50px 20px; color: var(--muted); }
+    .state-msg .icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .state-msg h3 { font-size: 1rem; color: var(--text); margin-bottom: 6px; }
+    .state-msg p { font-size: 0.85rem; }
+
+    /* ── Pick footer ── */
+    #pick-footer {
+      position: sticky;
+      bottom: 0;
+      background: var(--bg);
+      padding: 12px 16px 28px;
+      border-top: 1px solid var(--border);
+    }
+    #watch-btn {
+      width: 100%; padding: 15px; border-radius: 12px;
+      background: var(--red); color: white; border: none;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+    }
+    #watch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Selectable athlete row (pick screen) ── */
+    .pick-row {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .pick-row.selected {
+      border-color: var(--red);
+      background: rgba(192,57,43,0.1);
+    }
+    .pick-check {
+      width: 26px; height: 26px; border-radius: 50%;
+      border: 2px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: 0.9rem;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .pick-row.selected .pick-check {
+      background: var(--red); border-color: var(--red); color: white;
+    }
+    .pick-info { flex: 1; min-width: 0; }
+    .pick-name { font-size: 0.95rem; font-weight: 700; }
+    .pick-div  { font-size: 0.75rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Eliminated badge ── */
+    .elim-badge {
+      display: inline-block;
+      background: rgba(192,57,43,0.2);
+      color: #e74c3c;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      vertical-align: middle;
+      margin-left: 6px;
+    }
+
+    /* ── Athlete name link ── */
+    .athlete-name-link {
+      color: inherit;
+      text-decoration: none;
+      border-bottom: 1px dotted var(--muted);
+    }
+    .athlete-name-link:active { color: var(--red); }
+
+    /* ── Changes banner ── */
+    #changes-banner {
+      margin: 8px 16px 0;
+      background: rgba(39,174,96,0.1);
+      border: 1px solid rgba(39,174,96,0.35);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 0.82rem;
+    }
+    .change-item {
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(39,174,96,0.15);
+      line-height: 1.4;
+    }
+    .change-item:last-child { border-bottom: none; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #333; color: white; padding: 9px 18px; border-radius: 20px;
+      font-size: 0.82rem; z-index: 999; opacity: 0; transition: opacity 0.25s;
+      pointer-events: none; white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <span style="font-size:1.8rem">🥋</span>
+  <div>
+    <h1 id="header-title">trackIBJJF</h1>
+    <div class="header-sub" id="header-sub">Live Tournament Tracker</div>
+  </div>
+</div>
+
+<!-- ── Screen 1: Pick Tournament ── -->
+<div class="screen active" id="screen-tournament">
+  <div class="setup-wrap">
+    <div class="setup-title">Select Tournament</div>
+    <div id="tourney-loading" class="state-msg">
+      <div class="spinner"></div>
+      Loading tournaments...
+    </div>
+    <div id="tourney-list" class="tourney-list" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ── Screen 2: Enter School ── -->
+<div class="screen" id="screen-school">
+  <div class="setup-wrap">
+    <div class="school-input-wrap">
+      <input type="text" id="school-input" value=""
+        placeholder="e.g. Gracie Barra, Alliance, Atos..."
+        autocomplete="off" spellcheck="false"
+        onkeydown="if(event.key==='Enter') startSearch()">
+    </div>
+    <button class="btn-primary" id="btn-search" onclick="startSearch()">
+      🔍 Search Brackets
+    </button>
+    <div style="margin-top:10px;font-size:0.8rem;color:var(--muted)" id="school-tourney-name"></div>
+    <div id="cache-status" style="margin:12px 0 4px;font-size:0.8rem;min-height:36px"></div>
+    <div style="margin-top: 8px; text-align: center;">
+      <button onclick="showScreen('screen-tournament')" style="background:none;border:none;color:var(--muted);font-size:0.82rem;cursor:pointer">
+        ← Change Tournament
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Screen 3: Progress ── -->
+<div class="screen" id="screen-progress">
+  <div class="progress-wrap">
+    <div class="spinner"></div>
+    <h2>Searching brackets...</h2>
+    <div class="progress-label" id="progress-cat">Loading divisions...</div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+    <div class="progress-count" id="progress-count"></div>
+  </div>
+</div>
+
+<!-- ── Screen 4: Pick who to watch ── -->
+<div class="screen" id="screen-pick">
+  <div class="results-header">
+    <div class="results-meta">
+      <span id="pick-count">Tap athletes to watch</span>
+      <button class="back-btn" onclick="showScreen('screen-school')">← Back</button>
+    </div>
+    <input class="search-input" type="text" id="pick-search"
+      placeholder="Filter by name..." oninput="filterPick()"
+      autocomplete="off">
+  </div>
+  <div id="pick-list" class="athletes-list"></div>
+  <div id="pick-footer">
+    <button id="watch-btn" onclick="goWatch()">Watch Selected →</button>
+  </div>
+</div>
+
+<!-- ── Screen 5: Watch view ── -->
+<div class="screen" id="screen-watch">
+  <div class="results-header">
+    <div class="results-meta">
+      <span id="watch-count"></span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span id="refresh-countdown" style="font-size:0.72rem;color:var(--muted)"></span>
+        <button id="refresh-btn" onclick="manualRefresh()" class="back-btn">⟳ Refresh</button>
+        <button class="back-btn" onclick="showScreen('screen-pick')">← Edit</button>
+      </div>
+    </div>
+    <input class="search-input" type="text" id="watch-search"
+      placeholder="Search..." oninput="renderWatch()"
+      autocomplete="off">
+  </div>
+  <div id="changes-banner" style="display:none"></div>
+  <div id="watch-list" class="athletes-list"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ─── State ─────────────────────────────────────────────────────────────────
+let allTournaments = [];
+let selectedTournament = null;
+let currentJobId = null;
+let pollTimer = null;
+let allAthletes = [];      // full search results
+let selectedKeys = new Set(); // keys of athletes user wants to watch
+let statuses = {};            // key -> 'done'
+let watchedTournamentId = '';
+let refreshTimer = null;
+let refreshSecondsLeft = 0;
+let refreshing = false;
+let sseConnection = null;  // EventSource for bracket push updates
+
+// ─── localStorage roster cache ─────────────────────────────────────────────
+const ROSTER_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+function getCachedRoster(tournamentId) {
+  try {
+    const raw = localStorage.getItem(`roster_${tournamentId}`);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (Date.now() - (data._saved_at || 0) > ROSTER_TTL_MS) {
+      localStorage.removeItem(`roster_${tournamentId}`);
+      return null;
+    }
+    return data;
+  } catch(e) { return null; }
+}
+
+function setCachedRoster(tournamentId, rosterData) {
+  try {
+    localStorage.setItem(`roster_${tournamentId}`, JSON.stringify({
+      ...rosterData,
+      _saved_at: Date.now()
+    }));
+  } catch(e) {} // storage full — ignore
+}
+
+function filterRosterLocally(athletes, school) {
+  const sl = school.toLowerCase().trim();
+  const seen = {};
+  for (const a of athletes) {
+    if ((a.team || '').toLowerCase().includes(sl) || a.name.toLowerCase().includes(sl)) {
+      const key = a.name.toLowerCase();
+      if (!seen[key]) seen[key] = a;
+    }
+  }
+  return Object.values(seen);
+}
+
+function timeSince(isoStr) {
+  if (!isoStr) return '?';
+  const mins = Math.round((Date.now() - new Date(isoStr)) / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.round(mins/60)}h ago`;
+}
+
+// ─── Screens ───────────────────────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+  if (id !== 'screen-watch') {
+    stopRefreshTimer();
+    disconnectSSE();
+  }
+}
+
+// ─── Init ──────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', loadTournaments);
+
+async function loadTournaments() {
+  try {
+    const r = await fetch('/api/tournaments');
+    allTournaments = await r.json();
+    renderTournaments();
+  } catch(e) {
+    document.getElementById('tourney-loading').innerHTML =
+      '<div class="icon">⚠️</div><h3>Could not load tournaments</h3><p>Check your connection and reload.</p>';
+  }
+}
+
+function renderTournaments() {
+  const loading = document.getElementById('tourney-loading');
+  const list = document.getElementById('tourney-list');
+
+  if (!allTournaments.length) {
+    loading.innerHTML = '<div class="icon">📅</div><h3>No active tournaments found</h3><p>Check back on tournament day.</p>';
+    return;
+  }
+
+  loading.style.display = 'none';
+  list.style.display = 'flex';
+
+  list.innerHTML = allTournaments.map(t => `
+    <div class="tourney-item" id="t-${t.id}" onclick="selectTournament('${t.id}', this)">
+      <div class="tourney-name">${t.name}</div>
+    </div>
+  `).join('');
+}
+
+function selectTournament(id, el) {
+  document.querySelectorAll('.tourney-item').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedTournament = allTournaments.find(t => t.id === id);
+  document.getElementById('school-tourney-name').textContent = selectedTournament.name;
+  showScreen('screen-school');
+  checkCacheStatus(id);
+}
+
+async function checkCacheStatus(tournamentId) {
+  const el = document.getElementById('cache-status');
+  if (!el) return;
+
+  // Check localStorage first (no server call)
+  const local = getCachedRoster(tournamentId);
+  if (local) {
+    el.innerHTML = `<span style="color:var(--green)">⚡ Roster ready in browser (${timeSince(new Date(local._saved_at).toISOString())})</span>
+      <button onclick="rebuildCache('${tournamentId}')" style="background:none;border:none;color:var(--muted);font-size:0.78rem;cursor:pointer;margin-left:8px">↻ Rebuild</button>`;
+    return;
+  }
+
+  el.innerHTML = '<span style="color:var(--muted);font-size:0.78rem">Checking cache…</span>';
+  try {
+    const r = await fetch(`/api/cache/${tournamentId}`);
+    const data = await r.json();
+    if (data.status === 'ready') {
+      el.innerHTML = `<span style="color:var(--green)">✓ Roster cached · ${data.athlete_count} athletes · built ${timeSince(data.built_at)}</span>
+        <button onclick="rebuildCache('${tournamentId}')" style="background:none;border:none;color:var(--muted);font-size:0.78rem;cursor:pointer;margin-left:8px">↻ Rebuild</button>`;
+    } else {
+      el.innerHTML = `<span style="color:var(--yellow)">No cache — first search ~2 min</span>
+        &nbsp;<button onclick="rebuildCache('${tournamentId}')" style="background:none;border:1px solid var(--border);color:var(--text);font-size:0.78rem;cursor:pointer;padding:3px 10px;border-radius:6px">Pre-build Roster</button>`;
+    }
+  } catch(e) {
+    el.innerHTML = '';
+  }
+}
+
+async function rebuildCache(tournamentId) {
+  const el = document.getElementById('cache-status');
+  // Clear local cache so we force a fresh download after build
+  localStorage.removeItem(`roster_${tournamentId}`);
+  el.innerHTML = '<span style="color:var(--muted)">Building roster cache…</span><div id="build-bar" style="height:3px;background:var(--border);border-radius:2px;margin-top:6px"><div id="build-fill" style="height:100%;background:var(--red);border-radius:2px;width:0%;transition:width 0.5s"></div></div>';
+  try {
+    await fetch(`/api/cache/${tournamentId}`, { method: 'POST' });
+    const poll = setInterval(async () => {
+      const r = await fetch(`/api/cache/${tournamentId}/status`);
+      const job = await r.json();
+      const pct = job.total > 0 ? Math.round(job.progress / job.total * 100) : 0;
+      const fill = document.getElementById('build-fill');
+      if (fill) fill.style.width = pct + '%';
+      el.querySelector('span').textContent = `Building… ${job.progress||0}/${job.total||'?'} divisions (${pct}%)`;
+      if (job.status === 'done' || job.status === 'error') {
+        clearInterval(poll);
+        checkCacheStatus(tournamentId);
+      }
+    }, 1500);
+  } catch(e) {
+    if (el) el.innerHTML = '<span style="color:var(--red)">Build failed — try again</span>';
+  }
+}
+
+// ─── Search ────────────────────────────────────────────────────────────────
+async function startSearch() {
+  const school = document.getElementById('school-input').value.trim();
+  if (!school) { showToast('Enter a school name'); return; }
+  if (!selectedTournament) { showScreen('screen-tournament'); return; }
+
+  document.getElementById('header-sub').textContent =
+    school + ' · ' + selectedTournament.name.split(' ').slice(0,3).join(' ') + '...';
+
+  // ── Instant path 1: localStorage ──────────────────────────────────────────
+  const local = getCachedRoster(selectedTournament.id);
+  if (local) {
+    allAthletes  = filterRosterLocally(local.athletes || [], school);
+    statuses     = {};
+    selectedKeys = new Set();
+    showPick();
+    return;
+  }
+
+  // ── Instant path 2: server roster cache → download + cache locally ─────────
+  try {
+    const cacheCheck = await fetch(`/api/cache/${selectedTournament.id}`);
+    const cacheInfo  = await cacheCheck.json();
+    if (cacheInfo.status === 'ready') {
+      showToast('Loading roster…');
+      const rosterResp = await fetch(`/api/roster/${selectedTournament.id}`);
+      const roster     = await rosterResp.json();
+      setCachedRoster(selectedTournament.id, roster);
+      allAthletes  = filterRosterLocally(roster.athletes || [], school);
+      statuses     = {};
+      selectedKeys = new Set();
+      showPick();
+      return;
+    }
+  } catch(e) { /* fall through to live scrape */ }
+
+  // ── Slow path: live Playwright scrape (first ever search for this tournament) ─
+  showScreen('screen-progress');
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('progress-count').textContent = '';
+  document.getElementById('progress-cat').textContent = 'Starting…';
+
+  try {
+    const r = await fetch('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tournament_id: selectedTournament.id, school_name: school })
+    });
+    const { job_id } = await r.json();
+    currentJobId = job_id;
+    pollTimer = setInterval(pollJob, 1500);
+  } catch(e) {
+    showScreen('screen-school');
+    showToast('Search failed — try again');
+  }
+}
+
+async function pollJob() {
+  if (!currentJobId) return;
+  try {
+    const r = await fetch(`/api/search/${currentJobId}`);
+    const job = await r.json();
+
+    const pct = job.total > 0 ? Math.round((job.progress / job.total) * 100) : 0;
+    document.getElementById('progress-fill').style.width = pct + '%';
+    document.getElementById('progress-cat').textContent = job.current_cat || 'Scanning...';
+    document.getElementById('progress-count').textContent =
+      job.total > 0 ? `${job.progress} / ${job.total} divisions` : '';
+
+    if (job.status === 'done') {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      allAthletes = job.athletes || [];
+      statuses = {};
+      selectedKeys = new Set();
+      showPick();
+    } else if (job.status === 'error') {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      showScreen('screen-school');
+      showToast('Error: ' + (job.error || 'Unknown error'));
+    }
+  } catch(e) { /* keep polling */ }
+}
+
+// ─── Pick screen ───────────────────────────────────────────────────────────
+function showPick() {
+  showScreen('screen-pick');
+  filterPick();
+}
+
+function filterPick() {
+  const q = (document.getElementById('pick-search').value || '').toLowerCase().trim();
+  let list = allAthletes.slice().sort((a,b) => a.name.localeCompare(b.name));
+  if (q) list = list.filter(a => a.name.toLowerCase().includes(q) || (a.division||'').toLowerCase().includes(q));
+
+  document.getElementById('pick-count').textContent =
+    selectedKeys.size ? `${selectedKeys.size} selected` : `${allAthletes.length} athletes — tap to select`;
+
+  const btn = document.getElementById('watch-btn');
+  btn.disabled = selectedKeys.size === 0;
+  btn.textContent = selectedKeys.size ? `Watch ${selectedKeys.size} Athlete${selectedKeys.size>1?'s':''} →` : 'Select athletes to watch';
+
+  const container = document.getElementById('pick-list');
+  if (!list.length) {
+    container.innerHTML = '<div class="state-msg"><div class="icon">🔍</div><h3>No matches</h3></div>';
+    return;
+  }
+  container.innerHTML = list.map(a => {
+    const key = a.name.toLowerCase();
+    const sel = selectedKeys.has(key);
+    return `
+      <div class="pick-row ${sel ? 'selected' : ''}" onclick="togglePick('${key.replace(/'/g,"\\'")}')">
+        <div class="pick-check">${sel ? '✓' : ''}</div>
+        <div class="pick-info">
+          <div class="pick-name">${a.name}</div>
+          <div class="pick-div">${a.division || a.team || ''}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function togglePick(key) {
+  if (selectedKeys.has(key)) selectedKeys.delete(key);
+  else selectedKeys.add(key);
+  filterPick();
+}
+
+function goWatch() {
+  if (!selectedKeys.size) return;
+  watchedTournamentId = selectedTournament ? selectedTournament.id : '';
+  document.getElementById('changes-banner').style.display = 'none';
+  showScreen('screen-watch');
+  renderWatch();
+  connectSSE(watchedTournamentId);    // push updates — replaces polling timer
+  startRefreshTimer();                // fallback countdown if SSE fails
+}
+
+// ─── Server-Sent Events ────────────────────────────────────────────────────
+function connectSSE(tournamentId) {
+  if (sseConnection) { sseConnection.close(); sseConnection = null; }
+  if (!tournamentId) return;
+
+  sseConnection = new EventSource(`/api/events/${tournamentId}`);
+
+  sseConnection.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'bracket_update') {
+      if (data.changes && data.changes.length) {
+        showChangesBanner(data.changes);
+      }
+      // Pull fresh data from shared cache (no new Playwright needed)
+      manualRefresh();
+    }
+  };
+
+  sseConnection.onerror = () => {
+    // SSE dropped — keep polling timer as safety net
+    if (sseConnection) { sseConnection.close(); sseConnection = null; }
+  };
+}
+
+function disconnectSSE() {
+  if (sseConnection) { sseConnection.close(); sseConnection = null; }
+}
+
+// ─── Watch screen ──────────────────────────────────────────────────────────
+function renderWatch() {
+  const q = (document.getElementById('watch-search')?.value || '').toLowerCase().trim();
+  let list = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+  if (q) list = list.filter(a => a.name.toLowerCase().includes(q));
+
+  // Sort: eliminated/done at bottom, then by fight time
+  list.sort((a, b) => {
+    const aDone = statuses[a.name.toLowerCase()] === 'done' || a.eliminated;
+    const bDone = statuses[b.name.toLowerCase()] === 'done' || b.eliminated;
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    return (a.fight_time || 'z').localeCompare(b.fight_time || 'z');
+  });
+
+  document.getElementById('watch-count').textContent =
+    `${selectedKeys.size} athlete${selectedKeys.size>1?'s':''}`;
+
+  const container = document.getElementById('watch-list');
+  container.innerHTML = list.map(a => watchCard(a)).join('');
+}
+
+function beltClass(division) {
+  const d = (division || '').toUpperCase();
+  if (d.includes('BLACK'))  return 'belt-black';
+  if (d.includes('BROWN'))  return 'belt-brown';
+  if (d.includes('PURPLE')) return 'belt-purple';
+  if (d.includes('BLUE'))   return 'belt-blue';
+  return 'belt-white';
+}
+
+function watchCard(a) {
+  const key = a.name.toLowerCase();
+  const done = statuses[key] === 'done';
+  const eliminated = !!a.eliminated;
+  const faded = done || eliminated;
+
+  // Build bracket URL from stored field or construct from category_id
+  const bracketUrl = a.bracket_url ||
+    (a.category_id && watchedTournamentId
+      ? `https://www.bjjcompsystem.com/tournaments/${watchedTournamentId}/categories/${a.category_id}`
+      : '');
+
+  const nameHtml = bracketUrl
+    ? `<a href="${bracketUrl}" target="_blank" rel="noopener" class="athlete-name-link">${a.name}</a>`
+    : a.name;
+
+  const elimBadge = eliminated ? `<span class="elim-badge">Eliminated</span>` : '';
+
+  const matVal   = a.mat       ? `<div class="info-val">${a.mat}</div>`        : `<div class="info-val tbd">TBD</div>`;
+  const fightVal = a.fight_num ? `<div class="info-val">#${a.fight_num}</div>` : `<div class="info-val tbd">—</div>`;
+  const timeVal  = a.fight_time
+    ? `<div class="info-val time-val">${a.fight_time}</div>`
+    : `<div class="info-val tbd">TBD</div>`;
+
+  return `
+    <div class="athlete-card ${faded ? 'done' : ''}">
+      <div class="card-top">
+        <div>
+          <div class="athlete-name">${nameHtml}${elimBadge}</div>
+          <div class="athlete-div">
+            <span class="belt-dot ${beltClass(a.division)}"></span>
+            ${a.division || a.team || ''}
+          </div>
+        </div>
+      </div>
+      <div class="fight-row">
+        <div class="info-box mat-box">
+          <div class="info-label">Mat</div>${matVal}
+        </div>
+        <div class="info-box fight-box">
+          <div class="info-label">Fight</div>${fightVal}
+        </div>
+        <div class="info-box" style="flex:2">
+          <div class="info-label">Est. Time</div>${timeVal}
+        </div>
+      </div>
+      <div class="status-row">
+        <button class="status-btn ${!faded?'active-btn':''}" onclick="setDone('${key.replace(/'/g,"\\'")}',false)">Still Competing</button>
+        <button class="status-btn done-btn ${faded?'active-btn':''}" onclick="setDone('${key.replace(/'/g,"\\'")}',true)">✓ Done</button>
+      </div>
+    </div>`;
+}
+
+function setDone(key, done) {
+  statuses[key] = done ? 'done' : 'waiting';
+  renderWatch();
+}
+
+// ─── Auto-refresh ──────────────────────────────────────────────────────────
+function startRefreshTimer() {
+  stopRefreshTimer();
+  refreshSecondsLeft = 300;
+  updateCountdown();
+  refreshTimer = setInterval(() => {
+    refreshSecondsLeft--;
+    updateCountdown();
+    if (refreshSecondsLeft <= 0) manualRefresh();
+  }, 1000);
+}
+
+function stopRefreshTimer() {
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+  refreshSecondsLeft = 0;
+  const el = document.getElementById('refresh-countdown');
+  if (el) el.textContent = '';
+}
+
+function updateCountdown() {
+  const el = document.getElementById('refresh-countdown');
+  if (!el) return;
+  const m = Math.floor(refreshSecondsLeft / 60);
+  const s = refreshSecondsLeft % 60;
+  el.textContent = `Auto ${m}:${s.toString().padStart(2,'0')}`;
+}
+
+async function manualRefresh() {
+  if (refreshing || !watchedTournamentId) return;
+  refreshing = true;
+  const btn = document.getElementById('refresh-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ …'; }
+
+  const watched = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+
+  try {
+    const r = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tournament_id: watchedTournamentId, athletes: watched })
+    });
+    const data = await r.json();
+
+    if (data.updated) {
+      const updMap = {};
+      data.updated.forEach(a => { updMap[a.name.toLowerCase()] = a; });
+      allAthletes = allAthletes.map(a => updMap[a.name.toLowerCase()] || a);
+    }
+
+    if (data.changes && data.changes.length) {
+      showChangesBanner(data.changes);
+    }
+
+    renderWatch();
+    showToast('Updated');
+  } catch(e) {
+    showToast('Refresh failed');
+  } finally {
+    refreshing = false;
+    if (btn) { btn.disabled = false; btn.textContent = '⟳ Refresh'; }
+    startRefreshTimer(); // reset countdown after every refresh attempt
+  }
+}
+
+function showChangesBanner(changes) {
+  const el = document.getElementById('changes-banner');
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="font-weight:700;margin-bottom:6px;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--green)">Updates</div>
+    ${changes.map(c => `<div class="change-item">${c}</div>`).join('')}
+    <div style="text-align:right;margin-top:6px">
+      <button onclick="document.getElementById('changes-banner').style.display='none'"
+        style="background:none;border:none;color:var(--muted);font-size:0.78rem;cursor:pointer">Dismiss</button>
+    </div>`;
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+function startOver() {
+  allAthletes = [];
+  statuses = {};
+  selectedKeys = new Set();
+  currentJobId = null;
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  stopRefreshTimer();
+  disconnectSSE();
+  showScreen('screen-tournament');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+</script>
+</body>
+</html>
