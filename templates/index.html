@@ -301,8 +301,10 @@
       <input type="text" id="school-input" value=""
         placeholder="e.g. Gracie Barra, Alliance, Atos..."
         autocomplete="off" spellcheck="false"
+        oninput="onSchoolInput()"
         onkeydown="if(event.key==='Enter') startSearch()">
     </div>
+    <div id="school-preview" style="min-height:22px;margin-bottom:10px;font-size:0.85rem"></div>
     <button class="btn-primary" id="btn-search" onclick="startSearch()">
       🔍 Search Brackets
     </button>
@@ -475,6 +477,9 @@ function selectTournament(id, el) {
   el.classList.add('selected');
   selectedTournament = allTournaments.find(t => t.id === id);
   document.getElementById('school-tourney-name').textContent = selectedTournament.name;
+  document.getElementById('school-preview').innerHTML = '';
+  document.getElementById('school-input').value = '';
+  clearTimeout(_schoolTimer);
   showScreen('screen-school');
   checkCacheStatus(id);
 }
@@ -531,8 +536,38 @@ async function rebuildCache(tournamentId) {
   }
 }
 
+// ─── School auto-filter ────────────────────────────────────────────────────
+let _schoolTimer = null;
+
+function onSchoolInput() {
+  clearTimeout(_schoolTimer);
+  const val = document.getElementById('school-input').value.trim();
+  const preview = document.getElementById('school-preview');
+
+  if (val.length < 2) { preview.innerHTML = ''; return; }
+
+  // Only auto-filter if we have a cached roster (instant)
+  const local = selectedTournament ? getCachedRoster(selectedTournament.id) : null;
+  if (!local) {
+    preview.innerHTML = '<span style="color:var(--muted);font-size:0.78rem">Press Search to scan brackets</span>';
+    return;
+  }
+
+  // Show live count immediately
+  const matches = filterRosterLocally(local.athletes || [], val);
+  if (!matches.length) {
+    preview.innerHTML = `<span style="color:var(--muted)">No athletes found for "${val}"</span>`;
+    return;
+  }
+  preview.innerHTML = `<span style="color:var(--green)">⚡ ${matches.length} athlete${matches.length>1?'s':''} found</span>`;
+
+  // Auto-navigate after 600 ms of no further typing
+  _schoolTimer = setTimeout(startSearch, 600);
+}
+
 // ─── Search ────────────────────────────────────────────────────────────────
 async function startSearch() {
+  clearTimeout(_schoolTimer);
   const school = document.getElementById('school-input').value.trim();
   if (!school) { showToast('Enter a school name'); return; }
   if (!selectedTournament) { showScreen('screen-tournament'); return; }
