@@ -31,34 +31,51 @@ BASE    = "https://www.bjjcompsystem.com"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 
+_BLOCK_RE = re.compile(r"id=['\"]tournament-display-(\d+)['\"]", re.DOTALL)
+_IMG_ALT  = re.compile(r'alt=["\']([^"\']+)["\']')
+_CAT_HREF = re.compile(r'/tournaments/(\d+)/categories/(\d+)["\']')
+
 def get_tournaments():
-    """Fetch all currently listed tournaments from bjjcompsystem.com."""
+    """Fetch all currently listed tournaments from bjjcompsystem.com (regex, no BS4)."""
     resp = requests.get(f"{BASE}/tournaments", headers=HEADERS, timeout=12)
     resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "lxml")
+    html   = resp.text
     result = []
-    for block in soup.find_all("div", id=re.compile(r"^tournament-display-\d+$")):
-        tid  = re.search(r"tournament-display-(\d+)$", block["id"]).group(1)
-        img  = block.find("img", alt=True)
-        name = img["alt"] if img else f"Tournament {tid}"
+    seen   = set()
+    positions = [(m.start(), m.group(1)) for m in _BLOCK_RE.finditer(html)]
+    for i, (pos, tid) in enumerate(positions):
+        if tid in seen:
+            continue
+        seen.add(tid)
+        end   = positions[i + 1][0] if i + 1 < len(positions) else pos + 2000
+        block = html[pos:end]
+        img_m = _IMG_ALT.search(block)
+        name  = img_m.group(1) if img_m else f"Tournament {tid}"
         result.append({"id": tid, "name": name})
     return result
 
 
 def get_category_ids(tournament_id):
-    """Return list of {id, name} for all bracket categories in a tournament."""
+    """Return list of {id, name} for all bracket categories (regex, no BS4)."""
     resp = requests.get(f"{BASE}/tournaments/{tournament_id}/categories",
                         headers=HEADERS, timeout=12)
     resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "lxml")
     seen, cats = set(), []
-    pat = re.compile(rf"/tournaments/{tournament_id}/categories/(\d+)")
-    for a in soup.find_all("a", href=pat):
-        cid  = pat.search(a["href"]).group(1)
-        name = a.get_text(strip=True)
-        if cid not in seen:
-            seen.add(cid)
-            cats.append({"id": cid, "name": name})
+    for m in _CAT_HREF.finditer(resp.text):
+        if m.group(1) != str(tournament_id):
+            continue
+        cid = m.group(2)
+        if cid in seen:
+            continue
+        seen.add(cid)
+        # extract name from surrounding markup via BS4 — small targeted parse
+        start = max(0, m.start() - 20)
+        end   = min(len(resp.text), m.end() + 400)
+        chunk = resp.text[start:end]
+        soup  = BeautifulSoup(chunk, "html.parser")
+        a_tag = soup.find("a")
+        name  = a_tag.get_text(" ", strip=True) if a_tag else cid
+        cats.append({"id": cid, "name": name})
     return cats
 
 
