@@ -35,8 +35,9 @@ def _fight_is_upcoming(fight):
     return fight_date >= today
 
 BASE = "https://www.bjjcompsystem.com"
-STATE_DIR = Path(__file__).parent / "bracket_states"
-STATE_DIR.mkdir(exist_ok=True)
+_instance = Path(__file__).parent / "instance"
+STATE_DIR = (_instance / "bracket_states") if _instance.exists() else (Path(__file__).parent / "bracket_states")
+STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ── Page parser ───────────────────────────────────────────────────────────────

@@ -8,13 +8,17 @@ import re
 import time
 import asyncio
 import json
+import os
 import requests
 from bs4 import BeautifulSoup
 from pathlib import Path
 from datetime import datetime
 
-ROSTER_DIR = Path(__file__).parent / "bracket_states"
-ROSTER_DIR.mkdir(exist_ok=True)
+# On Render the persistent disk is mounted at instance/ — store data there
+# so caches survive redeploys. Falls back to local bracket_states/ otherwise.
+_instance = Path(__file__).parent / "instance"
+ROSTER_DIR = (_instance / "bracket_states") if _instance.exists() else (Path(__file__).parent / "bracket_states")
+ROSTER_DIR.mkdir(parents=True, exist_ok=True)
 
 BASE = "https://www.bjjcompsystem.com"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
