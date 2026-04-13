@@ -298,9 +298,18 @@ def redeem_access_code(code: str, user_id: str) -> bool:
 
         now = datetime.now(timezone.utc).isoformat()
 
-        client.table("access_codes").update(
-            {"redeemed_by": user_id, "redeemed_at": now}
-        ).eq("id", data["id"]).execute()
+        # Conditional update: only succeeds if redeemed_by is still NULL.
+        # This prevents a race where two requests both pass the check above.
+        result = (
+            client.table("access_codes")
+            .update({"redeemed_by": user_id, "redeemed_at": now})
+            .eq("id", data["id"])
+            .is_("redeemed_by", "null")
+            .execute()
+        )
+
+        if not (result.data):
+            return False  # another request got there first
 
         _update_user(user_id, {"plan": "individual", "sub_status": "active"})
         return True
