@@ -398,6 +398,14 @@
     .pill-plan.free { background:var(--muted); }
     .code-input { width:100%;padding:14px;border-radius:12px;background:var(--gray);border:1px solid var(--border);color:var(--text);font-size:1.1rem;letter-spacing:3px;text-transform:uppercase;text-align:center;margin-bottom:12px; }
     .code-input:focus { outline:none;border-color:var(--red); }
+    .code-row { display:flex;align-items:center;gap:10px;background:var(--gray);border-radius:10px;padding:10px 14px; }
+    .code-row .code-val { flex:1;font-family:monospace;font-size:1rem;letter-spacing:2px;font-weight:600; }
+    .code-row .code-status { font-size:0.72rem;padding:2px 8px;border-radius:8px;font-weight:600;white-space:nowrap; }
+    .code-row .code-status.available { background:rgba(39,174,96,0.2);color:#27ae60; }
+    .code-row .code-status.redeemed { background:var(--border);color:var(--muted); }
+    .code-row .code-redeemed-by { font-size:0.72rem;color:var(--muted);flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .btn-copy { background:none;border:none;cursor:pointer;font-size:1rem;opacity:0.6;padding:2px 4px; }
+    .btn-copy:hover { opacity:1; }
 
     /* ── Language picker ── */
     .lang-picker { position:relative; margin-left:auto; }
@@ -673,11 +681,24 @@
       <button class="btn-modal-close" onclick="closeModal('modal-account')">✕</button>
       <div class="modal-title" id="account-email" style="font-size:0.95rem;font-weight:600;margin-bottom:4px"></div>
       <div id="account-plan-label" style="color:var(--muted);font-size:0.82rem;margin-bottom:20px"></div>
-      <button class="btn btn-primary" style="width:100%;margin-bottom:10px" id="account-upgrade-btn" onclick="showModal('modal-paywall');closeModal('modal-account')" style="display:none">Upgrade Plan</button>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:10px" id="account-upgrade-btn" onclick="showModal('modal-paywall');closeModal('modal-account')">Upgrade Plan</button>
+      <button class="btn" style="width:100%;margin-bottom:10px;background:var(--gray)" id="account-codes-btn" onclick="openCodesModal()">Manage Team Codes</button>
       <button class="btn" style="width:100%;margin-bottom:10px;background:var(--gray)" id="account-billing-btn" onclick="openBillingPortal()">Manage Billing</button>
       <button class="btn" style="width:100%;background:var(--gray);color:#e74c3c" onclick="signOut()">Sign Out</button>
     </div>
   </div>
+
+<!-- Manage Team Codes Modal -->
+<div class="modal-overlay" id="modal-codes">
+  <div class="modal-sheet">
+    <button class="btn-modal-close" onclick="closeModal('modal-codes')">✕</button>
+    <div class="modal-title">Team Access Codes</div>
+    <div id="codes-school" style="color:var(--muted);font-size:0.82rem;margin-bottom:16px"></div>
+    <div id="codes-loading" style="text-align:center;color:var(--muted);font-size:0.85rem;padding:20px 0">Loading codes…</div>
+    <div id="codes-empty" style="display:none;text-align:center;color:var(--muted);font-size:0.85rem;padding:20px 0">No codes found. Contact support if you believe this is an error.</div>
+    <div id="codes-list" style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
 
 <div id="toast"></div>
 
@@ -1689,6 +1710,8 @@ function updateAuthUI() {
     if (pl) pl.textContent = paid ? `Plan: ${_userPlan} (active)` : 'Plan: Free (1 athlete)';
     if (ub) ub.style.display = paid ? 'none' : 'block';
     if (bb) bb.style.display = paid ? 'block' : 'none';
+    const cb = document.getElementById('account-codes-btn');
+    if (cb) cb.style.display = (_userPlan === 'gym' || _userPlan === 'affiliate') ? 'block' : 'none';
 
     // Hide sign-in button in paywall if already signed in
     const pas = document.getElementById('paywall-auth-section');
@@ -1698,6 +1721,61 @@ function updateAuthUI() {
   } else {
     pill.style.display = 'none';
   }
+}
+
+async function openCodesModal() {
+  closeModal('modal-account');
+  showModal('modal-codes');
+  const loading = document.getElementById('codes-loading');
+  const empty   = document.getElementById('codes-empty');
+  const list    = document.getElementById('codes-list');
+  const school  = document.getElementById('codes-school');
+  loading.style.display = 'block';
+  empty.style.display   = 'none';
+  list.innerHTML        = '';
+  school.textContent    = '';
+  try {
+    const r = await fetch('/api/gym/codes', {
+      headers: { 'Authorization': `Bearer ${_session?.access_token}` }
+    });
+    const packs = await r.json();
+    loading.style.display = 'none';
+    if (!packs.length) { empty.style.display = 'block'; return; }
+    for (const pack of packs) {
+      school.textContent = pack.school_name || '';
+      const used  = (pack.codes || []).filter(c => c.redeemed_by).length;
+      const total = (pack.codes || []).length;
+      const summary = document.createElement('div');
+      summary.style.cssText = 'font-size:0.78rem;color:var(--muted);margin-bottom:8px';
+      summary.textContent = `${used} of ${total} codes used`;
+      list.appendChild(summary);
+      for (const c of (pack.codes || [])) {
+        const redeemed = !!c.redeemed_by;
+        const row = document.createElement('div');
+        row.className = 'code-row';
+        row.innerHTML = `
+          <span class="code-val">${c.code}</span>
+          <span class="code-status ${redeemed ? 'redeemed' : 'available'}">${redeemed ? 'Used' : 'Available'}</span>
+          ${redeemed
+            ? `<span class="code-redeemed-by">${c.redeemed_by}</span>`
+            : `<button class="btn-copy" title="Copy code" onclick="copyCode('${c.code}',this)">📋</button>`
+          }
+        `;
+        list.appendChild(row);
+      }
+    }
+  } catch(e) {
+    loading.style.display = 'none';
+    empty.style.display = 'block';
+    empty.textContent = 'Failed to load codes. Try again.';
+  }
+}
+
+function copyCode(code, btn) {
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = '✓';
+    setTimeout(() => btn.textContent = '📋', 1500);
+  });
 }
 
 async function signInWithGoogle() {
