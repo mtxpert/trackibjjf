@@ -721,6 +721,12 @@ def api_refresh():
             results_final = state.get("results_final", False)
             placement     = _get_placement(name_lower, state)
 
+            # Always clear stale fight info first; re-populate only if upcoming fight found
+            a.pop("fight_time",     None)
+            a.pop("fight_time_utc", None)
+            a.pop("mat",            None)
+            a.pop("fight_num",      None)
+
             # Only show fight info for upcoming fights (today/future, not completed)
             if not results_final:
                 for fight in state.get("fights", []):
@@ -728,10 +734,10 @@ def api_refresh():
                         continue
                     for comp in fight.get("competitors", []):
                         if name_lower in comp["name"].lower():
-                            a["mat"]           = fight["mat"]
-                            a["fight_time"]    = fight["time"]
+                            a["mat"]            = fight["mat"]
+                            a["fight_time"]     = fight["time"]
                             a["fight_time_utc"] = _fight_time_to_utc(fight["time"], tz_name)
-                            a["fight_num"]     = fight["fight_num"]
+                            a["fight_num"]      = fight["fight_num"]
                             break
                     else:
                         continue
