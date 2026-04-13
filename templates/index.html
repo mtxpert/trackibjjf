@@ -1113,10 +1113,10 @@ async function _setupNagaSchoolScreen() {
   const input = document.getElementById('school-input');
   if (input) { input.placeholder = 'Filter schools…'; input.value = ''; }
   if (el)    el.textContent = 'Loading schools…';
-  if (list)  list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:0.85rem"><div class="spinner" style="margin:0 auto 8px"></div>Loading schools…</div>';
+  if (list)  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading…</div>';
   document.getElementById('mode-team').style.display    = 'none';
   document.getElementById('mode-athlete').style.display = 'none';
-  document.getElementById('naga-search-btn').style.display = 'block';
+  document.getElementById('naga-search-btn').style.display = 'none';
 
   try {
     const r = await fetch(`/api/naga-clubs/${selectedTournament.id}`);
@@ -1125,7 +1125,13 @@ async function _setupNagaSchoolScreen() {
     _nagaClubs = [];
   }
 
-  if (el) el.textContent = _nagaClubs.length ? `${_nagaClubs.length} schools — tap to select` : 'Type your academy name and tap Search';
+  if (_nagaClubs.length) {
+    if (el) el.textContent = '';
+    document.getElementById('naga-search-btn').style.display = 'none';
+  } else {
+    if (el) el.textContent = 'Type your school name and tap Search';
+    document.getElementById('naga-search-btn').style.display = 'block';
+  }
   _renderNagaClubList('');
 }
 
@@ -1133,16 +1139,22 @@ function _renderNagaClubList(filter) {
   const list = document.getElementById('item-list');
   if (!_nagaClubs.length) { list.innerHTML = ''; return; }
   const q = filter.toLowerCase().trim();
-  const filtered = q ? _nagaClubs.filter(n => n.toLowerCase().includes(q)) : _nagaClubs;
-  if (!filtered.length) { list.innerHTML = '<div style="padding:12px;text-align:center;color:var(--muted);font-size:0.85rem">No matching schools</div>'; return; }
+  let filtered = q ? _nagaClubs.filter(n => n.toLowerCase().includes(q)) : _nagaClubs;
+  // Sort: starts-with first
+  if (q) filtered.sort((a,b) => {
+    const aS = a.toLowerCase().startsWith(q) ? 0 : 1;
+    const bS = b.toLowerCase().startsWith(q) ? 0 : 1;
+    return aS - bS;
+  });
+  if (!filtered.length) { list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No matches</div>'; return; }
   list.innerHTML = filtered.map(name => `
-    <div class="team-item" data-club="${esc(name)}" onclick="_selectNagaClub(this)" style="cursor:pointer">
-      <span class="team-name">${esc(name)}</span>
+    <div class="list-item" data-name="${name.replace(/"/g,'&quot;')}" onclick="_selectNagaClub(this)">
+      <span class="list-item-name">${_highlight(name, filter)}</span>
     </div>`).join('');
 }
 
 function _selectNagaClub(el) {
-  const name = el.getAttribute('data-club');
+  const name = el.getAttribute('data-name');
   document.getElementById('school-input').value = name;
   nagaSearch();
 }
