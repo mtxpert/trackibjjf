@@ -173,6 +173,42 @@
     .list-item-name mark { background: none; color: var(--red); font-weight: 800; }
     .list-item-meta { font-size: 0.75rem; color: var(--muted); flex-shrink: 0; margin-left: 10px; text-align: right; }
     .list-item--added { opacity: 0.5; }
+    /* Athlete-mode pick rows (same style as screen-pick) */
+    .ath-pick-row {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 13px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color 0.15s, background 0.15s;
+      margin-bottom: 6px;
+    }
+    .ath-pick-row.selected {
+      border-color: var(--red);
+      background: rgba(192,57,43,0.1);
+    }
+    .ath-pick-check {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid var(--muted);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: 0.75rem;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .ath-pick-row.selected .ath-pick-check {
+      background: var(--red); border-color: var(--red); color: white;
+      box-shadow: 0 0 0 3px rgba(192,57,43,0.25);
+    }
+    #ath-watch-top, #ath-watch-bottom {
+      display: none;
+      width: 100%; padding: 13px; border-radius: 12px;
+      background: var(--red); color: white; border: none;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+    }
+    #ath-watch-top { margin-bottom: 10px; }
+    #ath-watch-bottom { margin-top: 10px; }
 
     .btn-primary {
       width: 100%; padding: 15px; border-radius: 12px;
@@ -596,8 +632,9 @@
         oninput="onSchoolInput()">
     </div>
     <div id="cache-status" style="margin:0 0 8px;font-size:0.78rem;color:var(--muted);min-height:18px"></div>
+    <button id="ath-watch-top" onclick="startAthleteQueueSearch()"></button>
     <div id="item-list"></div>
-    <div id="athlete-queue"></div>
+    <button id="ath-watch-bottom" onclick="startAthleteQueueSearch()"></button>
     <div style="margin-top: 12px; text-align: center;">
       <button onclick="showScreen('screen-tournament')" style="background:none;border:none;color:var(--muted);font-size:0.82rem;cursor:pointer">
         ← Change Tournament
@@ -794,8 +831,7 @@ let _athleteSugg      = [];       // [{name, team}]
 function setSearchMode(mode) {
   _searchMode   = mode;
   _athleteQueue = [];
-  const bEl = document.getElementById('athlete-watch-btn');
-  if (bEl) bEl.style.display = 'none';
+  _updateAthWatchBtns();
   document.getElementById('mode-team').classList.toggle('mode-btn--active', mode === 'team');
   document.getElementById('mode-athlete').classList.toggle('mode-btn--active', mode === 'athlete');
   const inp = document.getElementById('school-input');
@@ -1086,11 +1122,16 @@ function renderItemList(query) {
         metaHtml = `<span class="list-item-meta">${a.team || ''}</span>`;
       }
       const inQueue = _athleteQueue.some(q => q.name.toLowerCase() === a.name.toLowerCase());
-      return `<div class="list-item${inQueue?' list-item--added':''}" data-name="${a.name.replace(/"/g,'&quot;')}" onclick="selectSchool(this)">
-        <span class="list-item-name">${_highlight(a.name, query)}</span>
+      return `<div class="ath-pick-row${inQueue?' selected':''}" data-name="${a.name.replace(/"/g,'&quot;')}" onclick="selectSchool(this)">
+        <div class="ath-pick-check">${inQueue?'✓':''}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:0.93rem;font-weight:700">${_highlight(a.name, query)}</div>
+          <div style="font-size:0.75rem;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.team||'')}</div>
+        </div>
         ${metaHtml}
       </div>`;
     }).join('');
+    _updateAthWatchBtns();
   }
 }
 
@@ -1109,73 +1150,29 @@ function selectSchool(el) {
 // ─── Athlete-mode list (build up before watching) ─────────────────────────
 let _athleteQueue = [];   // [{name, team}] accumulated in athlete mode
 
-async function addAthleteToList(name) {
-  if (!checkAthleteLimit(_athleteQueue.length)) return;
-  const existing = _athleteQueue.find(a => a.name.toLowerCase() === name.toLowerCase());
-  if (existing) { showToast(`${name} already added`); return; }
-  const meta = Object.assign({}, _athleteSugg.find(a => a.name.toLowerCase() === name.toLowerCase()) || {name, team:''});
-  meta._loading = true;
-  _athleteQueue.push(meta);
-  document.getElementById('school-input').value = '';
-  renderAthleteQueue();
-  // Fetch bracket data in background
-  try {
-    const r = await fetch('/api/search', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ tournament_id: selectedTournament.id, school_name: name })
-    });
-    const d = await r.json();
-    const jid = d.job_id;
-    if (jid) {
-      const jr = await fetch(`/api/search/${encodeURIComponent(jid)}`);
-      const jd = await jr.json();
-      const match = (jd.athletes || []).find(a => a.name.toLowerCase() === name.toLowerCase());
-      if (match) Object.assign(meta, match);
-    }
-  } catch(e) {}
-  meta._loading = false;
-  renderAthleteQueue();
-}
-
-function removeAthleteFromQueue(idx) {
-  _athleteQueue.splice(idx, 1);
-  renderAthleteQueue();
-}
-
-function renderAthleteQueue() {
-  const el = document.getElementById('athlete-queue');
-  if (!el) return;
-  if (!_athleteQueue.length) {
-    el.innerHTML = '';
-    const btn = document.getElementById('athlete-watch-btn');
-    if (btn) btn.style.display = 'none';
-    renderItemList(document.getElementById('school-input').value.trim());
-    return;
+function addAthleteToList(name) {
+  const idx = _athleteQueue.findIndex(a => a.name.toLowerCase() === name.toLowerCase());
+  if (idx !== -1) {
+    // Deselect
+    _athleteQueue.splice(idx, 1);
+  } else {
+    if (!checkAthleteLimit(_athleteQueue.length)) return;
+    const meta = Object.assign({}, _athleteSugg.find(a => a.name.toLowerCase() === name.toLowerCase()) || {name, team:''});
+    _athleteQueue.push(meta);
   }
-  el.innerHTML = _athleteQueue.map((a, i) => `
-    <div style="display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:6px;">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:0.9rem;font-weight:600">${esc(a.name)}</div>
-        ${a.team ? `<div style="font-size:0.73rem;color:var(--muted)">${esc(a.team)}</div>` : ''}
-      </div>
-      ${a._loading ? '<div style="font-size:0.75rem;color:var(--muted)">…</div>' : _pickStatusBadge(a)}
-      <button onclick="removeAthleteFromQueue(${i})" style="background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:2px 4px">✕</button>
-    </div>`).join('');
-
-  let btn = document.getElementById('athlete-watch-btn');
-  if (!btn) {
-    btn = document.createElement('button');
-    btn.id = 'athlete-watch-btn';
-    btn.className = 'btn-primary';
-    btn.style.marginTop = '10px';
-    btn.onclick = startAthleteQueueSearch;
-    el.after(btn);
-  }
-  btn.textContent = `Watch ${_athleteQueue.length} Athlete${_athleteQueue.length > 1 ? 's' : ''} →`;
-  btn.style.display = '';
-
-  // Re-render list to reflect added state
   renderItemList(document.getElementById('school-input').value.trim());
+  _updateAthWatchBtns();
+}
+
+function _updateAthWatchBtns() {
+  const n = _athleteQueue.length;
+  const label = n ? `Watch ${n} Athlete${n>1?'s':''} →` : '';
+  ['ath-watch-top','ath-watch-bottom'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.textContent = label;
+    btn.style.display = n ? 'block' : 'none';
+  });
 }
 
 async function startAthleteQueueSearch() {
@@ -1203,10 +1200,7 @@ async function startAthleteQueueSearch() {
   allAthletes  = results;
   selectedKeys = new Set(_athleteQueue.map(a => a.name.toLowerCase()));
   _athleteQueue = [];
-  const qEl = document.getElementById('athlete-queue');
-  const bEl = document.getElementById('athlete-watch-btn');
-  if (qEl) qEl.innerHTML = '';
-  if (bEl) bEl.style.display = 'none';
+  _updateAthWatchBtns();
   goWatch();
 }
 
