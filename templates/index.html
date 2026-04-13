@@ -398,6 +398,31 @@
     .pill-plan.free { background:var(--muted); }
     .code-input { width:100%;padding:14px;border-radius:12px;background:var(--gray);border:1px solid var(--border);color:var(--text);font-size:1.1rem;letter-spacing:3px;text-transform:uppercase;text-align:center;margin-bottom:12px; }
     .code-input:focus { outline:none;border-color:var(--red); }
+
+    /* ── Language picker ── */
+    .lang-picker { position:relative; margin-left:auto; }
+    .lang-btn {
+      background: rgba(255,255,255,0.18); border: none; border-radius: 20px;
+      padding: 5px 10px; font-size: 1rem; cursor: pointer; color: white;
+      display: flex; align-items: center; gap: 4px; white-space: nowrap;
+    }
+    .lang-btn span { font-size: 0.7rem; opacity: 0.85; }
+    .lang-dropdown {
+      display: none; position: absolute; right: 0; top: calc(100% + 6px);
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      overflow: hidden; z-index: 200; min-width: 160px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .lang-dropdown.open { display: block; }
+    .lang-option {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 16px; cursor: pointer; font-size: 0.88rem;
+      border-bottom: 1px solid var(--border); transition: background 0.1s;
+    }
+    .lang-option:last-child { border-bottom: none; }
+    .lang-option:active, .lang-option:hover { background: var(--gray); }
+    .lang-option.active { color: var(--red); font-weight: 700; }
+    .lang-option .lang-flag { font-size: 1.2rem; }
   </style>
 </head>
 <body>
@@ -406,12 +431,16 @@
   <span style="font-size:1.8rem">🥋</span>
   <div>
     <h1 id="header-title">MatTrack</h1>
-    <div class="header-sub" id="header-sub">Live Tournament Tracker</div>
+    <div class="header-sub" id="header-sub" data-i18n="nav_subtitle">Live Tournament Tracker</div>
   </div>
-      <div id="user-pill" class="user-pill" style="display:none" onclick="showModal('modal-account')">
-        <span id="pill-label">Free</span>
-        <span class="pill-plan free" id="pill-plan-badge">FREE</span>
-      </div>
+  <div id="user-pill" class="user-pill" style="display:none" onclick="event.stopPropagation();showModal('modal-account')">
+    <span id="pill-label">Free</span>
+    <span class="pill-plan free" id="pill-plan-badge">FREE</span>
+  </div>
+  <div class="lang-picker" onclick="event.stopPropagation()">
+    <button class="lang-btn" onclick="toggleLangDropdown()" id="lang-btn">🌐 <span id="lang-current">EN</span></button>
+    <div class="lang-dropdown" id="lang-dropdown"></div>
+  </div>
 </div>
 
 <!-- ── Screen 0: Landing ── -->
@@ -420,54 +449,54 @@
   <div class="landing-hero">
     <div class="landing-logo">🥋</div>
     <h1 class="landing-title">MatTrack</h1>
-    <p class="landing-sub">Live bracket tracking for BJJ tournaments. Know the moment your athlete steps on the mat.</p>
-    <button class="landing-cta" onclick="startApp()">Start Tracking Free</button>
-    <div class="landing-cta-sub">No account required to try · 1 athlete free</div>
+    <p class="landing-sub" id="landing-sub">Live bracket tracking for BJJ tournaments. Know the moment your athlete steps on the mat.</p>
+    <button class="landing-cta" id="landing-cta-btn" onclick="startApp()">Start Tracking Free</button>
+    <div class="landing-cta-sub" id="landing-cta-sub">No account required to try · 1 athlete free</div>
   </div>
 
   <div class="landing-section">
-    <div class="landing-section-title">How it works</div>
+    <div class="landing-section-title" id="how-title">How it works</div>
     <div class="how-steps">
       <div class="how-step">
         <div class="how-step-num">1</div>
         <div class="how-step-text">
-          <h3>Pick your tournament</h3>
-          <p>Select from all upcoming and live BJJ competitions.</p>
+          <h3 id="step1-title">Pick your tournament</h3>
+          <p id="step1-desc">Select from all upcoming and live BJJ competitions.</p>
         </div>
       </div>
       <div class="how-step">
         <div class="how-step-num">2</div>
         <div class="how-step-text">
-          <h3>Search your team or athlete</h3>
-          <p>Type your school name or search any athlete by name.</p>
+          <h3 id="step2-title">Search your team or athlete</h3>
+          <p id="step2-desc">Type your school name or search any athlete by name.</p>
         </div>
       </div>
       <div class="how-step">
         <div class="how-step-num">3</div>
         <div class="how-step-text">
-          <h3>Watch live</h3>
-          <p>Get real-time mat assignments, fight times, and results as they happen.</p>
+          <h3 id="step3-title">Watch live</h3>
+          <p id="step3-desc">Get real-time mat assignments, fight times, and results as they happen.</p>
         </div>
       </div>
     </div>
   </div>
 
   <div class="landing-section">
-    <div class="landing-section-title">Plans</div>
+    <div class="landing-section-title" id="plans-title">Plans</div>
     <div class="pricing-cards">
 
       <div class="pricing-card">
         <div class="pricing-card-header">
-          <div class="pricing-name">Free</div>
+          <div class="pricing-name" id="plan-name-free">Free</div>
           <div class="pricing-amount"><strong>$0</strong></div>
         </div>
         <div class="pricing-features">✓ Track 1 athlete<br>✓ All tournaments<br>✓ Live updates</div>
       </div>
 
       <div class="pricing-card featured" onclick="landingCheckout('individual')" style="cursor:pointer">
-        <div class="pricing-badge">Most Popular</div>
+        <div class="pricing-badge" id="plan-badge-popular">Most Popular</div>
         <div class="pricing-card-header">
-          <div class="pricing-name">Individual Coach</div>
+          <div class="pricing-name" id="plan-name-individual">Individual Coach</div>
           <div class="pricing-amount"><strong>$2.99</strong><span>/mo</span></div>
         </div>
         <div class="pricing-features">✓ Unlimited athletes<br>✓ All tournaments<br>✓ Live bracket updates</div>
@@ -475,7 +504,7 @@
 
       <div class="pricing-card" onclick="landingCheckout('gym')" style="cursor:pointer">
         <div class="pricing-card-header">
-          <div class="pricing-name">Gym Pack</div>
+          <div class="pricing-name" id="plan-name-gym">Gym Pack</div>
           <div class="pricing-amount"><strong>$19.99</strong><span>/mo</span></div>
         </div>
         <div class="pricing-features">✓ 10 coach accounts<br>✓ Unlimited athletes each<br>✓ Access codes for your team</div>
@@ -483,14 +512,14 @@
 
       <div class="pricing-card" onclick="landingCheckout('affiliate')" style="cursor:pointer">
         <div class="pricing-card-header">
-          <div class="pricing-name">Affiliate Pack</div>
+          <div class="pricing-name" id="plan-name-affiliate">Affiliate Pack</div>
           <div class="pricing-amount"><strong>$49.99</strong><span>/mo</span></div>
         </div>
         <div class="pricing-features">✓ 30 coach accounts<br>✓ Unlimited athletes each<br>✓ Branded for your school</div>
       </div>
 
     </div>
-    <div class="pricing-free-note">All plans include a free trial · Cancel anytime</div>
+    <div class="pricing-free-note" id="pricing-free-note">All plans include a free trial · Cancel anytime</div>
   </div>
 
   <div class="landing-footer">
@@ -502,10 +531,10 @@
 <!-- ── Screen 1: Pick Tournament ── -->
 <div class="screen active" id="screen-tournament">
   <div class="setup-wrap">
-    <div class="setup-title">Select Tournament</div>
+    <div class="setup-title" data-i18n="select_tournament">Select Tournament</div>
     <div id="tourney-loading" class="state-msg">
       <div class="spinner"></div>
-      Loading tournaments...
+      <span data-i18n="loading_tournaments">Loading tournaments...</span>
     </div>
     <div id="tourney-list" class="tourney-list" style="display:none"></div>
   </div>
@@ -515,8 +544,8 @@
 <div class="screen" id="screen-school">
   <div class="setup-wrap">
     <div style="display:flex;gap:8px;margin-bottom:10px;">
-      <button id="mode-team" class="mode-btn mode-btn--active" onclick="setSearchMode('team')">Team</button>
-      <button id="mode-athlete" class="mode-btn" onclick="setSearchMode('athlete')">Athlete</button>
+      <button id="mode-team" class="mode-btn mode-btn--active" onclick="setSearchMode('team')" data-i18n="mode_team">Team</button>
+      <button id="mode-athlete" class="mode-btn" onclick="setSearchMode('athlete')" data-i18n="mode_athlete">Athlete</button>
     </div>
     <div style="font-size:0.75rem;color:var(--muted);margin-bottom:8px" id="school-tourney-name"></div>
     <div class="school-input-wrap">
@@ -1764,6 +1793,378 @@ function closeModal(id) {
 
 // Call initAuth on load
 document.addEventListener('DOMContentLoaded', () => { initAuth(); });
+
+// ─── Internationalization ──────────────────────────────────────────────────
+const LANGUAGES = [
+  { code:'en', flag:'🇺🇸', name:'English' },
+  { code:'es', flag:'🇪🇸', name:'Español' },
+  { code:'pt', flag:'🇧🇷', name:'Português' },
+  { code:'fr', flag:'🇫🇷', name:'Français' },
+  { code:'de', flag:'🇩🇪', name:'Deutsch' },
+  { code:'it', flag:'🇮🇹', name:'Italiano' },
+  { code:'nl', flag:'🇳🇱', name:'Nederlands' },
+  { code:'pl', flag:'🇵🇱', name:'Polski' },
+  { code:'ru', flag:'🇷🇺', name:'Русский' },
+  { code:'ar', flag:'🇸🇦', name:'العربية' },
+  { code:'ja', flag:'🇯🇵', name:'日本語' },
+  { code:'ko', flag:'🇰🇷', name:'한국어' },
+  { code:'zh', flag:'🇨🇳', name:'中文' },
+];
+
+const TRANSLATIONS = {
+  en: {
+    nav_subtitle:'Live Tournament Tracker', select_tournament:'Select Tournament',
+    loading_tournaments:'Loading tournaments...', mode_team:'Team', mode_athlete:'Athlete',
+    filter_teams:'Filter teams…', filter_athletes:'Filter athletes…',
+    change_tournament:'← Change Tournament', tap_to_select:'Tap athletes to watch',
+    filter_name:'Filter by name...', select_all:'Select All', deselect_all:'Deselect All',
+    back:'← Back', search:'Search...', refresh:'⟳ Refresh', edit:'← Edit',
+    watch_n:'Watch {n} Athlete →', watch_n_pl:'Watch {n} Athletes →',
+    select_to_watch:'Select athletes to watch',
+    n_selected:'{n} selected', n_athletes:'{n} athletes — tap to select',
+    building_roster:'Building roster… try again shortly',
+    eliminated:'Eliminated', searching:'Searching brackets...',
+    landing_tagline:'Live bracket tracking for BJJ tournaments. Know the moment your athlete steps on the mat.',
+    landing_cta:'Start Tracking Free', landing_cta_sub:'No account required to try · 1 athlete free',
+    how_title:'How it works',
+    step1_title:'Pick your tournament', step1_desc:'Select from all upcoming and live BJJ competitions.',
+    step2_title:'Search your team or athlete', step2_desc:'Type your school name or search any athlete by name.',
+    step3_title:'Watch live', step3_desc:'Get real-time mat assignments, fight times, and results as they happen.',
+    plans_title:'Plans', free_plan:'Free', free_tagline:'No account required to try',
+    plan_individual:'Individual Coach', plan_gym:'Gym Pack', plan_affiliate:'Affiliate Pack',
+    most_popular:'Most Popular', cancel_anytime:'All plans include a free trial · Cancel anytime',
+  },
+  es: {
+    nav_subtitle:'Seguimiento en Vivo', select_tournament:'Seleccionar Torneo',
+    loading_tournaments:'Cargando torneos...', mode_team:'Equipo', mode_athlete:'Atleta',
+    filter_teams:'Buscar equipo…', filter_athletes:'Buscar atleta…',
+    change_tournament:'← Cambiar Torneo', tap_to_select:'Toca los atletas para seguir',
+    filter_name:'Filtrar por nombre...', select_all:'Seleccionar Todo', deselect_all:'Deseleccionar Todo',
+    back:'← Atrás', search:'Buscar...', refresh:'⟳ Actualizar', edit:'← Editar',
+    watch_n:'Ver {n} Atleta →', watch_n_pl:'Ver {n} Atletas →',
+    select_to_watch:'Selecciona atletas para seguir',
+    n_selected:'{n} seleccionados', n_athletes:'{n} atletas — toca para seleccionar',
+    building_roster:'Construyendo lista… intenta de nuevo',
+    eliminated:'Eliminado', searching:'Buscando brackets...',
+    landing_tagline:'Seguimiento en vivo de brackets en torneos de BJJ. Sabe cuándo tu atleta sale al tatami.',
+    landing_cta:'Empezar Gratis', landing_cta_sub:'Sin cuenta requerida · 1 atleta gratis',
+    how_title:'Cómo funciona',
+    step1_title:'Elige tu torneo', step1_desc:'Selecciona entre todas las competencias de BJJ.',
+    step2_title:'Busca tu equipo o atleta', step2_desc:'Escribe el nombre de tu escuela o busca un atleta.',
+    step3_title:'Mira en vivo', step3_desc:'Obtén asignaciones de mat, tiempos de lucha y resultados en tiempo real.',
+    plans_title:'Planes', free_plan:'Gratis', free_tagline:'Sin cuenta requerida',
+    plan_individual:'Entrenador Individual', plan_gym:'Pack Gym', plan_affiliate:'Pack Afiliado',
+    most_popular:'Más Popular', cancel_anytime:'Prueba gratuita · Cancela cuando quieras',
+  },
+  pt: {
+    nav_subtitle:'Acompanhamento ao Vivo', select_tournament:'Selecionar Torneio',
+    loading_tournaments:'Carregando torneios...', mode_team:'Equipe', mode_athlete:'Atleta',
+    filter_teams:'Filtrar equipes…', filter_athletes:'Filtrar atletas…',
+    change_tournament:'← Mudar Torneio', tap_to_select:'Toque nos atletas para acompanhar',
+    filter_name:'Filtrar por nome...', select_all:'Selecionar Todos', deselect_all:'Desselecionar Todos',
+    back:'← Voltar', search:'Buscar...', refresh:'⟳ Atualizar', edit:'← Editar',
+    watch_n:'Acompanhar {n} Atleta →', watch_n_pl:'Acompanhar {n} Atletas →',
+    select_to_watch:'Selecione atletas para acompanhar',
+    n_selected:'{n} selecionados', n_athletes:'{n} atletas — toque para selecionar',
+    building_roster:'Construindo lista… tente novamente',
+    eliminated:'Eliminado', searching:'Buscando chaves...',
+    landing_tagline:'Acompanhamento ao vivo de chaves em torneios de BJJ. Saiba quando seu atleta entra no tatame.',
+    landing_cta:'Começar Grátis', landing_cta_sub:'Sem conta necessária · 1 atleta grátis',
+    how_title:'Como funciona',
+    step1_title:'Escolha o torneio', step1_desc:'Selecione entre todas as competições de BJJ.',
+    step2_title:'Busque sua equipe ou atleta', step2_desc:'Digite o nome da sua escola ou busque um atleta.',
+    step3_title:'Acompanhe ao vivo', step3_desc:'Receba atribuições de tatame, horários e resultados em tempo real.',
+    plans_title:'Planos', free_plan:'Grátis', free_tagline:'Sem conta necessária',
+    plan_individual:'Treinador Individual', plan_gym:'Pack Academia', plan_affiliate:'Pack Afiliado',
+    most_popular:'Mais Popular', cancel_anytime:'Teste grátis · Cancele quando quiser',
+  },
+  fr: {
+    nav_subtitle:'Suivi en Direct', select_tournament:'Sélectionner le Tournoi',
+    loading_tournaments:'Chargement...', mode_team:'Équipe', mode_athlete:'Athlète',
+    filter_teams:'Filtrer les équipes…', filter_athletes:'Filtrer les athlètes…',
+    change_tournament:'← Changer de Tournoi', tap_to_select:'Appuyez pour suivre',
+    filter_name:'Filtrer par nom...', select_all:'Tout sélectionner', deselect_all:'Tout désélectionner',
+    back:'← Retour', search:'Rechercher...', refresh:'⟳ Actualiser', edit:'← Modifier',
+    watch_n:'Suivre {n} Athlète →', watch_n_pl:'Suivre {n} Athlètes →',
+    select_to_watch:'Sélectionnez des athlètes',
+    n_selected:'{n} sélectionnés', n_athletes:'{n} athlètes — appuyez pour sélectionner',
+    building_roster:'Construction en cours…', eliminated:'Éliminé', searching:'Recherche...',
+    landing_tagline:'Suivi en direct des tableaux aux tournois de BJJ.',
+    landing_cta:'Commencer Gratuitement', landing_cta_sub:'Sans compte · 1 athlète gratuit',
+    how_title:'Comment ça marche',
+    step1_title:'Choisissez votre tournoi', step1_desc:'Sélectionnez parmi toutes les compétitions BJJ.',
+    step2_title:'Recherchez votre équipe', step2_desc:'Tapez le nom de votre école ou cherchez un athlète.',
+    step3_title:'Suivez en direct', step3_desc:'Obtenez les tatamis, horaires et résultats en temps réel.',
+    plans_title:'Formules', free_plan:'Gratuit', free_tagline:'Sans compte requis',
+    plan_individual:'Coach Individuel', plan_gym:'Pack Salle', plan_affiliate:'Pack Affilié',
+    most_popular:'Le Plus Populaire', cancel_anytime:'Essai gratuit · Annulez à tout moment',
+  },
+  de: {
+    nav_subtitle:'Live-Turnierverfolgung', select_tournament:'Turnier auswählen',
+    loading_tournaments:'Lade Turniere...', mode_team:'Team', mode_athlete:'Athlet',
+    filter_teams:'Teams filtern…', filter_athletes:'Athleten filtern…',
+    change_tournament:'← Turnier wechseln', tap_to_select:'Athleten antippen',
+    filter_name:'Nach Name filtern...', select_all:'Alle auswählen', deselect_all:'Alle abwählen',
+    back:'← Zurück', search:'Suchen...', refresh:'⟳ Aktualisieren', edit:'← Bearbeiten',
+    watch_n:'{n} Athlet beobachten →', watch_n_pl:'{n} Athleten beobachten →',
+    select_to_watch:'Athleten auswählen',
+    n_selected:'{n} ausgewählt', n_athletes:'{n} Athleten — antippen',
+    building_roster:'Liste wird erstellt…', eliminated:'Ausgeschieden', searching:'Suche läuft...',
+    landing_tagline:'Live-Verfolgung von BJJ-Turnier-Brackets.',
+    landing_cta:'Kostenlos starten', landing_cta_sub:'Kein Account nötig · 1 Athlet kostenlos',
+    how_title:'So funktioniert es',
+    step1_title:'Turnier wählen', step1_desc:'Wähle aus allen BJJ-Wettbewerben.',
+    step2_title:'Team suchen', step2_desc:'Tippe deinen Schulnamen oder suche einen Athleten.',
+    step3_title:'Live verfolgen', step3_desc:'Erhalte Matten, Zeiten und Ergebnisse in Echtzeit.',
+    plans_title:'Pläne', free_plan:'Kostenlos', free_tagline:'Kein Account erforderlich',
+    plan_individual:'Einzeltrainer', plan_gym:'Gym-Paket', plan_affiliate:'Affiliate-Paket',
+    most_popular:'Beliebteste', cancel_anytime:'Kostenlose Testphase · Jederzeit kündigen',
+  },
+  it: {
+    nav_subtitle:'Monitoraggio Live', select_tournament:'Seleziona Torneo',
+    loading_tournaments:'Caricamento...', mode_team:'Squadra', mode_athlete:'Atleta',
+    filter_teams:'Filtra squadre…', filter_athletes:'Filtra atleti…',
+    change_tournament:'← Cambia Torneo', tap_to_select:'Tocca per seguire',
+    filter_name:'Filtra per nome...', select_all:'Seleziona tutto', deselect_all:'Deseleziona tutto',
+    back:'← Indietro', search:'Cerca...', refresh:'⟳ Aggiorna', edit:'← Modifica',
+    watch_n:'Segui {n} Atleta →', watch_n_pl:'Segui {n} Atleti →',
+    select_to_watch:'Seleziona atleti da seguire',
+    n_selected:'{n} selezionati', n_athletes:'{n} atleti — tocca per selezionare',
+    building_roster:'Caricamento lista…', eliminated:'Eliminato', searching:'Ricerca...',
+    landing_tagline:'Monitoraggio live dei bracket nei tornei di BJJ.',
+    landing_cta:'Inizia Gratis', landing_cta_sub:'Senza account · 1 atleta gratis',
+    how_title:'Come funziona',
+    step1_title:'Scegli il torneo', step1_desc:'Seleziona tra tutte le competizioni BJJ.',
+    step2_title:'Cerca la tua squadra', step2_desc:'Digita il nome della tua scuola o cerca un atleta.',
+    step3_title:'Segui in diretta', step3_desc:'Ricevi tatami, orari e risultati in tempo reale.',
+    plans_title:'Piani', free_plan:'Gratuito', free_tagline:'Nessun account richiesto',
+    plan_individual:'Coach Individuale', plan_gym:'Pack Palestra', plan_affiliate:'Pack Affiliato',
+    most_popular:'Più Popolare', cancel_anytime:'Prova gratuita · Disdici quando vuoi',
+  },
+  nl: {
+    nav_subtitle:'Live Toernooi Tracker', select_tournament:'Selecteer Toernooi',
+    loading_tournaments:'Toernooien laden...', mode_team:'Team', mode_athlete:'Atleet',
+    filter_teams:'Teams filteren…', filter_athletes:'Atleten filteren…',
+    change_tournament:'← Toernooi wijzigen', tap_to_select:'Tik om te volgen',
+    filter_name:'Filteren op naam...', select_all:'Alles selecteren', deselect_all:'Alles deselecteren',
+    back:'← Terug', search:'Zoeken...', refresh:'⟳ Vernieuwen', edit:'← Bewerken',
+    watch_n:'{n} Atleet volgen →', watch_n_pl:'{n} Atleten volgen →',
+    select_to_watch:'Selecteer atleten om te volgen',
+    n_selected:'{n} geselecteerd', n_athletes:'{n} atleten — tik om te selecteren',
+    building_roster:'Lijst samenstellen…', eliminated:'Uitgeschakeld', searching:'Zoeken...',
+    landing_tagline:'Live bracket-tracking voor BJJ-toernooien.',
+    landing_cta:'Gratis beginnen', landing_cta_sub:'Geen account nodig · 1 atleet gratis',
+    how_title:'Hoe het werkt',
+    step1_title:'Kies je toernooi', step1_desc:'Selecteer uit alle BJJ-competities.',
+    step2_title:'Zoek je team', step2_desc:'Typ je schoolnaam of zoek een atleet.',
+    step3_title:'Volg live', step3_desc:'Ontvang mat-nummers, tijden en resultaten in realtime.',
+    plans_title:'Abonnementen', free_plan:'Gratis', free_tagline:'Geen account vereist',
+    plan_individual:'Individuele Coach', plan_gym:'Gym Pack', plan_affiliate:'Affiliate Pack',
+    most_popular:'Meest Populair', cancel_anytime:'Gratis proefperiode · Altijd opzegbaar',
+  },
+  pl: {
+    nav_subtitle:'Śledzenie Na Żywo', select_tournament:'Wybierz Turniej',
+    loading_tournaments:'Ładowanie turniejów...', mode_team:'Drużyna', mode_athlete:'Zawodnik',
+    filter_teams:'Filtruj drużyny…', filter_athletes:'Filtruj zawodników…',
+    change_tournament:'← Zmień Turniej', tap_to_select:'Dotknij zawodnika',
+    filter_name:'Filtruj po nazwie...', select_all:'Zaznacz wszystkich', deselect_all:'Odznacz wszystkich',
+    back:'← Wstecz', search:'Szukaj...', refresh:'⟳ Odśwież', edit:'← Edytuj',
+    watch_n:'Śledź {n} Zawodnika →', watch_n_pl:'Śledź {n} Zawodników →',
+    select_to_watch:'Wybierz zawodników do śledzenia',
+    n_selected:'{n} zaznaczonych', n_athletes:'{n} zawodników — dotknij aby wybrać',
+    building_roster:'Budowanie listy…', eliminated:'Wyeliminowany', searching:'Szukam...',
+    landing_tagline:'Śledzenie bracket na żywo na turniejach BJJ.',
+    landing_cta:'Zacznij Za Darmo', landing_cta_sub:'Bez konta · 1 zawodnik za darmo',
+    how_title:'Jak to działa',
+    step1_title:'Wybierz turniej', step1_desc:'Wybierz spośród wszystkich zawodów BJJ.',
+    step2_title:'Znajdź drużynę', step2_desc:'Wpisz nazwę szkoły lub wyszukaj zawodnika.',
+    step3_title:'Śledź na żywo', step3_desc:'Otrzymuj przydziały mat, czasy walk i wyniki na bieżąco.',
+    plans_title:'Plany', free_plan:'Bezpłatny', free_tagline:'Bez konta',
+    plan_individual:'Trener Indywidualny', plan_gym:'Pakiet Siłowni', plan_affiliate:'Pakiet Afiliacyjny',
+    most_popular:'Najpopularniejszy', cancel_anytime:'Bezpłatny okres próbny · Anuluj kiedy chcesz',
+  },
+  ru: {
+    nav_subtitle:'Прямая трансляция', select_tournament:'Выбрать турнир',
+    loading_tournaments:'Загрузка...', mode_team:'Команда', mode_athlete:'Спортсмен',
+    filter_teams:'Фильтр команд…', filter_athletes:'Фильтр спортсменов…',
+    change_tournament:'← Сменить турнир', tap_to_select:'Нажмите для отслеживания',
+    filter_name:'Фильтр по имени...', select_all:'Выбрать всех', deselect_all:'Снять выбор',
+    back:'← Назад', search:'Поиск...', refresh:'⟳ Обновить', edit:'← Изменить',
+    watch_n:'Следить за {n} →', watch_n_pl:'Следить за {n} →',
+    select_to_watch:'Выберите спортсменов',
+    n_selected:'Выбрано: {n}', n_athletes:'{n} спортсменов',
+    building_roster:'Загрузка списка…', eliminated:'Выбыл', searching:'Поиск...',
+    landing_tagline:'Отслеживание турнирных сеток BJJ в реальном времени.',
+    landing_cta:'Начать Бесплатно', landing_cta_sub:'Без регистрации · 1 спортсмен бесплатно',
+    how_title:'Как это работает',
+    step1_title:'Выберите турнир', step1_desc:'Выберите из всех соревнований BJJ.',
+    step2_title:'Найдите команду', step2_desc:'Введите название школы или имя спортсмена.',
+    step3_title:'Следите онлайн', step3_desc:'Получайте номера матов, расписание и результаты.',
+    plans_title:'Тарифы', free_plan:'Бесплатно', free_tagline:'Без регистрации',
+    plan_individual:'Личный тренер', plan_gym:'Пакет для зала', plan_affiliate:'Партнёрский пакет',
+    most_popular:'Самый популярный', cancel_anytime:'Пробный период · Отмена в любое время',
+  },
+  ar: {
+    nav_subtitle:'تتبع مباشر', select_tournament:'اختر البطولة',
+    loading_tournaments:'جارٍ التحميل...', mode_team:'الفريق', mode_athlete:'الرياضي',
+    filter_teams:'تصفية الفرق…', filter_athletes:'تصفية الرياضيين…',
+    change_tournament:'← تغيير البطولة', tap_to_select:'اضغط للمتابعة',
+    filter_name:'تصفية بالاسم...', select_all:'تحديد الكل', deselect_all:'إلغاء تحديد الكل',
+    back:'← رجوع', search:'بحث...', refresh:'⟳ تحديث', edit:'← تعديل',
+    watch_n:'متابعة {n} رياضي →', watch_n_pl:'متابعة {n} رياضيين →',
+    select_to_watch:'اختر الرياضيين للمتابعة',
+    n_selected:'{n} محدد', n_athletes:'{n} رياضيين',
+    building_roster:'جارٍ التحضير…', eliminated:'مُقصى', searching:'جارٍ البحث...',
+    landing_tagline:'تتبع مباشر لجداول بطولات BJJ.',
+    landing_cta:'ابدأ مجاناً', landing_cta_sub:'بدون حساب · رياضي واحد مجاناً',
+    how_title:'كيف يعمل',
+    step1_title:'اختر البطولة', step1_desc:'اختر من جميع بطولات BJJ.',
+    step2_title:'ابحث عن فريقك', step2_desc:'اكتب اسم مدرستك أو ابحث عن رياضي.',
+    step3_title:'تابع مباشرة', step3_desc:'احصل على أرقام المصارعة والأوقات والنتائج فورياً.',
+    plans_title:'الخطط', free_plan:'مجاني', free_tagline:'بدون حساب',
+    plan_individual:'مدرب فردي', plan_gym:'باقة الصالة', plan_affiliate:'باقة الانتساب',
+    most_popular:'الأكثر شيوعاً', cancel_anytime:'تجربة مجانية · إلغاء في أي وقت',
+  },
+  ja: {
+    nav_subtitle:'ライブ試合追跡', select_tournament:'大会を選択',
+    loading_tournaments:'読み込み中...', mode_team:'チーム', mode_athlete:'選手',
+    filter_teams:'チームを検索…', filter_athletes:'選手を検索…',
+    change_tournament:'← 大会変更', tap_to_select:'選手をタップして追跡',
+    filter_name:'名前で検索...', select_all:'すべて選択', deselect_all:'すべて解除',
+    back:'← 戻る', search:'検索...', refresh:'⟳ 更新', edit:'← 編集',
+    watch_n:'{n}人の選手を追跡 →', watch_n_pl:'{n}人の選手を追跡 →',
+    select_to_watch:'選手を選んでください',
+    n_selected:'{n}人選択中', n_athletes:'{n}人の選手',
+    building_roster:'名簿作成中…', eliminated:'敗退', searching:'検索中...',
+    landing_tagline:'BJJ大会のブラケットをリアルタイムで追跡。',
+    landing_cta:'無料で始める', landing_cta_sub:'アカウント不要 · 1名無料',
+    how_title:'使い方',
+    step1_title:'大会を選ぶ', step1_desc:'開催中・予定のBJJ大会から選択。',
+    step2_title:'チームまたは選手を検索', step2_desc:'道場名または選手名を入力。',
+    step3_title:'ライブで観戦', step3_desc:'マット番号、試合時間、結果をリアルタイムで確認。',
+    plans_title:'プラン', free_plan:'無料', free_tagline:'アカウント不要',
+    plan_individual:'個人コーチ', plan_gym:'道場パック', plan_affiliate:'アフィリエイトパック',
+    most_popular:'人気No.1', cancel_anytime:'無料トライアル · いつでもキャンセル可',
+  },
+  ko: {
+    nav_subtitle:'라이브 토너먼트 추적', select_tournament:'대회 선택',
+    loading_tournaments:'불러오는 중...', mode_team:'팀', mode_athlete:'선수',
+    filter_teams:'팀 검색…', filter_athletes:'선수 검색…',
+    change_tournament:'← 대회 변경', tap_to_select:'선수를 탭하세요',
+    filter_name:'이름으로 검색...', select_all:'전체 선택', deselect_all:'전체 해제',
+    back:'← 뒤로', search:'검색...', refresh:'⟳ 새로고침', edit:'← 편집',
+    watch_n:'{n}명 선수 추적 →', watch_n_pl:'{n}명 선수 추적 →',
+    select_to_watch:'추적할 선수를 선택하세요',
+    n_selected:'{n}명 선택됨', n_athletes:'{n}명 선수',
+    building_roster:'명단 작성 중…', eliminated:'탈락', searching:'검색 중...',
+    landing_tagline:'BJJ 토너먼트 브래킷 실시간 추적.',
+    landing_cta:'무료로 시작하기', landing_cta_sub:'계정 불필요 · 선수 1명 무료',
+    how_title:'사용 방법',
+    step1_title:'대회 선택', step1_desc:'모든 BJJ 대회 중에서 선택하세요.',
+    step2_title:'팀 또는 선수 검색', step2_desc:'학교 이름이나 선수 이름을 입력하세요.',
+    step3_title:'실시간 관전', step3_desc:'매트 배정, 경기 시간, 결과를 실시간으로 확인.',
+    plans_title:'요금제', free_plan:'무료', free_tagline:'계정 불필요',
+    plan_individual:'개인 코치', plan_gym:'도장 팩', plan_affiliate:'어필리에이트 팩',
+    most_popular:'가장 인기', cancel_anytime:'무료 체험 · 언제든지 취소',
+  },
+  zh: {
+    nav_subtitle:'赛事实时追踪', select_tournament:'选择赛事',
+    loading_tournaments:'加载中...', mode_team:'队伍', mode_athlete:'运动员',
+    filter_teams:'搜索队伍…', filter_athletes:'搜索运动员…',
+    change_tournament:'← 更换赛事', tap_to_select:'点击运动员进行追踪',
+    filter_name:'按名字筛选...', select_all:'全选', deselect_all:'取消全选',
+    back:'← 返回', search:'搜索...', refresh:'⟳ 刷新', edit:'← 编辑',
+    watch_n:'追踪 {n} 位运动员 →', watch_n_pl:'追踪 {n} 位运动员 →',
+    select_to_watch:'选择要追踪的运动员',
+    n_selected:'已选 {n} 人', n_athletes:'{n} 位运动员',
+    building_roster:'正在加载名单…', eliminated:'已淘汰', searching:'搜索中...',
+    landing_tagline:'BJJ赛事对阵表实时追踪，第一时间掌握运动员上场信息。',
+    landing_cta:'免费开始', landing_cta_sub:'无需注册 · 1名运动员免费',
+    how_title:'使用方法',
+    step1_title:'选择赛事', step1_desc:'从所有BJJ比赛中选择。',
+    step2_title:'搜索队伍或运动员', step2_desc:'输入学校名称或运动员姓名。',
+    step3_title:'实时观看', step3_desc:'实时获取场地安排、比赛时间和结果。',
+    plans_title:'套餐', free_plan:'免费', free_tagline:'无需注册',
+    plan_individual:'个人教练', plan_gym:'道馆套餐', plan_affiliate:'联盟套餐',
+    most_popular:'最受欢迎', cancel_anytime:'免费试用 · 随时取消',
+  },
+};
+
+let _lang = localStorage.getItem('mattrack_lang') || 'en';
+
+function t(key, vars) {
+  const tr = TRANSLATIONS[_lang] || TRANSLATIONS.en;
+  let s = tr[key] || TRANSLATIONS.en[key] || key;
+  if (vars) Object.entries(vars).forEach(([k,v]) => { s = s.replace(`{${k}}`, v); });
+  return s;
+}
+
+function applyTranslations() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    if (el.tagName === 'INPUT') el.placeholder = t(key);
+    else el.textContent = t(key);
+  });
+  // RTL for Arabic
+  document.body.dir = _lang === 'ar' ? 'rtl' : 'ltr';
+  // Update current lang label
+  const cur = LANGUAGES.find(l => l.code === _lang);
+  const el = document.getElementById('lang-current');
+  if (el && cur) el.textContent = cur.code.toUpperCase();
+  // Update school input placeholder
+  const inp = document.getElementById('school-input');
+  if (inp) inp.placeholder = t(_searchMode === 'team' ? 'filter_teams' : 'filter_athletes');
+  // Re-render landing page translated text
+  renderLandingTranslations();
+}
+
+function renderLandingTranslations() {
+  const map = {
+    'landing-sub': 'landing_tagline', 'landing-cta-btn': 'landing_cta',
+    'landing-cta-sub': 'landing_cta_sub', 'how-title': 'how_title',
+    'step1-title': 'step1_title', 'step1-desc': 'step1_desc',
+    'step2-title': 'step2_title', 'step2-desc': 'step2_desc',
+    'step3-title': 'step3_title', 'step3-desc': 'step3_desc',
+    'plans-title': 'plans_title', 'plan-badge-popular': 'most_popular',
+    'pricing-free-note': 'cancel_anytime',
+    'plan-name-individual': 'plan_individual', 'plan-name-gym': 'plan_gym',
+    'plan-name-affiliate': 'plan_affiliate',
+  };
+  Object.entries(map).forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = t(key);
+  });
+}
+
+function setLanguage(code) {
+  _lang = code;
+  localStorage.setItem('mattrack_lang', code);
+  closeLangDropdown();
+  applyTranslations();
+}
+
+function toggleLangDropdown() {
+  const dd = document.getElementById('lang-dropdown');
+  if (dd.classList.contains('open')) { closeLangDropdown(); return; }
+  dd.innerHTML = LANGUAGES.map(l => `
+    <div class="lang-option${l.code===_lang?' active':''}" onclick="setLanguage('${l.code}')">
+      <span class="lang-flag">${l.flag}</span>${l.name}
+    </div>`).join('');
+  dd.classList.add('open');
+}
+
+function closeLangDropdown() {
+  document.getElementById('lang-dropdown')?.classList.remove('open');
+}
+
+document.addEventListener('click', () => closeLangDropdown());
+
+// Apply on load
+document.addEventListener('DOMContentLoaded', () => {
+  applyTranslations();
+});
+
+// Call initAuth on load (already declared above, re-apply translations after fonts load)
 </script>
 </body>
 </html>
