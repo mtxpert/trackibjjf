@@ -21,6 +21,63 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
+    /* ── Landing screen ── */
+    .landing-hero {
+      text-align: center;
+      padding: 48px 24px 32px;
+    }
+    .landing-logo { font-size: 4rem; margin-bottom: 12px; }
+    .landing-title { font-size: 2rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px; }
+    .landing-sub { font-size: 1rem; color: var(--muted); line-height: 1.5; max-width: 320px; margin: 0 auto 32px; }
+    .landing-cta {
+      display: block; width: 100%; max-width: 320px; margin: 0 auto 12px;
+      padding: 16px; border-radius: 14px; background: var(--red);
+      color: white; border: none; font-size: 1.05rem; font-weight: 700;
+      cursor: pointer; letter-spacing: 0.3px;
+    }
+    .landing-cta-sub {
+      text-align: center; font-size: 0.78rem; color: var(--muted); margin-bottom: 40px;
+    }
+    .landing-section { padding: 0 20px 40px; max-width: 480px; margin: 0 auto; }
+    .landing-section-title {
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.5px;
+      color: var(--muted); margin-bottom: 16px; text-align: center;
+    }
+    .how-steps { display: flex; flex-direction: column; gap: 14px; }
+    .how-step {
+      display: flex; align-items: flex-start; gap: 14px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px;
+    }
+    .how-step-num {
+      width: 32px; height: 32px; border-radius: 50%; background: var(--red);
+      color: white; font-weight: 800; font-size: 0.9rem;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .how-step-text h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 3px; }
+    .how-step-text p { font-size: 0.82rem; color: var(--muted); line-height: 1.4; }
+    .pricing-cards { display: flex; flex-direction: column; gap: 12px; }
+    .pricing-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 18px 20px;
+      position: relative;
+    }
+    .pricing-card.featured { border-color: var(--red); }
+    .pricing-badge {
+      position: absolute; top: -10px; left: 20px;
+      background: var(--red); color: white;
+      font-size: 0.65rem; font-weight: 700; letter-spacing: 0.8px;
+      text-transform: uppercase; padding: 3px 10px; border-radius: 20px;
+    }
+    .pricing-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+    .pricing-name { font-size: 1rem; font-weight: 700; }
+    .pricing-amount { text-align: right; }
+    .pricing-amount strong { font-size: 1.4rem; font-weight: 800; }
+    .pricing-amount span { font-size: 0.78rem; color: var(--muted); }
+    .pricing-features { font-size: 0.82rem; color: var(--muted); line-height: 1.8; }
+    .pricing-free-note { text-align: center; font-size: 0.78rem; color: var(--muted); margin-top: 10px; }
+    .landing-footer { text-align: center; padding: 24px 20px 40px; font-size: 0.75rem; color: var(--muted); }
+
     /* ── Header ── */
     .header {
       background: var(--red);
@@ -355,6 +412,91 @@
       </div>
 </div>
 
+<!-- ── Screen 0: Landing ── -->
+<div class="screen" id="screen-landing">
+
+  <div class="landing-hero">
+    <div class="landing-logo">🥋</div>
+    <h1 class="landing-title">MatTrack</h1>
+    <p class="landing-sub">Live bracket tracking for BJJ tournaments. Know the moment your athlete steps on the mat.</p>
+    <button class="landing-cta" onclick="startApp()">Start Tracking Free</button>
+    <div class="landing-cta-sub">No account required to try · 1 athlete free</div>
+  </div>
+
+  <div class="landing-section">
+    <div class="landing-section-title">How it works</div>
+    <div class="how-steps">
+      <div class="how-step">
+        <div class="how-step-num">1</div>
+        <div class="how-step-text">
+          <h3>Pick your tournament</h3>
+          <p>Select from all upcoming and live BJJ competitions.</p>
+        </div>
+      </div>
+      <div class="how-step">
+        <div class="how-step-num">2</div>
+        <div class="how-step-text">
+          <h3>Search your team or athlete</h3>
+          <p>Type your school name or search any athlete by name.</p>
+        </div>
+      </div>
+      <div class="how-step">
+        <div class="how-step-num">3</div>
+        <div class="how-step-text">
+          <h3>Watch live</h3>
+          <p>Get real-time mat assignments, fight times, and results as they happen.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="landing-section">
+    <div class="landing-section-title">Plans</div>
+    <div class="pricing-cards">
+
+      <div class="pricing-card">
+        <div class="pricing-card-header">
+          <div class="pricing-name">Free</div>
+          <div class="pricing-amount"><strong>$0</strong></div>
+        </div>
+        <div class="pricing-features">✓ Track 1 athlete<br>✓ All tournaments<br>✓ Live updates</div>
+      </div>
+
+      <div class="pricing-card featured">
+        <div class="pricing-badge">Most Popular</div>
+        <div class="pricing-card-header">
+          <div class="pricing-name">Individual Coach</div>
+          <div class="pricing-amount"><strong>$2.99</strong><span>/mo</span></div>
+        </div>
+        <div class="pricing-features">✓ Unlimited athletes<br>✓ All tournaments<br>✓ Live bracket updates</div>
+      </div>
+
+      <div class="pricing-card">
+        <div class="pricing-card-header">
+          <div class="pricing-name">Gym Pack</div>
+          <div class="pricing-amount"><strong>$19.99</strong><span>/mo</span></div>
+        </div>
+        <div class="pricing-features">✓ 10 coach accounts<br>✓ Unlimited athletes each<br>✓ Access codes for your team</div>
+      </div>
+
+      <div class="pricing-card">
+        <div class="pricing-card-header">
+          <div class="pricing-name">Affiliate Pack</div>
+          <div class="pricing-amount"><strong>$49.99</strong><span>/mo</span></div>
+        </div>
+        <div class="pricing-features">✓ 30 coach accounts<br>✓ Unlimited athletes each<br>✓ Branded for your school</div>
+      </div>
+
+    </div>
+    <div class="pricing-free-note">All plans include a free trial · Cancel anytime</div>
+  </div>
+
+  <div class="landing-footer">
+    © 2026 Olympic Network Services LLC · mattrack.net
+  </div>
+
+</div>
+
 <!-- ── Screen 1: Pick Tournament ── -->
 <div class="screen active" id="screen-tournament">
   <div class="setup-wrap">
@@ -410,7 +552,10 @@
   <div class="results-header">
     <div class="results-meta">
       <span id="pick-count">Tap athletes to watch</span>
-      <button class="back-btn" onclick="showScreen('screen-school')">← Back</button>
+      <div style="display:flex;gap:6px">
+        <button class="back-btn" id="select-all-btn" onclick="toggleSelectAll()">Select All</button>
+        <button class="back-btn" onclick="showScreen('screen-school')">← Back</button>
+      </div>
     </div>
     <input class="search-input" type="text" id="pick-search"
       placeholder="Filter by name..." oninput="filterPick()"
@@ -577,7 +722,7 @@ function goHome() {
 
 window.addEventListener('popstate', (e) => {
   const screen = e.state?.screen;
-  if (!screen || screen === 'screen-tournament') {
+  if (!screen || screen === 'screen-tournament' || screen === 'screen-landing') {
     // Clear session so goHome doesn't re-restore
     sessionStorage.removeItem('mattrack_session');
     selectedTournament = null; watchedTournamentId = ''; allAthletes = []; selectedKeys = new Set();
@@ -647,10 +792,25 @@ function restoreSession() {
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────
+function startApp() {
+  localStorage.setItem('mattrack_visited', '1');
+  showScreen('screen-tournament');
+  if (!allTournaments.length) loadTournaments();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-  // Seed history so back from any screen can return to home
-  history.replaceState({ screen: 'screen-tournament' }, '', '');
-  loadTournaments();
+  const returning = localStorage.getItem('mattrack_visited');
+  if (returning) {
+    // Returning user — go straight to tournaments
+    history.replaceState({ screen: 'screen-tournament' }, '', '');
+    loadTournaments();
+  } else {
+    // First visit — show landing page
+    showScreen('screen-landing', false);
+    history.replaceState({ screen: 'screen-landing' }, '', '');
+    // Preload tournaments in background
+    loadTournaments();
+  }
 });
 
 async function loadTournaments() {
@@ -1047,6 +1207,14 @@ function filterPick() {
   btn.disabled = selectedKeys.size === 0;
   btn.textContent = selectedKeys.size ? `Watch ${selectedKeys.size} Athlete${selectedKeys.size>1?'s':''} →` : 'Select athletes to watch';
 
+  // Update select-all button label
+  const saBtn = document.getElementById('select-all-btn');
+  if (saBtn) {
+    const visibleKeys = list.map(a => a.name.toLowerCase());
+    const allSel = visibleKeys.length > 0 && visibleKeys.every(k => selectedKeys.has(k));
+    saBtn.textContent = allSel ? 'Deselect All' : 'Select All';
+  }
+
   const container = document.getElementById('pick-list');
   if (!list.length) {
     container.innerHTML = '<div class="state-msg"><div class="icon">🔍</div><h3>No matches</h3></div>';
@@ -1057,7 +1225,7 @@ function filterPick() {
     const sel = selectedKeys.has(key);
     const badge = _pickStatusBadge(a);
     return `
-      <div class="pick-row ${sel ? 'selected' : ''}" onclick="togglePick('${key.replace(/'/g,"\\'")}')">
+      <div class="pick-row ${sel ? 'selected' : ''}" data-key="${key.replace(/"/g,'&quot;')}" onclick="togglePick('${key.replace(/'/g,"\\'")}')">
         <div class="pick-check">${sel ? '✓' : ''}</div>
         <div class="pick-info">
           <div class="pick-name">${a.name}</div>
@@ -1105,6 +1273,20 @@ function togglePick(key) {
   else {
     if (!checkAthleteLimit(selectedKeys.size)) return;
     selectedKeys.add(key);
+  }
+  filterPick();
+}
+
+function toggleSelectAll() {
+  const visibleKeys = [...document.querySelectorAll('#pick-list [data-key]')].map(el => el.dataset.key);
+  const allSelected = visibleKeys.every(k => selectedKeys.has(k));
+  if (allSelected) {
+    visibleKeys.forEach(k => selectedKeys.delete(k));
+  } else {
+    for (const k of visibleKeys) {
+      if (!checkAthleteLimit(selectedKeys.size, true)) break;
+      selectedKeys.add(k);
+    }
   }
   filterPick();
 }
@@ -1543,9 +1725,9 @@ async function redeemCode() {
   }
 }
 
-function checkAthleteLimit(currentCount) {
+function checkAthleteLimit(currentCount, silent = false) {
   if (_userPlan !== 'free') return true;
-  if (currentCount >= 1) { showModal('modal-paywall'); return false; }
+  if (currentCount >= 1) { if (!silent) showModal('modal-paywall'); return false; }
   return true;
 }
 
