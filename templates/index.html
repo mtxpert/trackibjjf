@@ -76,6 +76,8 @@
     .pricing-amount span { font-size: 0.78rem; color: var(--muted); }
     .pricing-features { font-size: 0.82rem; color: var(--muted); line-height: 1.8; }
     .pricing-free-note { text-align: center; font-size: 0.78rem; color: var(--muted); margin-top: 10px; }
+    .pricing-card[onclick]:active { opacity: 0.8; transform: scale(0.98); }
+    .pricing-card[onclick] { transition: transform 0.1s, opacity 0.1s; }
     .landing-footer { text-align: center; padding: 24px 20px 40px; font-size: 0.75rem; color: var(--muted); }
 
     /* ── Header ── */
@@ -462,7 +464,7 @@
         <div class="pricing-features">✓ Track 1 athlete<br>✓ All tournaments<br>✓ Live updates</div>
       </div>
 
-      <div class="pricing-card featured">
+      <div class="pricing-card featured" onclick="landingCheckout('individual')" style="cursor:pointer">
         <div class="pricing-badge">Most Popular</div>
         <div class="pricing-card-header">
           <div class="pricing-name">Individual Coach</div>
@@ -471,7 +473,7 @@
         <div class="pricing-features">✓ Unlimited athletes<br>✓ All tournaments<br>✓ Live bracket updates</div>
       </div>
 
-      <div class="pricing-card">
+      <div class="pricing-card" onclick="landingCheckout('gym')" style="cursor:pointer">
         <div class="pricing-card-header">
           <div class="pricing-name">Gym Pack</div>
           <div class="pricing-amount"><strong>$19.99</strong><span>/mo</span></div>
@@ -479,7 +481,7 @@
         <div class="pricing-features">✓ 10 coach accounts<br>✓ Unlimited athletes each<br>✓ Access codes for your team</div>
       </div>
 
-      <div class="pricing-card">
+      <div class="pricing-card" onclick="landingCheckout('affiliate')" style="cursor:pointer">
         <div class="pricing-card-header">
           <div class="pricing-name">Affiliate Pack</div>
           <div class="pricing-amount"><strong>$49.99</strong><span>/mo</span></div>
@@ -1568,6 +1570,7 @@ let _sb      = null;
 let _session = null;
 let _userPlan = 'free';
 let _userEmail = '';
+let _pendingCheckoutPlan = null;
 
 async function initAuth() {
   if (typeof window.supabase === 'undefined') return;
@@ -1602,9 +1605,19 @@ async function initAuth() {
 
   _sb.auth.onAuthStateChange(async (event, session) => {
     _session = session;
-    if (session) await fetchUserPlan(session.access_token);
-    else { _userPlan = 'free'; _userEmail = ''; }
-    updateAuthUI();
+    if (session) {
+      await fetchUserPlan(session.access_token);
+      updateAuthUI();
+      // Fire pending checkout from landing page plan click
+      if (_pendingCheckoutPlan) {
+        const plan = _pendingCheckoutPlan;
+        _pendingCheckoutPlan = null;
+        startCheckout(plan);
+      }
+    } else {
+      _userPlan = 'free'; _userEmail = '';
+      updateAuthUI();
+    }
   });
 }
 
@@ -1669,6 +1682,17 @@ async function signOut() {
   updateAuthUI();
   closeModal('modal-account');
   showToast('Signed out');
+}
+
+function landingCheckout(plan) {
+  // From landing page — sign in first if needed, then checkout
+  if (!_session) {
+    // Store intent, sign in, checkout fires in updateAuthUI after login
+    _pendingCheckoutPlan = plan;
+    signInWithGoogle();
+  } else {
+    startCheckout(plan);
+  }
 }
 
 async function startCheckout(plan) {
