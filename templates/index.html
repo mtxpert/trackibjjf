@@ -1854,7 +1854,10 @@ async function redeemCode() {
       closeModal('modal-redeem');
       showToast('Code redeemed — unlimited athletes unlocked!');
     } else {
-      if (errEl) { errEl.textContent = d.error || 'Invalid code'; errEl.style.display = 'block'; }
+      const msg = (d.error || '').toLowerCase().includes('already')
+        ? 'This code has already been used. Ask your gym for a new one.'
+        : 'Code not found. Check the code and try again.';
+      if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
     }
   } catch(e) {
     if (errEl) { errEl.textContent = 'Error redeeming code'; errEl.style.display = 'block'; }
