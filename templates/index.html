@@ -317,14 +317,31 @@
       background: rgba(192,57,43,0.1);
     }
     .pick-check {
-      width: 26px; height: 26px; border-radius: 50%;
-      border: 2px solid var(--border);
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid var(--muted);
       display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; font-size: 0.9rem;
+      flex-shrink: 0; font-size: 0.75rem;
       transition: background 0.15s, border-color 0.15s;
+      background: transparent;
     }
     .pick-row.selected .pick-check {
       background: var(--red); border-color: var(--red); color: white;
+      box-shadow: 0 0 0 3px rgba(192,57,43,0.25);
+    }
+    #pick-top-bar {
+      display: none;
+      padding: 8px 16px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    #pick-top-bar.visible { display: block; }
+    #watch-btn-top {
+      width: 100%; padding: 12px; border-radius: 10px;
+      background: var(--red); color: white; border: none;
+      font-size: 0.95rem; font-weight: 700; cursor: pointer;
     }
     .pick-info { flex: 1; min-width: 0; }
     .pick-name { font-size: 0.95rem; font-weight: 700; }
@@ -615,6 +632,9 @@
     <input class="search-input" type="text" id="pick-search"
       placeholder="Filter by name..." oninput="filterPick()"
       autocomplete="off">
+  </div>
+  <div id="pick-top-bar">
+    <button id="watch-btn-top" onclick="goWatch()">Watch Selected →</button>
   </div>
   <div id="pick-list" class="athletes-list"></div>
   <div id="pick-footer">
@@ -1295,9 +1315,17 @@ function filterPick() {
   document.getElementById('pick-count').textContent =
     selectedKeys.size ? `${selectedKeys.size} selected` : `${allAthletes.length} athletes — tap to select`;
 
+  const label = selectedKeys.size ? `Watch ${selectedKeys.size} Athlete${selectedKeys.size>1?'s':''} →` : 'Select athletes to watch';
   const btn = document.getElementById('watch-btn');
   btn.disabled = selectedKeys.size === 0;
-  btn.textContent = selectedKeys.size ? `Watch ${selectedKeys.size} Athlete${selectedKeys.size>1?'s':''} →` : 'Select athletes to watch';
+  btn.textContent = label;
+  const topBar = document.getElementById('pick-top-bar');
+  const btnTop = document.getElementById('watch-btn-top');
+  if (topBar && btnTop) {
+    btnTop.textContent = label;
+    btnTop.disabled = selectedKeys.size === 0;
+    topBar.classList.toggle('visible', selectedKeys.size > 0);
+  }
 
   // Update select-all button label
   const saBtn = document.getElementById('select-all-btn');
