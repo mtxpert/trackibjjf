@@ -1806,10 +1806,7 @@ async function signInWithGoogle() {
 async function signOut() {
   if (!_sb) return;
   await _sb.auth.signOut();
-  _userPlan = 'free'; _userEmail = ''; _session = null;
-  updateAuthUI();
-  closeModal('modal-account');
-  showToast('Signed out');
+  window.location.href = '/';
 }
 
 function landingCheckout(plan) {
