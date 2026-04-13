@@ -1636,9 +1636,20 @@ async function initAuth() {
   // Handle checkout return
   const sp = new URLSearchParams(window.location.search);
   if (sp.get('checkout') === 'success') {
-    showToast('Payment successful — plan activated!');
+    showToast('Payment successful — activating your plan…');
     window.history.replaceState({}, '', '/');
-    setTimeout(fetchUserPlan, 2000); // give webhook time to process
+    // Poll until plan upgrades (webhook may take a few seconds to process)
+    let attempts = 0;
+    const pollPlan = async () => {
+      await fetchUserPlan();
+      if (_userPlan === 'free' && attempts++ < 8) {
+        setTimeout(pollPlan, 1500);
+      } else {
+        updateAuthUI();
+        if (_userPlan !== 'free') showToast('Plan activated — welcome!');
+      }
+    };
+    setTimeout(pollPlan, 1500);
   } else if (sp.get('checkout') === 'cancel') {
     window.history.replaceState({}, '', '/');
   }
