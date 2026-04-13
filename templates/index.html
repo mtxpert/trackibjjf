@@ -1634,8 +1634,14 @@ async function refreshPickStatuses() {
     const data = await r.json();
     if (data.updated) {
       const updMap = {};
-      data.updated.forEach(a => { updMap[a.name.toLowerCase()] = a; });
-      allAthletes = allAthletes.map(a => updMap[a.name.toLowerCase()] ? {...a, ...updMap[a.name.toLowerCase()]} : a);
+      data.updated.forEach(a => {
+        const key = a.name.toLowerCase() + '::' + (a.category_id || '');
+        updMap[key] = a;
+      });
+      allAthletes = allAthletes.map(a => {
+        const key = a.name.toLowerCase() + '::' + (a.category_id || '');
+        return updMap[key] ? {...a, ...updMap[key]} : a;
+      });
       filterPick();
     }
     // If any athletes still lack placement/eliminated data, the brackets are still
@@ -1900,8 +1906,15 @@ async function manualRefresh() {
 
     if (data.updated) {
       const updMap = {};
-      data.updated.forEach(a => { updMap[a.name.toLowerCase()] = a; });
-      allAthletes = allAthletes.map(a => updMap[a.name.toLowerCase()] || a);
+      // Key by name+category_id so multi-division athletes (NAGA) each get their own result
+      data.updated.forEach(a => {
+        const key = a.name.toLowerCase() + '::' + (a.category_id || '');
+        updMap[key] = a;
+      });
+      allAthletes = allAthletes.map(a => {
+        const key = a.name.toLowerCase() + '::' + (a.category_id || '');
+        return updMap[key] || a;
+      });
     }
 
     if (data.changes && data.changes.length) {
