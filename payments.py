@@ -8,9 +8,12 @@ generation, and access-code redemption.
 import os
 import secrets
 import string
+import logging
 
 import stripe
 from supabase import create_client, Client
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -52,9 +55,12 @@ def _update_user(user_id: str, updates: dict) -> None:
         client = _get_service_client()
         if client is None:
             return
-        client.table("users").update(updates).eq("id", user_id).execute()
-    except Exception:
-        pass
+        # Try update first; if no rows affected, upsert so new users are handled
+        result = client.table("users").update(updates).eq("id", user_id).execute()
+        if not (result.data):
+            client.table("users").upsert({"id": user_id, **updates}).execute()
+    except Exception as e:
+        logger.error("_update_user failed user=%s: %s", user_id, e, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -135,10 +141,9 @@ def handle_webhook(payload: bytes, sig_header: str) -> tuple[bool, str]:
         elif event_type == "invoice.payment_failed":
             _handle_payment_failed(data_obj)
 
-    except Exception:
-        # Log-worthy but don't return an error to Stripe (avoid retries for
-        # events we've already partially processed).
-        pass
+    except Exception as e:
+        # Log but don't return error to Stripe (avoid retries for partially processed events)
+        logger.error("webhook handler failed event=%s: %s", event_type, e, exc_info=True)
 
     return True, "ok"
 
@@ -148,12 +153,14 @@ def _handle_checkout_completed(session: dict) -> None:
         "client_reference_id"
     )
     if not user_id:
+        logger.error("checkout.completed: no user_id in metadata or client_reference_id")
         return
 
     plan = (session.get("metadata") or {}).get("plan", "individual")
     customer_id = session.get("customer")
     sub_id = session.get("subscription")
 
+    logger.info("checkout.completed: user=%s plan=%s customer=%s", user_id, plan, customer_id)
     _update_user(
         user_id,
         {
