@@ -1091,6 +1091,15 @@ function renderItemList(query) {
       return;
     }
 
+    // Deduplicate by name — keep first occurrence (preserves team)
+    const seen = new Set();
+    athletes = athletes.filter(a => {
+      const k = a.name.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+
     // Sort: starts-with first, then alpha
     athletes.sort((a, b) => {
       const aS = a.name.toLowerCase().startsWith(vl) ? 0 : 1;
