@@ -1,5 +1,5 @@
 """
-IBJJF Bracket Watcher
+MatTrack Bracket Watcher
 Uses requests + BeautifulSoup — no Playwright needed.
 ~2s to fetch all brackets from a live tournament (20 concurrent workers).
 
@@ -45,7 +45,7 @@ STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 def parse_bracket_html(html, category_id, category_name=""):
     """
-    Parse IBJJF bracket HTML into structured state.
+    Parse bracket HTML into structured state.
     Returns: {category_id, division, fights, ranking, results_final, ...}
     """
     soup = BeautifulSoup(html, "html.parser")
@@ -197,7 +197,7 @@ def parse_bracket_html(html, category_id, category_name=""):
             results_final = True
 
     # ── Fallback: official placement block (medalists section) ───────────────
-    # If IBJJF has published the official podium, use that instead.
+    # If the official podium has been published, use that instead.
     medalists = soup.select_one(".tournament-category__medalists, .tournament-category__podium")
     if medalists and not results_final:
         official = _parse_medalists(medalists)
@@ -368,7 +368,7 @@ def append_history(category_id, entry):
 # ── CLI entry point ───────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="IBJJF Bracket Watcher")
+    parser = argparse.ArgumentParser(description="MatTrack Bracket Watcher")
     parser.add_argument("--tournament", required=True)
     parser.add_argument("--category",   help="Single category ID")
     parser.add_argument("--categories", nargs="+", help="Multiple category IDs")
