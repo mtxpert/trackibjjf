@@ -38,146 +38,112 @@ NAGA_BASE = _base("naga")
 
 # ─── Event discovery ──────────────────────────────────────────────────────────
 
-def get_naga_events(federation_id=32, subdomain="naga"):
-    """Return list of upcoming NAGA events with id, title, start date."""
-    url = f"{_base(subdomain)}/en/federation/{federation_id}/events/upcoming"
+def get_naga_events(subdomain="naga", **_kwargs):
+    """
+    Return list of upcoming NAGA events scraped from nagafighter.com/tournaments-by-city/
+    Each event has: id, name, start (YYYY-MM-DD), location, url, source.
+    """
+    url = "https://www.nagafighter.com/tournaments-by-city/"
     try:
-        r = requests.get(url, headers=HEADERS, timeout=15)
+        r = requests.get(url, headers=HEADERS, timeout=20)
         r.raise_for_status()
-
-        # Try JSON-LD ItemList (current format as of 2026)
-        ld_matches = re.findall(
-            r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
-            r.text, re.DOTALL
-        )
-        event_urls = []
-        for ld in ld_matches:
-            try:
-                obj = json.loads(ld.strip())
-                if obj.get("@type") == "ItemList":
-                    for item in obj.get("itemListElement", []):
-                        u = item.get("url", "")
-                        if u:
-                            event_urls.append(u)
-            except Exception:
-                pass
-
-        if event_urls:
-            return _fetch_naga_event_details(event_urls, subdomain)
-
-        # Fallback: window.events = [...] (older format)
-        m = re.search(r'window\.events\s*=\s*(\[.+?\]);', r.text, re.DOTALL)
-        if m:
-            events = json.loads(m.group(1))
-            return [
-                {
-                    "id":        str(e["id"]),
-                    "name":      e["title"],
-                    "start":     e.get("startdate", ""),
-                    "end":       e.get("enddate", ""),
-                    "location":  f"{e.get('location_city','')}, {e.get('location_country_human','')}".strip(', '),
-                    "url":       e.get("url", ""),
-                    "source":    "naga",
-                    "subdomain": subdomain,
-                }
-                for e in events
-                if not e.get("eventEnded", True)
-            ]
     except Exception as e:
-        log.warning("get_naga_events failed: %s", e)
-    return []
+        log.warning("get_naga_events fetch failed: %s", e)
+        return []
 
+    soup = BeautifulSoup(r.text, "html.parser")
+    table = soup.find("table")
+    if not table:
+        log.warning("get_naga_events: no table found on nagafighter.com")
+        return []
 
-def _fetch_naga_event_details(event_urls, subdomain="naga"):
-    """
-    Fetch each event detail page in parallel to extract title, date, location.
-    Returns list of event dicts sorted by start date.
-    """
-    results = []
-    lock = threading.Lock()
+    seen = {}   # event_id → event dict (dedup across city rows)
+    today = datetime.now(timezone.utc).date()
 
-    def _fetch_one(url):
-        try:
-            r = requests.get(url, headers=HEADERS, timeout=10)
-            r.raise_for_status()
+    for row in table.find_all("tr")[1:]:   # skip header
+        cells = row.find_all("td")
+        if len(cells) < 2:
+            continue
 
-            # Extract event ID from URL
-            m = re.search(r'/event/(\d+)', url)
-            if not m:
-                return
-            event_id = m.group(1)
+        city_text = cells[0].get_text(strip=True)
+        tourney_cell = cells[1]
 
-            # Try JSON-LD SportsEvent for structured data
-            name = ""
-            start = ""
-            end = ""
-            location = ""
-            ld_matches = re.findall(
-                r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
-                r.text, re.DOTALL
-            )
-            for ld in ld_matches:
-                try:
-                    obj = json.loads(ld.strip())
-                    if obj.get("@type") in ("SportsEvent", "Event"):
-                        name = obj.get("name", "")
-                        start = obj.get("startDate", "")[:10] if obj.get("startDate") else ""
-                        end = obj.get("endDate", "")[:10] if obj.get("endDate") else ""
-                        loc = obj.get("location", {})
-                        if isinstance(loc, dict):
-                            addr = loc.get("address", {})
-                            if isinstance(addr, dict):
-                                city = addr.get("addressLocality", "")
-                                region = addr.get("addressRegion", "")
-                                country = addr.get("addressCountry", "")
-                                parts = [p for p in [city, region, country] if p]
-                                location = ", ".join(parts)
-                            elif isinstance(addr, str):
-                                location = addr
-                        break
-                except Exception:
-                    pass
+        # Find the smoothcomp "Register Now" link → event ID
+        reg_link = tourney_cell.find("a", href=re.compile(r"naga\.smoothcomp\.com/en/event/(\d+)"))
+        if not reg_link:
+            continue
+        m = re.search(r"/event/(\d+)", reg_link["href"])
+        if not m:
+            continue
+        event_id = m.group(1)
 
-            # Fallback: page title
-            if not name:
-                tm = re.search(r'<title[^>]*>([^<]+)</title>', r.text)
-                if tm:
-                    name = tm.group(1).strip().split(" | ")[0].strip()
+        if event_id in seen:
+            continue   # already added from another city row
 
-            # Fallback: og:title
-            if not name:
-                tm = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']', r.text)
-                if tm:
-                    name = tm.group(1).strip()
+        # Extract name + date from cell text
+        raw = tourney_cell.get_text(" ", strip=True)
 
-            if not name:
-                name = f"NAGA Event {event_id}"
-
-            event = {
-                "id":        event_id,
-                "name":      name,
-                "start":     start,
-                "end":       end,
-                "location":  location,
-                "url":       url,
-                "source":    "naga",
-                "subdomain": subdomain,
-            }
-            with lock:
-                results.append(event)
-        except Exception as e:
-            log.debug("_fetch_naga_event_details %s failed: %s", url, e)
-
-    with ThreadPoolExecutor(max_workers=10) as ex:
-        futures = [ex.submit(_fetch_one, u) for u in event_urls]
-        for f in as_completed(futures):
+        # Date pattern: "Month D" or "Month D-D" near end of name
+        date_m = re.search(
+            r'(January|February|March|April|May|June|July|August|September|October|November|December)'
+            r'\s+(\d{1,2})(?:-\d{1,2})?',
+            raw
+        )
+        start_iso = ""
+        if date_m:
+            month_str = date_m.group(1)
+            day_str   = date_m.group(2)
+            year      = today.year
             try:
-                f.result()
+                from datetime import date as _date
+                d = datetime.strptime(f"{month_str} {day_str} {year}", "%B %d %Y").date()
+                # If date is >6 months in the past, assume next year
+                if (today - d).days > 180:
+                    d = d.replace(year=year + 1)
+                start_iso = d.isoformat()
             except Exception:
                 pass
 
-    results.sort(key=lambda e: e.get("start", "") or "")
-    return results
+        # Skip events in the past (>7 days ago)
+        if start_iso:
+            try:
+                from datetime import date as _date
+                d = _date.fromisoformat(start_iso)
+                if (today - d).days > 7:
+                    continue
+            except Exception:
+                pass
+
+        # Event name = everything before the date
+        name = raw
+        if date_m:
+            name = raw[:raw.find(date_m.group(0))].strip(" –-")
+        # Strip trailing "Register Now" / "Tournament Details" if present
+        name = re.sub(r'\s*(Register Now|Tournament Details).*$', '', name, flags=re.IGNORECASE).strip()
+        if not name:
+            name = f"NAGA Event {event_id}"
+
+        # Location: prefer the city/state in the event name, fallback to city column
+        loc_m = re.search(r'–\s*(.+?)\s*(?:,\s*[A-Z]{2})?$', name)
+        if loc_m:
+            location = loc_m.group(0).lstrip("– ").strip()
+        else:
+            location = city_text
+
+        seen[event_id] = {
+            "id":        event_id,
+            "name":      name,
+            "start":     start_iso,
+            "end":       start_iso,
+            "location":  location,
+            "url":       f"https://naga.smoothcomp.com/en/event/{event_id}",
+            "source":    "naga",
+            "subdomain": subdomain,
+        }
+
+    events = sorted(seen.values(), key=lambda e: e.get("start") or "")
+    log.info("get_naga_events: found %d events", len(events))
+    return events
 
 
 # ─── Club lookup ─────────────────────────────────────────────────────────────
