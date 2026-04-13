@@ -5,3 +5,6 @@ lxml
 python-dotenv
 gunicorn
 tzdata
+supabase
+stripe
+python-jose[cryptography]
