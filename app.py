@@ -101,6 +101,21 @@ _jobs        = {}   # search jobs (legacy live-scrape path)
 _build_jobs  = {}   # roster build jobs
 _brackets    = {}   # category_id -> latest bracket state (shared by all users)
 
+# ── NAGA routing helpers ──────────────────────────────────────────────────────
+def _is_naga_tournament(tournament_id):
+    """NAGA/Smoothcomp event IDs are purely numeric; IBJJF IDs are slugs."""
+    return str(tournament_id).isdigit()
+
+def _naga_event_id(tournament_id):
+    return str(tournament_id)
+
+def _naga_subdomain(tournament_name=""):
+    """Infer subdomain from tournament name; default to 'naga'."""
+    name_lower = (tournament_name or "").lower()
+    if "compnet" in name_lower:
+        return "compnet"
+    return "naga"
+
 # ── Shared bracket watcher ────────────────────────────────────────────────────
 # category_id -> {tournament_id, last_fetched, interval_sec}
 _watch_registry = {}
@@ -243,30 +258,60 @@ def _process_batch_results(batch_results, tid_by_cid):
             pass
 
 
+def _naga_register_watch(tournament_id, category_id, subdomain="naga", interval_sec=30):
+    """Register a NAGA bracket for background polling."""
+    cid = str(category_id)
+    with _watch_lock:
+        cached = _brackets.get(cid)
+        if cached and cached.get("results_final"):
+            return
+        existing = _watch_registry.get(cid, {})
+        _watch_registry[cid] = {
+            "tournament_id": str(tournament_id),
+            "last_fetched":  existing.get("last_fetched", 0),
+            "interval_sec":  interval_sec,
+            "source":        "naga",
+            "subdomain":     subdomain,
+        }
+
+
 def _background_poller():
     """
     Single long-running daemon thread.
     Fetches all stale brackets concurrently via thread pool (no Playwright),
     pushes changes via SSE, removes completed brackets from the registry.
     ~2s to refresh 166 brackets; polls every 30s.
+    Handles both IBJJF and NAGA brackets.
     """
     from watcher import fetch_brackets_batch
 
     while True:
         now = time.time()
-        to_refresh = []
-        tid_by_cid = {}
+        ibjjf_refresh = []
+        naga_refresh  = []
+        tid_by_cid    = {}
 
         with _watch_lock:
             for cid, info in list(_watch_registry.items()):
                 if (now - info["last_fetched"]) >= info["interval_sec"]:
                     tid = info["tournament_id"]
-                    to_refresh.append((tid, cid, ""))
                     tid_by_cid[cid] = tid
+                    if info.get("source") == "naga":
+                        naga_refresh.append((tid, cid, info.get("subdomain", "naga")))
+                    else:
+                        ibjjf_refresh.append((tid, cid, ""))
 
-        if to_refresh:
+        if ibjjf_refresh:
             try:
-                batch_results = fetch_brackets_batch(to_refresh, concurrency=20)
+                batch_results = fetch_brackets_batch(ibjjf_refresh, concurrency=20)
+                _process_batch_results(batch_results, tid_by_cid)
+            except Exception:
+                pass
+
+        if naga_refresh:
+            try:
+                from scraper_naga import fetch_naga_brackets_batch
+                batch_results = fetch_naga_brackets_batch(naga_refresh, concurrency=10)
                 _process_batch_results(batch_results, tid_by_cid)
             except Exception:
                 pass
@@ -397,7 +442,10 @@ def api_tournaments():
     # Fallback: live fetch
     try:
         from scraper import get_tournaments
-        return jsonify(get_tournaments())
+        from scraper_naga import get_naga_events
+        ibjjf = [dict(t, source="ibjjf") for t in get_tournaments()]
+        naga  = get_naga_events()
+        return jsonify(ibjjf + naga)
     except Exception as e:
         logger.error("get_tournaments failed: %s", e, exc_info=True)
         return jsonify({"error": "Failed to load tournaments"}), 500
@@ -564,12 +612,32 @@ def api_search():
     data          = request.json or {}
     tournament_id = data.get("tournament_id", "").strip()
     school_name   = data.get("school_name", "").strip()
+    tournament_name = data.get("tournament_name", "").strip()
 
     if not tournament_id or not school_name:
         return jsonify({"error": "tournament_id and school_name are required"}), 400
 
     job_id = f"{tournament_id}_{school_name.replace(' ', '_')}_{int(time.time())}"
 
+    # ── NAGA / Smoothcomp path ────────────────────────────────────────────────
+    if _is_naga_tournament(tournament_id):
+        from scraper_naga import build_naga_roster
+        subdomain = _naga_subdomain(tournament_name)
+        athletes  = build_naga_roster(tournament_id, school_name, subdomain)
+        if athletes:
+            _jobs[job_id] = {
+                "status":      "done",
+                "progress":    len(athletes),
+                "total":       len(athletes),
+                "current_cat": f"NAGA · {len(athletes)} division entries",
+                "athletes":    athletes,
+                "from_cache":  False,
+                "source":      "naga",
+            }
+            return jsonify({"job_id": job_id})
+        return jsonify({"error": "school_not_found", "message": f"No athletes found for '{school_name}'"}), 404
+
+    # ── IBJJF path ────────────────────────────────────────────────────────────
     from scraper import load_roster_cache, filter_roster
     cache = load_roster_cache(tournament_id)
     if cache:
@@ -689,6 +757,11 @@ def api_refresh():
     if not tournament_id or not athletes:
         return jsonify({"error": "tournament_id and athletes required"}), 400
 
+    # ── NAGA / Smoothcomp refresh path ───────────────────────────────────────
+    if _is_naga_tournament(tournament_id):
+        return _naga_refresh(tournament_id, tournament_name, athletes)
+
+    # ── IBJJF refresh path ────────────────────────────────────────────────────
     tz_name = _tournament_tz(tournament_name)
 
     cat_ids = list({a["category_id"] for a in athletes if a.get("category_id")})
@@ -759,6 +832,98 @@ def api_refresh():
     for cid in cat_ids:
         if cid in _brackets and _brackets[cid].get("changes"):
             _brackets[cid]["changes"] = []
+
+    return jsonify({"updated": updated, "changes": all_changes})
+
+
+def _naga_refresh(tournament_id, tournament_name, athletes):
+    """Handle /api/refresh for NAGA/Smoothcomp events."""
+    from scraper_naga import fetch_naga_bracket
+    subdomain = _naga_subdomain(tournament_name)
+    updated   = []
+    all_changes = []
+
+    # Fetch/update brackets for each unique category_id
+    cat_ids = list({a["category_id"] for a in athletes if a.get("category_id")})
+
+    # Register NAGA brackets for background polling
+    for cid in cat_ids:
+        _naga_register_watch(tournament_id, cid, subdomain)
+
+    # Fetch any not yet in cache
+    for cid in cat_ids:
+        if cid not in _brackets:
+            state = fetch_naga_bracket(tournament_id, int(cid), subdomain)
+            if "error" not in state:
+                _brackets[cid] = state
+
+    for athlete in athletes:
+        cid   = athlete.get("category_id", "")
+        state = _brackets.get(cid)
+        a     = dict(athlete)
+
+        # Clear stale fight info
+        a.pop("fight_time",     None)
+        a.pop("fight_time_utc", None)
+        a.pop("mat",            None)
+        a.pop("fight_num",      None)
+
+        if state and "error" not in state:
+            name_lower    = athlete["name"].lower()
+            results_final = state.get("results_final", False)
+
+            # Find placement from ranking
+            placement = None
+            for r in state.get("ranking", []):
+                if r["name"].lower() == name_lower:
+                    placement = r["pos"]
+                    break
+
+            # Find upcoming fight
+            if not results_final:
+                for fight in state.get("fights", []):
+                    if fight.get("completed"):
+                        continue
+                    for comp in fight.get("competitors", []):
+                        if name_lower in comp.get("name", "").lower():
+                            a["mat"]            = fight.get("mat", "")
+                            a["fight_time"]     = fight.get("time", "")
+                            a["fight_time_utc"] = fight.get("time_utc", "")
+                            a["fight_num"]      = fight.get("fight_num", "")
+                            a["mat_name"]       = fight.get("mat", "")
+                            break
+                    else:
+                        continue
+                    break
+
+            a["placement"] = placement
+            if placement:
+                a["eliminated"] = False
+            elif results_final:
+                a["eliminated"] = True
+            else:
+                # Eliminated if they lost a completed fight with no upcoming fights
+                has_upcoming = any(
+                    not f.get("completed") and any(
+                        name_lower in c.get("name","").lower()
+                        for c in f.get("competitors",[])
+                    )
+                    for f in state.get("fights", [])
+                )
+                lost = any(
+                    f.get("completed") and any(
+                        c.get("name","").lower() == name_lower and not c.get("winner")
+                        for c in f.get("competitors", [])
+                    )
+                    for f in state.get("fights", [])
+                )
+                a["eliminated"] = lost and not has_upcoming
+
+            a["bracket_url"] = (
+                f"https://naga.smoothcomp.com/en/event/{tournament_id}/bracket/{cid}"
+            )
+
+        updated.append(a)
 
     return jsonify({"updated": updated, "changes": all_changes})
 

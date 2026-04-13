@@ -120,8 +120,33 @@
       margin-bottom: 20px;
     }
 
+    /* Source tabs (IBJJF / NAGA) */
+    .source-tabs {
+      display: flex; gap: 10px; margin-bottom: 18px;
+    }
+    .source-tab {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      gap: 6px; padding: 14px 10px; border-radius: 14px;
+      background: var(--card); border: 2px solid var(--border);
+      color: var(--muted); cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, color 0.15s;
+    }
+    .source-tab--active {
+      border-color: var(--red); background: rgba(192,57,43,0.1); color: var(--text);
+    }
+    .source-tab-icon { font-size: 1.6rem; line-height: 1; }
+    .source-tab-label { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+
     /* Tournament list */
     .tourney-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+    .tourney-source-badge {
+      display: inline-block; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.8px;
+      text-transform: uppercase; padding: 2px 7px; border-radius: 6px; margin-right: 6px;
+      background: rgba(192,57,43,0.15); color: var(--red); vertical-align: middle;
+    }
+    .tourney-source-badge.badge-naga {
+      background: rgba(41,128,185,0.15); color: #5dade2;
+    }
     .tourney-item {
       background: var(--card);
       border: 1px solid var(--border);
@@ -609,6 +634,17 @@
 <div class="screen active" id="screen-tournament">
   <div class="setup-wrap">
     <div class="setup-title" data-i18n="select_tournament">Select Tournament</div>
+    <!-- Source tabs -->
+    <div class="source-tabs">
+      <button class="source-tab" id="src-ibjjf" onclick="setTournamentSource('ibjjf')">
+        <span class="source-tab-icon">🥋</span>
+        <span class="source-tab-label">IBJJF</span>
+      </button>
+      <button class="source-tab" id="src-naga" onclick="setTournamentSource('naga')">
+        <span class="source-tab-icon">🏆</span>
+        <span class="source-tab-label">NAGA</span>
+      </button>
+    </div>
     <div id="tourney-loading" class="state-msg">
       <div class="spinner"></div>
       <span data-i18n="loading_tournaments">Loading tournaments...</span>
@@ -625,11 +661,16 @@
       <button id="mode-athlete" class="mode-btn" onclick="setSearchMode('athlete')" data-i18n="mode_athlete">Athlete</button>
     </div>
     <div style="font-size:0.75rem;color:var(--muted);margin-bottom:8px" id="school-tourney-name"></div>
-    <div class="school-input-wrap">
+    <div class="school-input-wrap" style="display:flex;gap:8px">
       <input type="text" id="school-input" value=""
         placeholder="Filter teams…"
         autocomplete="off" spellcheck="false"
-        oninput="onSchoolInput()">
+        oninput="onSchoolInput()"
+        onkeydown="if(event.key==='Enter'&&_isNagaMode())nagaSearch()">
+      <button id="naga-search-btn" onclick="nagaSearch()"
+        style="display:none;padding:10px 16px;background:var(--red);color:white;border:none;border-radius:10px;font-weight:700;cursor:pointer;white-space:nowrap">
+        Search
+      </button>
     </div>
     <div id="cache-status" style="margin:0 0 8px;font-size:0.78rem;color:var(--muted);min-height:18px"></div>
     <button id="ath-watch-top" onclick="startAthleteQueueSearch()"></button>
@@ -811,6 +852,7 @@ function esc(str) { return String(str || '').replace(/[&<>"']/g, c => _ESC[c]); 
 
 // ─── State ─────────────────────────────────────────────────────────────────
 let allTournaments = [];
+let _tournamentSource = null;   // null | 'ibjjf' | 'naga'
 let selectedTournament = null;
 let currentJobId = null;
 let pollTimer = null;
@@ -872,6 +914,9 @@ function goHome() {
   watchedTournamentId = '';
   allAthletes = [];
   selectedKeys = new Set();
+  _tournamentSource = null;
+  document.getElementById('src-ibjjf').classList.remove('source-tab--active');
+  document.getElementById('src-naga').classList.remove('source-tab--active');
   document.getElementById('header-sub').textContent = 'Live Tournament Tracker';
   showScreen('screen-tournament', false);
   history.pushState({ screen: 'screen-tournament' }, '', '');
@@ -913,6 +958,7 @@ function saveSession() {
       athletes:     allAthletes,
       selected:     [...selectedKeys],
       screen:       document.querySelector('.screen.active')?.id || 'screen-tournament',
+      source:       _tournamentSource,
     }));
   } catch(e) {}
 }
@@ -927,6 +973,11 @@ function restoreSession() {
     watchedTournamentId  = s.tournamentId || '';
     allAthletes          = s.athletes || [];
     selectedKeys         = new Set(s.selected || []);
+    if (s.source) {
+      _tournamentSource = s.source;
+      document.getElementById('src-ibjjf').classList.toggle('source-tab--active', s.source === 'ibjjf');
+      document.getElementById('src-naga').classList.toggle('source-tab--active',  s.source === 'naga');
+    }
     const screen         = s.screen || 'screen-tournament';
     if (screen === 'screen-watch' && selectedKeys.size) {
       showScreen('screen-watch', false);
@@ -982,23 +1033,53 @@ async function loadTournaments() {
   }
 }
 
+function setTournamentSource(src) {
+  _tournamentSource = src;
+  document.getElementById('src-ibjjf').classList.toggle('source-tab--active', src === 'ibjjf');
+  document.getElementById('src-naga').classList.toggle('source-tab--active',  src === 'naga');
+  if (!allTournaments.length) loadTournaments();
+  else renderTournaments();
+}
+
 function renderTournaments() {
   const loading = document.getElementById('tourney-loading');
-  const list = document.getElementById('tourney-list');
+  const list    = document.getElementById('tourney-list');
+
+  if (!_tournamentSource) {
+    loading.innerHTML = '<div class="icon">👆</div><h3>Choose a source above</h3><p>Select IBJJF or NAGA to see upcoming events.</p>';
+    loading.style.display = 'flex';
+    list.style.display = 'none';
+    return;
+  }
+
+  const filtered = allTournaments.filter(t => (t.source || 'ibjjf') === _tournamentSource);
 
   if (!allTournaments.length) {
     loading.innerHTML = '<div class="icon">📅</div><h3>No active tournaments found</h3><p>Check back on tournament day.</p>';
+    loading.style.display = 'flex';
+    list.style.display = 'none';
+    return;
+  }
+
+  if (!filtered.length) {
+    loading.innerHTML = `<div class="icon">${_tournamentSource === 'naga' ? '🏆' : '🥋'}</div><h3>No upcoming ${_tournamentSource.toUpperCase()} events</h3><p>Check back soon.</p>`;
+    loading.style.display = 'flex';
+    list.style.display = 'none';
     return;
   }
 
   loading.style.display = 'none';
   list.style.display = 'flex';
 
-  list.innerHTML = allTournaments.map(t => `
+  list.innerHTML = filtered.map(t => {
+    const isNaga = t.source === 'naga';
+    const meta   = isNaga ? [t.start, t.location].filter(Boolean).join(' · ') : '';
+    return `
     <div class="tourney-item" id="t-${esc(t.id)}" onclick="selectTournament('${esc(t.id)}', this)">
       <div class="tourney-name">${esc(t.name)}</div>
-    </div>
-  `).join('');
+      ${meta ? `<div class="tourney-meta">${esc(meta)}</div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 function selectTournament(id, el) {
@@ -1009,10 +1090,105 @@ function selectTournament(id, el) {
   document.getElementById('school-input').value = '';
   setSearchMode('team');
   _pickStatusCache = {};
+  _teardownNagaSchoolScreen();
   showScreen('screen-school');
-  loadTeamSuggestions(id);
-  _loadPickStatuses();
+  if (selectedTournament.source === 'naga') {
+    _setupNagaSchoolScreen();
+  } else {
+    loadTeamSuggestions(id);
+    _loadPickStatuses();
+  }
   saveSession();
+}
+
+function _isNagaMode() {
+  return selectedTournament?.source === 'naga';
+}
+
+function _setupNagaSchoolScreen() {
+  const el    = document.getElementById('cache-status');
+  const list  = document.getElementById('item-list');
+  const input = document.getElementById('school-input');
+  if (el)    el.textContent = 'Type your academy name and tap Search';
+  if (list)  list.innerHTML = '';
+  if (input) input.placeholder = 'Academy name…';
+  document.getElementById('mode-team').style.display    = 'none';
+  document.getElementById('mode-athlete').style.display = 'none';
+  document.getElementById('naga-search-btn').style.display = 'block';
+}
+
+function _teardownNagaSchoolScreen() {
+  document.getElementById('mode-team').style.display    = '';
+  document.getElementById('mode-athlete').style.display = '';
+  document.getElementById('naga-search-btn').style.display = 'none';
+  document.getElementById('school-input').placeholder = 'Filter teams…';
+}
+
+async function nagaSearch() {
+  const school = document.getElementById('school-input').value.trim();
+  if (!school) { showToast('Enter your academy name'); return; }
+  if (!selectedTournament) return;
+
+  const el = document.getElementById('cache-status');
+  if (el) el.textContent = 'Searching…';
+  document.getElementById('item-list').innerHTML =
+    '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Searching NAGA…</div>';
+
+  try {
+    const r = await fetch('/api/search', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        tournament_id:   selectedTournament.id,
+        tournament_name: selectedTournament.name,
+        school_name:     school,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) {
+      if (el) el.textContent = 'Academy not found — check spelling';
+      document.getElementById('item-list').innerHTML =
+        '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No athletes found.<br>Try a shorter name, e.g. "Gracie Barra"</div>';
+      return;
+    }
+    const jr  = await fetch(`/api/search/${data.job_id}`);
+    const job = await jr.json();
+    allAthletes  = job.athletes || [];
+    selectedKeys = new Set(allAthletes.map(a => a.name.toLowerCase()));
+    if (el) el.textContent = `${allAthletes.length} division entries for ${school}`;
+    _renderNagaAthleteList(allAthletes, school);
+  } catch(e) {
+    if (el) el.textContent = 'Search failed — check connection';
+  }
+}
+
+function _renderNagaAthleteList(athletes, school) {
+  const list = document.getElementById('item-list');
+  if (!athletes.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted)">No athletes found</div>';
+    return;
+  }
+
+  // Group by athlete name
+  const byName = {};
+  for (const a of athletes) {
+    if (!byName[a.name]) byName[a.name] = [];
+    byName[a.name].push(a);
+  }
+
+  list.innerHTML = `
+    <div style="margin-bottom:10px;font-size:0.82rem;color:var(--muted)">${Object.keys(byName).length} athletes · tap Watch to track all</div>
+    ${Object.entries(byName).map(([name, entries]) => `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 16px;margin-bottom:8px">
+        <div style="font-size:0.95rem;font-weight:700;margin-bottom:6px">${esc(name)}</div>
+        ${entries.map(e => `
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:3px;display:flex;justify-content:space-between">
+            <span>${esc(e.division)}</span>
+            <span style="color:var(--green);font-weight:600">${e.mat_name ? esc(e.mat_name) + ' · ' : ''}${e.estimated_start ? new Date(e.estimated_start).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}) : ''}</span>
+          </div>`).join('')}
+      </div>`).join('')}
+    <button onclick="goWatch()" style="width:100%;margin-top:8px;padding:14px;background:var(--red);color:white;border:none;border-radius:12px;font-size:1rem;font-weight:700;cursor:pointer">
+      Watch All Athletes
+    </button>`;
 }
 
 async function loadTeamSuggestions(tournamentId) {
@@ -1240,7 +1416,11 @@ async function startSearch() {
     const r   = await fetch('/api/search', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ tournament_id: selectedTournament.id, school_name: school }),
+      body:    JSON.stringify({
+        tournament_id:   selectedTournament.id,
+        tournament_name: selectedTournament.name || '',
+        school_name:     school,
+      }),
     });
     const data = await r.json();
     if (r.status === 503) {
