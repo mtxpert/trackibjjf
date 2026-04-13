@@ -1651,6 +1651,7 @@ async function initAuth() {
     };
     setTimeout(pollPlan, 1500);
   } else if (sp.get('checkout') === 'cancel') {
+    sessionStorage.removeItem('pendingCheckoutPlan');
     window.history.replaceState({}, '', '/');
   }
 
@@ -1680,9 +1681,10 @@ async function initAuth() {
       }
       // Fire pending checkout from landing page plan click (survives OAuth redirect via sessionStorage)
       const pendingPlan = _pendingCheckoutPlan || sessionStorage.getItem('pendingCheckoutPlan');
-      if (pendingPlan) {
-        _pendingCheckoutPlan = null;
-        sessionStorage.removeItem('pendingCheckoutPlan');
+      _pendingCheckoutPlan = null;
+      sessionStorage.removeItem('pendingCheckoutPlan');
+      // Only fire pending checkout if user doesn't already have an active plan
+      if (pendingPlan && _userPlan === 'free') {
         startCheckout(pendingPlan);
       }
     } else {
