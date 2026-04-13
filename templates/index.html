@@ -824,24 +824,15 @@ function restoreSession() {
 
 // ─── Init ──────────────────────────────────────────────────────────────────
 function startApp() {
-  localStorage.setItem('mattrack_visited', '1');
   showScreen('screen-tournament');
   if (!allTournaments.length) loadTournaments();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  const returning = localStorage.getItem('mattrack_visited');
-  if (returning) {
-    // Returning user — go straight to tournaments
-    history.replaceState({ screen: 'screen-tournament' }, '', '');
-    loadTournaments();
-  } else {
-    // First visit — show landing page
-    showScreen('screen-landing', false);
-    history.replaceState({ screen: 'screen-landing' }, '', '');
-    // Preload tournaments in background
-    loadTournaments();
-  }
+  // Always show landing until auth check completes — initAuth will skip it if logged in
+  showScreen('screen-landing', false);
+  history.replaceState({ screen: 'screen-landing' }, '', '');
+  loadTournaments(); // preload in background
 });
 
 async function loadTournaments() {
@@ -1629,14 +1620,28 @@ async function initAuth() {
 
   const { data: { session } } = await _sb.auth.getSession();
   _session = session;
-  if (session) await fetchUserPlan(session.access_token);
-  updateAuthUI();
+  if (session) {
+    await fetchUserPlan(session.access_token);
+    updateAuthUI();
+    // Logged in — skip landing, go straight to app
+    if (document.querySelector('.screen.active')?.id === 'screen-landing') {
+      showScreen('screen-tournament', false);
+      history.replaceState({ screen: 'screen-tournament' }, '', '');
+    }
+  } else {
+    updateAuthUI();
+  }
 
   _sb.auth.onAuthStateChange(async (event, session) => {
     _session = session;
     if (session) {
       await fetchUserPlan(session.access_token);
       updateAuthUI();
+      // Signed in — go to app
+      if (document.querySelector('.screen.active')?.id === 'screen-landing') {
+        showScreen('screen-tournament', false);
+        history.replaceState({ screen: 'screen-tournament' }, '', '');
+      }
       // Fire pending checkout from landing page plan click
       if (_pendingCheckoutPlan) {
         const plan = _pendingCheckoutPlan;
