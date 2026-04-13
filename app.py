@@ -870,6 +870,51 @@ def api_gym_redeem():
     return jsonify({"error": "Invalid or already used code"}), 400
 
 
+@app.route("/api/admin/generate-codes", methods=["POST"])
+def api_admin_generate_codes():
+    """
+    Admin endpoint: create a test gym pack and generate access codes.
+    Protected by X-Upload-Key header (same key used for cache uploads).
+    Body: { "owner_id": "<user-uuid>", "school_name": "...", "count": 10 }
+    """
+    expected = os.environ.get("UPLOAD_KEY", "")
+    if not expected or request.headers.get("X-Upload-Key") != expected:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.json or {}
+    owner_id    = data.get("owner_id", "").strip()
+    school_name = data.get("school_name", "Test School")
+    count       = min(int(data.get("count", 10)), 50)
+    if not owner_id:
+        return jsonify({"error": "owner_id required"}), 400
+    try:
+        from supabase import create_client
+        from payments import generate_access_codes
+        sb = create_client(
+            os.environ.get("SUPABASE_URL", ""),
+            os.environ.get("SUPABASE_SERVICE_KEY", ""),
+        )
+        # Create or reuse a gym pack for this owner
+        existing = sb.table("gym_packs").select("id").eq("owner_id", owner_id).execute()
+        if existing.data:
+            pack_id = existing.data[0]["id"]
+        else:
+            insert = sb.table("gym_packs").insert({
+                "owner_id": owner_id,
+                "school_name": school_name,
+                "plan": "gym",
+                "max_codes": count,
+                "sub_status": "active",
+            }).execute()
+            pack_id = insert.data[0]["id"]
+        codes = generate_access_codes(pack_id, count)
+        # Ensure the owner has gym plan
+        sb.table("users").update({"plan": "gym", "sub_status": "active"}).eq("id", owner_id).execute()
+        return jsonify({"pack_id": pack_id, "codes": codes})
+    except Exception as e:
+        logger.error("admin generate-codes failed: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/billing/portal", methods=["POST"])
 @limiter.limit("10 per hour")
 def api_billing_portal():
