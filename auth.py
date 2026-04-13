@@ -6,7 +6,10 @@ to work if Supabase is unreachable.
 """
 
 import os
-from jose import jwt, JWTError
+import time
+import requests
+from jose import jwt, JWTError, jwk
+from jose.utils import base64url_decode
 from supabase import create_client, Client
 
 # ---------------------------------------------------------------------------
@@ -19,6 +22,28 @@ SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "your-service-key"
 SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "your-jwt-secret")
 
 _service_client: Client | None = None
+
+# JWKS cache — refreshed every 24 hours
+_jwks_cache: dict = {}
+_jwks_fetched_at: float = 0.0
+_JWKS_TTL = 86400  # 24 hours
+
+
+def _get_jwks() -> dict:
+    """Return cached JWKS keys, refreshing if stale."""
+    global _jwks_cache, _jwks_fetched_at
+    if time.time() - _jwks_fetched_at > _JWKS_TTL or not _jwks_cache:
+        try:
+            r = requests.get(
+                f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", timeout=5
+            )
+            if r.ok:
+                keys = r.json().get("keys", [])
+                _jwks_cache = {k["kid"]: k for k in keys}
+                _jwks_fetched_at = time.time()
+        except Exception:
+            pass
+    return _jwks_cache
 
 
 def _get_service_client() -> Client | None:
@@ -55,12 +80,33 @@ def get_user_from_token(request) -> dict | None:
         if not token:
             return None
 
-        payload = jwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
+        # Get key ID from token header
+        header = jwt.get_unverified_header(token)
+        alg = header.get("alg", "HS256")
+        kid = header.get("kid")
+
+        if alg == "ES256" and kid:
+            # Verify against Supabase JWKS (asymmetric key)
+            jwks = _get_jwks()
+            key_data = jwks.get(kid)
+            if not key_data:
+                return None
+            public_key = jwk.construct(key_data)
+            payload = jwt.decode(
+                token,
+                public_key,
+                algorithms=["ES256"],
+                audience="authenticated",
+            )
+        else:
+            # Fallback: HS256 with JWT secret
+            payload = jwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                options={"verify_aud": False},
+            )
+
         return payload
     except (JWTError, Exception):
         return None
