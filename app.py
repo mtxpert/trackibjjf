@@ -425,30 +425,35 @@ def index():
 def api_tournaments():
     from pathlib import Path as _Path
     import json as _json
-    # Try seed cache first (instant, no network)
+    from scraper_naga import get_naga_events
+
+    # IBJJF: try seed cache first (instant), fall back to live fetch
+    ibjjf = []
     for seed in [
         _Path(__file__).parent / "seed_cache" / "tournaments.json",
         _Path("/tmp") / "tournaments.json",
     ]:
         if seed.exists():
             try:
-                return app.response_class(
-                    response=seed.read_text(),
-                    status=200,
-                    mimetype='application/json'
-                )
+                ibjjf = [dict(t, source="ibjjf") for t in _json.loads(seed.read_text())]
+                break
             except Exception:
                 pass
-    # Fallback: live fetch
+    if not ibjjf:
+        try:
+            from scraper import get_tournaments
+            ibjjf = [dict(t, source="ibjjf") for t in get_tournaments()]
+        except Exception as e:
+            logger.error("get_tournaments failed: %s", e)
+
+    # NAGA: always live fetch (single request to nagafighter.com)
     try:
-        from scraper import get_tournaments
-        from scraper_naga import get_naga_events
-        ibjjf = [dict(t, source="ibjjf") for t in get_tournaments()]
-        naga  = get_naga_events()
-        return jsonify(ibjjf + naga)
+        naga = get_naga_events()
     except Exception as e:
-        logger.error("get_tournaments failed: %s", e, exc_info=True)
-        return jsonify({"error": "Failed to load tournaments"}), 500
+        logger.error("get_naga_events failed: %s", e)
+        naga = []
+
+    return jsonify(ibjjf + naga)
 
 
 # ── Roster cache endpoints ────────────────────────────────────────────────────
