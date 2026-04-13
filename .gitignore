@@ -9,3 +9,4 @@ bracket_states/
 *.sqlite
 node_modules/
 .DS_Store
+RENDER.md
