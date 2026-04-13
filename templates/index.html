@@ -1667,11 +1667,12 @@ async function initAuth() {
         showScreen('screen-tournament', false);
         history.replaceState({ screen: 'screen-tournament' }, '', '');
       }
-      // Fire pending checkout from landing page plan click
-      if (_pendingCheckoutPlan) {
-        const plan = _pendingCheckoutPlan;
+      // Fire pending checkout from landing page plan click (survives OAuth redirect via sessionStorage)
+      const pendingPlan = _pendingCheckoutPlan || sessionStorage.getItem('pendingCheckoutPlan');
+      if (pendingPlan) {
         _pendingCheckoutPlan = null;
-        startCheckout(plan);
+        sessionStorage.removeItem('pendingCheckoutPlan');
+        startCheckout(pendingPlan);
       }
     } else {
       _userPlan = 'free'; _userEmail = '';
@@ -1803,8 +1804,8 @@ async function signOut() {
 function landingCheckout(plan) {
   // From landing page — sign in first if needed, then checkout
   if (!_session) {
-    // Store intent, sign in, checkout fires in updateAuthUI after login
-    _pendingCheckoutPlan = plan;
+    // Persist intent in sessionStorage so it survives the OAuth redirect
+    sessionStorage.setItem('pendingCheckoutPlan', plan);
     signInWithGoogle();
   } else {
     startCheckout(plan);
