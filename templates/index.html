@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>MatTrack</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
       --red: #c0392b;
@@ -76,48 +77,37 @@
       transition: border-color 0.15s, color 0.15s, background 0.15s;
     }
     .mode-btn--active { border-color: var(--red); color: var(--text); background: rgba(192,57,43,0.12); }
-    .school-input-wrap { position: relative; margin-bottom: 4px; }
+    .school-input-wrap { position: relative; margin-bottom: 10px; }
     .school-input-wrap input {
       width: 100%; padding: 14px 16px; border-radius: 12px;
       border: 2px solid var(--border); background: var(--card);
       color: var(--text); font-size: 1rem; outline: none;
     }
     .school-input-wrap input:focus { border-color: var(--red); }
-    .school-input-wrap input.has-suggestions {
-      border-radius: 12px 12px 0 0;
-      border-color: var(--red);
-      border-bottom-color: var(--border);
-    }
 
-    /* ── School suggestions dropdown ── */
-    #school-suggestions {
-      display: none;
-      position: absolute;
-      left: 0; right: 0; top: 100%;
-      background: var(--card);
-      border: 2px solid var(--red);
-      border-top: none;
-      border-radius: 0 0 12px 12px;
-      overflow: hidden;
-      z-index: 200;
-      max-height: 280px;
+    /* ── Persistent filter list ── */
+    #item-list {
+      border: 1px solid var(--border);
+      border-radius: 12px;
       overflow-y: auto;
+      max-height: calc(100vh - 250px);
+      background: var(--card);
     }
-    .sugg-item {
+    .list-item {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px 16px;
+      padding: 13px 16px;
       cursor: pointer;
       border-bottom: 1px solid var(--border);
       transition: background 0.1s;
     }
-    .sugg-item:last-child { border-bottom: none; }
-    .sugg-item:active, .sugg-item:hover { background: var(--gray); }
-    .sugg-name { font-size: 0.92rem; font-weight: 600; }
-    .sugg-name mark { background: none; color: var(--red); font-weight: 800; }
-    .sugg-count { font-size: 0.75rem; color: var(--muted); flex-shrink: 0; margin-left: 10px; }
-    .sugg-item.active-sugg { background: var(--gray); }
+    .list-item:last-child { border-bottom: none; }
+    .list-item:active, .list-item:hover { background: var(--gray); }
+    .list-item-name { font-size: 0.92rem; font-weight: 600; flex: 1; min-width: 0; }
+    .list-item-name mark { background: none; color: var(--red); font-weight: 800; }
+    .list-item-meta { font-size: 0.75rem; color: var(--muted); flex-shrink: 0; margin-left: 10px; text-align: right; }
+    .list-item--added { opacity: 0.5; }
 
     .btn-primary {
       width: 100%; padding: 15px; border-radius: 12px;
@@ -327,6 +317,28 @@
       pointer-events: none; white-space: nowrap;
     }
     #toast.show { opacity: 1; }
+
+    /* ── Auth / Paywall modals ── */
+    .modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;display:none;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom); }
+    .modal-overlay.open { display:flex; }
+    .modal-sheet { background:var(--card);border-radius:20px 20px 0 0;padding:28px 20px 40px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto; }
+    .modal-title { font-size:1.2rem;font-weight:800;margin-bottom:6px; }
+    .modal-sub { font-size:0.85rem;color:var(--muted);margin-bottom:20px;line-height:1.5; }
+    .plan-card { background:var(--gray);border-radius:12px;padding:16px;margin-bottom:10px;border:2px solid transparent;cursor:pointer;transition:border-color 0.15s; }
+    .plan-card:hover,.plan-card.featured { border-color:var(--red); }
+    .plan-price { font-size:1.4rem;font-weight:800;display:inline; }
+    .plan-period { font-size:0.8rem;color:var(--muted); }
+    .plan-name { font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px; }
+    .plan-features { font-size:0.8rem;color:var(--muted);margin-top:6px;line-height:1.7; }
+    .btn-google { width:100%;padding:14px;border-radius:12px;background:white;color:#222;border:none;font-size:0.95rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px; }
+    .btn-google:active { opacity:0.85; }
+    .btn-modal-close { position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer;line-height:1; }
+    .modal-sheet { position:relative; }
+    .user-pill { margin-left:auto;display:flex;align-items:center;gap:6px;font-size:0.75rem;background:rgba(255,255,255,0.18);padding:5px 11px;border-radius:20px;cursor:pointer;white-space:nowrap; }
+    .pill-plan { font-size:0.65rem;background:var(--green);color:white;padding:1px 6px;border-radius:8px;font-weight:700;text-transform:uppercase; }
+    .pill-plan.free { background:var(--muted); }
+    .code-input { width:100%;padding:14px;border-radius:12px;background:var(--gray);border:1px solid var(--border);color:var(--text);font-size:1.1rem;letter-spacing:3px;text-transform:uppercase;text-align:center;margin-bottom:12px; }
+    .code-input:focus { outline:none;border-color:var(--red); }
   </style>
 </head>
 <body>
@@ -337,6 +349,10 @@
     <h1 id="header-title">MatTrack</h1>
     <div class="header-sub" id="header-sub">Live Tournament Tracker</div>
   </div>
+      <div id="user-pill" class="user-pill" style="display:none" onclick="showModal('modal-account')">
+        <span id="pill-label">Free</span>
+        <span class="pill-plan free" id="pill-plan-badge">FREE</span>
+      </div>
 </div>
 
 <!-- ── Screen 1: Pick Tournament ── -->
@@ -358,20 +374,17 @@
       <button id="mode-team" class="mode-btn mode-btn--active" onclick="setSearchMode('team')">Team</button>
       <button id="mode-athlete" class="mode-btn" onclick="setSearchMode('athlete')">Athlete</button>
     </div>
+    <div style="font-size:0.75rem;color:var(--muted);margin-bottom:8px" id="school-tourney-name"></div>
     <div class="school-input-wrap">
       <input type="text" id="school-input" value=""
-        placeholder="Type your school name…"
+        placeholder="Filter teams…"
         autocomplete="off" spellcheck="false"
-        oninput="onSchoolInput()"
-        onkeydown="onSchoolKey(event)">
-      <div id="school-suggestions"></div>
+        oninput="onSchoolInput()">
     </div>
-    <button class="btn-primary" id="btn-search" onclick="startSearch()" style="display:none">
-      🔍 Search Brackets
-    </button>
-    <div style="margin-top:10px;font-size:0.8rem;color:var(--muted)" id="school-tourney-name"></div>
-    <div id="cache-status" style="margin:12px 0 4px;font-size:0.78rem;color:var(--muted);min-height:18px"></div>
-    <div style="margin-top: 8px; text-align: center;">
+    <div id="cache-status" style="margin:0 0 8px;font-size:0.78rem;color:var(--muted);min-height:18px"></div>
+    <div id="item-list"></div>
+    <div id="athlete-queue"></div>
+    <div style="margin-top: 12px; text-align: center;">
       <button onclick="showScreen('screen-tournament')" style="background:none;border:none;color:var(--muted);font-size:0.82rem;cursor:pointer">
         ← Change Tournament
       </button>
@@ -428,6 +441,68 @@
   <div id="watch-list" class="athletes-list"></div>
 </div>
 
+  <!-- ── Paywall modal ── -->
+  <div class="modal-overlay" id="modal-paywall">
+    <div class="modal-sheet">
+      <button class="btn-modal-close" onclick="closeModal('modal-paywall')">✕</button>
+      <div class="modal-title">Upgrade MatTrack</div>
+      <div class="modal-sub">Free plan: track 1 athlete per session.<br>Upgrade to watch your whole team.</div>
+
+      <div class="plan-card featured" onclick="startCheckout('individual')">
+        <div class="plan-name">Individual Coach</div>
+        <span class="plan-price">$2.99</span><span class="plan-period">/month</span>
+        <div class="plan-features">✓ Unlimited athletes<br>✓ All tournaments<br>✓ Live bracket updates</div>
+      </div>
+
+      <div class="plan-card" onclick="startCheckout('gym')">
+        <div class="plan-name">Gym Pack</div>
+        <span class="plan-price">$19.99</span><span class="plan-period">/month</span>
+        <div class="plan-features">✓ 10 coach accounts<br>✓ Unlimited athletes each<br>✓ Manage your team's access</div>
+      </div>
+
+      <div class="plan-card" onclick="startCheckout('affiliate')">
+        <div class="plan-name">Affiliate Pack</div>
+        <span class="plan-price">$49.99</span><span class="plan-period">/month</span>
+        <div class="plan-features">✓ 30 coach accounts<br>✓ Branded school page<br>✓ Share with parents</div>
+      </div>
+
+      <div id="paywall-auth-section">
+        <button class="btn-google" onclick="signInWithGoogle()">
+          <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+          Sign in with Google to upgrade
+        </button>
+        <div style="text-align:center;margin-top:8px">
+          <a href="#" onclick="showModal('modal-redeem');closeModal('modal-paywall');return false" style="color:var(--muted);font-size:0.82rem">Have a gym code? Redeem it here</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Code redemption modal ── -->
+  <div class="modal-overlay" id="modal-redeem">
+    <div class="modal-sheet">
+      <button class="btn-modal-close" onclick="closeModal('modal-redeem')">✕</button>
+      <div class="modal-title">Redeem Gym Code</div>
+      <div class="modal-sub">Enter the access code from your gym or coach.</div>
+      <input class="code-input" id="redeem-code-input" type="text" maxlength="12" placeholder="TRACK-XXXX"
+             oninput="this.value=this.value.toUpperCase()">
+      <button class="btn btn-primary" style="width:100%" onclick="redeemCode()">Redeem Code</button>
+      <div id="redeem-error" style="color:#e74c3c;font-size:0.82rem;margin-top:8px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── Account modal ── -->
+  <div class="modal-overlay" id="modal-account">
+    <div class="modal-sheet">
+      <button class="btn-modal-close" onclick="closeModal('modal-account')">✕</button>
+      <div class="modal-title" id="account-email" style="font-size:0.95rem;font-weight:600;margin-bottom:4px"></div>
+      <div id="account-plan-label" style="color:var(--muted);font-size:0.82rem;margin-bottom:20px"></div>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:10px" id="account-upgrade-btn" onclick="showModal('modal-paywall');closeModal('modal-account')" style="display:none">Upgrade Plan</button>
+      <button class="btn" style="width:100%;margin-bottom:10px;background:var(--gray)" id="account-billing-btn" onclick="openBillingPortal()">Manage Billing</button>
+      <button class="btn" style="width:100%;background:var(--gray);color:#e74c3c" onclick="signOut()">Sign Out</button>
+    </div>
+  </div>
+
 <div id="toast"></div>
 
 <script>
@@ -453,16 +528,14 @@ let _athleteSugg      = [];       // [{name, team}]
 function setSearchMode(mode) {
   _searchMode   = mode;
   _athleteQueue = [];
-  const qEl = document.getElementById('athlete-queue');
   const bEl = document.getElementById('athlete-watch-btn');
-  if (qEl) qEl.innerHTML = '';
   if (bEl) bEl.style.display = 'none';
   document.getElementById('mode-team').classList.toggle('mode-btn--active', mode === 'team');
   document.getElementById('mode-athlete').classList.toggle('mode-btn--active', mode === 'athlete');
   const inp = document.getElementById('school-input');
-  inp.placeholder = mode === 'team' ? 'Type your school name…' : 'Type athlete name…';
+  inp.placeholder = mode === 'team' ? 'Filter teams…' : 'Filter athletes…';
   inp.value = '';
-  hideSuggestions();
+  renderItemList('');
 }
 
 function timeSince(isoStr) {
@@ -616,9 +689,7 @@ function selectTournament(id, el) {
   el.classList.add('selected');
   selectedTournament = allTournaments.find(t => t.id === id);
   document.getElementById('school-tourney-name').textContent = selectedTournament.name;
-  hideSuggestions();
   document.getElementById('school-input').value = '';
-  clearTimeout(_schoolTimer);
   setSearchMode('team');
   showScreen('screen-school');
   loadTeamSuggestions(id);
@@ -629,15 +700,19 @@ async function loadTeamSuggestions(tournamentId) {
   _teamSuggestions = [];
   _athleteSugg     = [];
   if (el) el.textContent = 'Loading…';
+  const list = document.getElementById('item-list');
+  if (list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading…</div>';
   try {
     const r    = await fetch(`/api/teams/${tournamentId}`);
     const data = await r.json();
     if (data.teams) {
       _teamSuggestions = data.teams;
       _athleteSugg     = data.athletes || [];
-      if (el) el.textContent = `✓ ${data.athlete_count} athletes — start typing`;
+      if (el) el.textContent = `${data.athlete_count} athletes · ${_teamSuggestions.length} teams`;
+      renderItemList('');
     } else {
       if (el) el.textContent = 'Building roster… try again shortly';
+      if (list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Building roster…</div>';
       setTimeout(() => loadTeamSuggestions(tournamentId), 4000);
     }
   } catch(e) {
@@ -645,132 +720,116 @@ async function loadTeamSuggestions(tournamentId) {
   }
 }
 
-// ─── School typeahead ──────────────────────────────────────────────────────
-let _schoolTimer = null;
-let _suggIndex  = -1;
+// ─── School filter list ────────────────────────────────────────────────────
 
 function onSchoolInput() {
-  clearTimeout(_schoolTimer);
-  _suggIndex = -1;
   const val = document.getElementById('school-input').value.trim();
-  if (val.length < 1) { hideSuggestions(); return; }
-  const vl = val.toLowerCase();
-
-  if (_searchMode === 'athlete') {
-    const matches = _athleteSugg
-      .filter(a => a.name.toLowerCase().includes(vl))
-      .sort((a, b) => {
-        const aS = a.name.toLowerCase().startsWith(vl) ? 0 : 1;
-        const bS = b.name.toLowerCase().startsWith(vl) ? 0 : 1;
-        return aS !== bS ? aS - bS : a.name.localeCompare(b.name);
-      })
-      .slice(0, 12);
-    if (!matches.length) { hideSuggestions(); return; }
-    showAthletesSuggestions(matches, val);
-  } else {
-    const teams = _teamSuggestions
-      .filter(t => t.name.toLowerCase().includes(vl))
-      .sort((a, b) => {
-        const aStarts = a.name.toLowerCase().startsWith(vl) ? 0 : 1;
-        const bStarts = b.name.toLowerCase().startsWith(vl) ? 0 : 1;
-        if (aStarts !== bStarts) return aStarts - bStarts;
-        return b.count - a.count;
-      })
-      .slice(0, 12);
-    if (!teams.length) { hideSuggestions(); return; }
-    showSuggestions(teams.map(t => [t.name, t.count]), val);
-  }
+  renderItemList(val);
 }
 
-function showAthletesSuggestions(athletes, query) {
-  const box = document.getElementById('school-suggestions');
-  const inp = document.getElementById('school-input');
-  const vl  = query.toLowerCase();
-
-  box.innerHTML = athletes.map(a => {
-    const idx = a.name.toLowerCase().indexOf(vl);
-    const hi  = idx >= 0
-      ? a.name.slice(0,idx) + '<mark>' + a.name.slice(idx, idx+query.length) + '</mark>' + a.name.slice(idx+query.length)
-      : a.name;
-    return `<div class="sugg-item" data-name="${a.name.replace(/"/g,'&quot;')}" onclick="selectSchool(this)">
-      <span class="sugg-name">${hi}</span>
-      <span class="sugg-count" style="font-size:0.72rem">${a.team || ''}</span>
-    </div>`;
-  }).join('');
-
-  box.style.display = 'block';
-  inp.classList.add('has-suggestions');
+function _highlight(text, query) {
+  if (!query) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx < 0) return text;
+  return text.slice(0,idx) + '<mark>' + text.slice(idx, idx+query.length) + '</mark>' + text.slice(idx+query.length);
 }
 
-function onSchoolKey(e) {
-  const items = document.querySelectorAll('.sugg-item');
-  if (!items.length) {
-    if (e.key === 'Enter') startSearch();
-    return;
-  }
-  if (e.key === 'ArrowDown') {
-    e.preventDefault();
-    _suggIndex = Math.min(_suggIndex + 1, items.length - 1);
-    highlightSugg(items);
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault();
-    _suggIndex = Math.max(_suggIndex - 1, -1);
-    highlightSugg(items);
-  } else if (e.key === 'Enter') {
-    if (_suggIndex >= 0 && items[_suggIndex]) {
-      items[_suggIndex].click();
-    } else {
-      startSearch();
+function renderItemList(query) {
+  const list = document.getElementById('item-list');
+  if (!list) return;
+  const vl = query.toLowerCase().trim();
+
+  if (_searchMode === 'team') {
+    let teams = vl
+      ? _teamSuggestions.filter(t => t.name.toLowerCase().includes(vl))
+      : [..._teamSuggestions];
+
+    if (!teams.length && !_teamSuggestions.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading…</div>';
+      return;
     }
-  } else if (e.key === 'Escape') {
-    hideSuggestions();
+    if (!teams.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No matches</div>';
+      return;
+    }
+
+    // Sort: starts-with first, then by athlete count
+    teams.sort((a, b) => {
+      const aS = a.name.toLowerCase().startsWith(vl) ? 0 : 1;
+      const bS = b.name.toLowerCase().startsWith(vl) ? 0 : 1;
+      if (aS !== bS) return aS - bS;
+      return b.count - a.count;
+    });
+
+    list.innerHTML = teams.map(t => `
+      <div class="list-item" data-name="${t.name.replace(/"/g,'&quot;')}" onclick="selectSchool(this)">
+        <span class="list-item-name">${_highlight(t.name, query)}</span>
+        <span class="list-item-meta">${t.count} athlete${t.count>1?'s':''}</span>
+      </div>`).join('');
+
+  } else {
+    // Athlete mode
+    let athletes = vl
+      ? _athleteSugg.filter(a =>
+          a.name.toLowerCase().includes(vl) || (a.team||'').toLowerCase().includes(vl))
+      : [..._athleteSugg];
+
+    if (!athletes.length && !_athleteSugg.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading…</div>';
+      return;
+    }
+    if (!athletes.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No matches</div>';
+      return;
+    }
+
+    // Sort: starts-with first, then alpha
+    athletes.sort((a, b) => {
+      const aS = a.name.toLowerCase().startsWith(vl) ? 0 : 1;
+      const bS = b.name.toLowerCase().startsWith(vl) ? 0 : 1;
+      if (aS !== bS) return aS - bS;
+      return a.name.localeCompare(b.name);
+    });
+
+    list.innerHTML = athletes.map(a => {
+      // Check for live bracket status from current watch session
+      const known = (allAthletes||[]).find(x => x.name.toLowerCase() === a.name.toLowerCase());
+      let metaHtml;
+      if (known) {
+        const medal = known.placement ? PICK_MEDAL[String(known.placement)] : null;
+        if (medal) {
+          metaHtml = `<span class="list-item-meta">${medal} ${known.placement === '1' ? '1st' : known.placement === '2' ? '2nd' : known.placement === '3' ? '3rd' : known.placement+'th'}</span>`;
+        } else if (known.eliminated) {
+          metaHtml = `<span class="list-item-meta" style="color:#c0392b">Eliminated</span>`;
+        } else if (known.fight_time) {
+          const timeStr = known.fight_time_utc
+            ? new Date(known.fight_time_utc).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})
+            : (known.fight_time.match(/at\s+(.+)$/i)||[])[1] || known.fight_time;
+          const matStr = known.mat_name ? `Mat ${known.mat_name}` : '';
+          metaHtml = `<span class="list-item-meta" style="color:var(--green)">${[matStr, timeStr].filter(Boolean).join(' · ')}</span>`;
+        } else {
+          metaHtml = `<span class="list-item-meta">${a.team || ''}</span>`;
+        }
+      } else {
+        metaHtml = `<span class="list-item-meta">${a.team || ''}</span>`;
+      }
+      const inQueue = _athleteQueue.some(q => q.name.toLowerCase() === a.name.toLowerCase());
+      return `<div class="list-item${inQueue?' list-item--added':''}" data-name="${a.name.replace(/"/g,'&quot;')}" onclick="selectSchool(this)">
+        <span class="list-item-name">${_highlight(a.name, query)}</span>
+        ${metaHtml}
+      </div>`;
+    }).join('');
   }
 }
 
-function highlightSugg(items) {
-  items.forEach((el, i) => el.classList.toggle('active-sugg', i === _suggIndex));
-  if (_suggIndex >= 0) {
-    const name = items[_suggIndex].dataset.name;
-    document.getElementById('school-input').value = name;
-  }
-}
-
-function showSuggestions(teams, query) {
-  const box  = document.getElementById('school-suggestions');
-  const inp  = document.getElementById('school-input');
-  const vl   = query.toLowerCase();
-
-  box.innerHTML = teams.map(([name, count]) => {
-    // Bold the matching substring
-    const idx  = name.toLowerCase().indexOf(vl);
-    const hi   = idx >= 0
-      ? name.slice(0, idx) + '<mark>' + name.slice(idx, idx + query.length) + '</mark>' + name.slice(idx + query.length)
-      : name;
-    return `<div class="sugg-item" data-name="${name.replace(/"/g,'&quot;')}" onclick="selectSchool(this)">
-      <span class="sugg-name">${hi}</span>
-      <span class="sugg-count">${count} athlete${count>1?'s':''}</span>
-    </div>`;
-  }).join('');
-
-  box.style.display = 'block';
-  inp.classList.add('has-suggestions');
-}
-
-function hideSuggestions() {
-  const box = document.getElementById('school-suggestions');
-  const inp = document.getElementById('school-input');
-  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
-  if (inp) inp.classList.remove('has-suggestions');
-  _suggIndex = -1;
-}
+function hideSuggestions() { /* no-op — kept for compatibility */ }
 
 function selectSchool(el) {
   const name = el.dataset.name;
-  document.getElementById('school-input').value = name;
-  hideSuggestions();
   if (_searchMode === 'athlete') {
     addAthleteToList(name);
   } else {
+    document.getElementById('school-input').value = name;
     startSearch();
   }
 }
@@ -779,6 +838,7 @@ function selectSchool(el) {
 let _athleteQueue = [];   // [{name, team}] accumulated in athlete mode
 
 async function addAthleteToList(name) {
+  if (!checkAthleteLimit(_athleteQueue.length)) return;
   const existing = _athleteQueue.find(a => a.name.toLowerCase() === name.toLowerCase());
   if (existing) { showToast(`${name} already added`); return; }
   const meta = Object.assign({}, _athleteSugg.find(a => a.name.toLowerCase() === name.toLowerCase()) || {name, team:''});
@@ -811,16 +871,17 @@ function removeAthleteFromQueue(idx) {
 }
 
 function renderAthleteQueue() {
-  let el = document.getElementById('athlete-queue');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'athlete-queue';
-    el.style.cssText = 'margin-top:10px;display:flex;flex-direction:column;gap:6px;';
-    document.getElementById('cache-status').after(el);
+  const el = document.getElementById('athlete-queue');
+  if (!el) return;
+  if (!_athleteQueue.length) {
+    el.innerHTML = '';
+    const btn = document.getElementById('athlete-watch-btn');
+    if (btn) btn.style.display = 'none';
+    renderItemList(document.getElementById('school-input').value.trim());
+    return;
   }
-  if (!_athleteQueue.length) { el.innerHTML = ''; return; }
   el.innerHTML = _athleteQueue.map((a, i) => `
-    <div style="display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;">
+    <div style="display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:6px;">
       <div style="flex:1;min-width:0">
         <div style="font-size:0.9rem;font-weight:600">${a.name}</div>
         ${a.team ? `<div style="font-size:0.73rem;color:var(--muted)">${a.team}</div>` : ''}
@@ -829,7 +890,6 @@ function renderAthleteQueue() {
       <button onclick="removeAthleteFromQueue(${i})" style="background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:2px 4px">✕</button>
     </div>`).join('');
 
-  // Show/hide watch button
   let btn = document.getElementById('athlete-watch-btn');
   if (!btn) {
     btn = document.createElement('button');
@@ -839,8 +899,11 @@ function renderAthleteQueue() {
     btn.onclick = startAthleteQueueSearch;
     el.after(btn);
   }
-  btn.textContent = `Done — Watch ${_athleteQueue.length} Athlete${_athleteQueue.length > 1 ? 's' : ''} →`;
+  btn.textContent = `Watch ${_athleteQueue.length} Athlete${_athleteQueue.length > 1 ? 's' : ''} →`;
   btn.style.display = '';
+
+  // Re-render list to reflect added state
+  renderItemList(document.getElementById('school-input').value.trim());
 }
 
 async function startAthleteQueueSearch() {
@@ -875,15 +938,8 @@ async function startAthleteQueueSearch() {
   goWatch();
 }
 
-// Close suggestions when tapping outside
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.school-input-wrap')) hideSuggestions();
-});
-
 // ─── Search ────────────────────────────────────────────────────────────────
 async function startSearch() {
-  clearTimeout(_schoolTimer);
-  hideSuggestions();
   const school = document.getElementById('school-input').value.trim();
   if (!school) { showToast('Enter a school name'); return; }
   if (!selectedTournament) { showScreen('screen-tournament'); return; }
@@ -1016,9 +1072,11 @@ async function refreshPickStatuses() {
   if (_pickRefreshing || !selectedTournament) return;
   _pickRefreshing = true;
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (_session?.access_token) headers['Authorization'] = `Bearer ${_session.access_token}`;
     const r = await fetch('/api/refresh', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         tournament_id:   selectedTournament.id,
         tournament_name: selectedTournament.name,
@@ -1044,7 +1102,10 @@ async function refreshPickStatuses() {
 
 function togglePick(key) {
   if (selectedKeys.has(key)) selectedKeys.delete(key);
-  else selectedKeys.add(key);
+  else {
+    if (!checkAthleteLimit(selectedKeys.size)) return;
+    selectedKeys.add(key);
+  }
   filterPick();
 }
 
@@ -1249,10 +1310,16 @@ async function manualRefresh() {
   const watched = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
 
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (_session?.access_token) headers['Authorization'] = `Bearer ${_session.access_token}`;
     const r = await fetch('/api/refresh', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tournament_id: watchedTournamentId, tournament_name: selectedTournament?.name || '', athletes: watched })
+      headers,
+      body: JSON.stringify({
+        tournament_id:   watchedTournamentId,
+        tournament_name: selectedTournament?.name || '',
+        athletes:        watched
+      })
     });
     const data = await r.json();
 
@@ -1307,6 +1374,190 @@ function showToast(msg) {
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2500);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// AUTH & PAYMENTS
+// ═══════════════════════════════════════════════════════════════
+
+const SUPABASE_URL  = 'https://kzqvfuqxtbrhlgphyntb.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6cXZmdXF4dGJyaGxncGh5bnRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwMjkyNjAsImV4cCI6MjA5MTYwNTI2MH0.B5oAm1A5kNY01yU5a6KOUDHPyysrJa9-SaSyLzWv4S4';
+
+let _sb      = null;
+let _session = null;
+let _userPlan = 'free';
+let _userEmail = '';
+
+async function initAuth() {
+  if (typeof window.supabase === 'undefined') return;
+  _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+  // Handle OAuth redirect — token arrives in URL hash
+  const hash = window.location.hash;
+  if (hash && hash.includes('access_token')) {
+    const params = new URLSearchParams(hash.slice(1));
+    const access_token  = params.get('access_token');
+    const refresh_token = params.get('refresh_token');
+    if (access_token) {
+      await _sb.auth.setSession({ access_token, refresh_token });
+      window.history.replaceState({}, '', '/');
+    }
+  }
+
+  // Handle checkout return
+  const sp = new URLSearchParams(window.location.search);
+  if (sp.get('checkout') === 'success') {
+    showToast('Payment successful — plan activated!');
+    window.history.replaceState({}, '', '/');
+    setTimeout(fetchUserPlan, 2000); // give webhook time to process
+  } else if (sp.get('checkout') === 'cancel') {
+    window.history.replaceState({}, '', '/');
+  }
+
+  const { data: { session } } = await _sb.auth.getSession();
+  _session = session;
+  if (session) await fetchUserPlan(session.access_token);
+  updateAuthUI();
+
+  _sb.auth.onAuthStateChange(async (event, session) => {
+    _session = session;
+    if (session) await fetchUserPlan(session.access_token);
+    else { _userPlan = 'free'; _userEmail = ''; }
+    updateAuthUI();
+  });
+}
+
+async function fetchUserPlan(token) {
+  token = token || _session?.access_token;
+  if (!token) return;
+  try {
+    const r = await fetch('/api/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+    const d = await r.json();
+    _userPlan  = d.plan  || 'free';
+    _userEmail = d.email || '';
+  } catch(e) {}
+}
+
+function updateAuthUI() {
+  const pill = document.getElementById('user-pill');
+  const pillLabel = document.getElementById('pill-label');
+  const pillBadge = document.getElementById('pill-plan-badge');
+  if (!pill) return;
+
+  if (_session) {
+    pill.style.display = 'flex';
+    const name = _userEmail.split('@')[0] || 'Account';
+    pillLabel.textContent = name;
+    const paid = _userPlan !== 'free';
+    pillBadge.textContent = _userPlan.toUpperCase();
+    pillBadge.className   = 'pill-plan' + (paid ? '' : ' free');
+
+    // Update account modal
+    const em = document.getElementById('account-email');
+    const pl = document.getElementById('account-plan-label');
+    const ub = document.getElementById('account-upgrade-btn');
+    const bb = document.getElementById('account-billing-btn');
+    if (em) em.textContent = _userEmail;
+    if (pl) pl.textContent = paid ? `Plan: ${_userPlan} (active)` : 'Plan: Free (1 athlete)';
+    if (ub) ub.style.display = paid ? 'none' : 'block';
+    if (bb) bb.style.display = paid ? 'block' : 'none';
+
+    // Hide sign-in button in paywall if already signed in
+    const pas = document.getElementById('paywall-auth-section');
+    if (pas) pas.innerHTML = paid
+      ? '<p style="text-align:center;color:var(--muted);font-size:0.82rem">Select a plan above to upgrade</p>'
+      : '<button class="btn btn-primary" style="width:100%" onclick="startCheckout(\'individual\')">Upgrade for $2.99/mo</button><div style="text-align:center;margin-top:8px"><a href="#" onclick="showModal(\'modal-redeem\');closeModal(\'modal-paywall\');return false" style="color:var(--muted);font-size:0.82rem">Have a gym code? Redeem it here</a></div>';
+  } else {
+    pill.style.display = 'none';
+  }
+}
+
+async function signInWithGoogle() {
+  if (!_sb) return;
+  const base = window.location.origin;
+  await _sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: base }
+  });
+}
+
+async function signOut() {
+  if (!_sb) return;
+  await _sb.auth.signOut();
+  _userPlan = 'free'; _userEmail = ''; _session = null;
+  updateAuthUI();
+  closeModal('modal-account');
+  showToast('Signed out');
+}
+
+async function startCheckout(plan) {
+  if (!_session) { signInWithGoogle(); return; }
+  try {
+    showToast('Opening checkout…');
+    const r = await fetch('/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization': `Bearer ${_session.access_token}` },
+      body: JSON.stringify({ plan })
+    });
+    const d = await r.json();
+    if (d.url) window.location.href = d.url;
+    else showToast('Error: ' + (d.error || 'unknown'));
+  } catch(e) { showToast('Checkout failed'); }
+}
+
+async function openBillingPortal() {
+  if (!_session) return;
+  closeModal('modal-account');
+  try {
+    const r = await fetch('/api/billing/portal', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${_session.access_token}` }
+    });
+    const d = await r.json();
+    if (d.url) window.location.href = d.url;
+    else showToast('No billing account found');
+  } catch(e) { showToast('Error opening billing portal'); }
+}
+
+async function redeemCode() {
+  if (!_session) { signInWithGoogle(); return; }
+  const code = (document.getElementById('redeem-code-input')?.value || '').trim().toUpperCase();
+  if (!code) return;
+  const errEl = document.getElementById('redeem-error');
+  try {
+    const r = await fetch('/api/gym/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization': `Bearer ${_session.access_token}` },
+      body: JSON.stringify({ code })
+    });
+    const d = await r.json();
+    if (d.success) {
+      _userPlan = 'individual';
+      updateAuthUI();
+      closeModal('modal-redeem');
+      showToast('Code redeemed — unlimited athletes unlocked!');
+    } else {
+      if (errEl) { errEl.textContent = d.error || 'Invalid code'; errEl.style.display = 'block'; }
+    }
+  } catch(e) {
+    if (errEl) { errEl.textContent = 'Error redeeming code'; errEl.style.display = 'block'; }
+  }
+}
+
+function checkAthleteLimit(currentCount) {
+  if (_userPlan !== 'free') return true;
+  if (currentCount >= 1) { showModal('modal-paywall'); return false; }
+  return true;
+}
+
+function showModal(id) {
+  document.getElementById(id)?.classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id)?.classList.remove('open');
+}
+
+// Call initAuth on load
+document.addEventListener('DOMContentLoaded', () => { initAuth(); });
 </script>
 </body>
 </html>
