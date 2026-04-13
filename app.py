@@ -1,5 +1,5 @@
 """
-IBJJF Tournament Tracker
+MatTrack — Tournament Tracker
 Scalable architecture:
   - Roster cache: one Playwright scrape per tournament serves all users
   - Client-side filtering: search is a JS .filter(), zero server load
@@ -19,7 +19,7 @@ import scraper as _scraper
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "ibjjf-tracker-key")
+app.secret_key = os.environ.get("SECRET_KEY", "mattrack-secret-key")
 
 BASE_URL = "https://www.bjjcompsystem.com"
 
@@ -64,7 +64,7 @@ def _tournament_tz(tournament_name):
     for kw, tz in _TOURNEY_TZ.items():
         if kw in name_lower:
             return tz
-    return 'America/New_York'   # IBJJF HQ default
+    return 'America/New_York'   # default
 
 _FIGHT_TIME_RE = re.compile(
     r'\w{3}\s+(\d{2})/(\d{2})\s+at\s+(\d{1,2}:\d{2}\s*[AP]M)', re.IGNORECASE

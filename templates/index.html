@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>trackIBJJF</title>
+  <title>MatTrack</title>
   <style>
     :root {
       --red: #c0392b;
@@ -334,7 +334,7 @@
 <div class="header" onclick="goHome()" style="cursor:pointer">
   <span style="font-size:1.8rem">🥋</span>
   <div>
-    <h1 id="header-title">trackIBJJF</h1>
+    <h1 id="header-title">MatTrack</h1>
     <div class="header-sub" id="header-sub">Live Tournament Tracker</div>
   </div>
 </div>
@@ -491,7 +491,7 @@ function showScreen(id, pushState = true) {
 }
 
 function goHome() {
-  sessionStorage.removeItem('ibjjf_session');
+  sessionStorage.removeItem('mattrack_session');
   selectedTournament = null;
   watchedTournamentId = '';
   allAthletes = [];
@@ -506,7 +506,7 @@ window.addEventListener('popstate', (e) => {
   const screen = e.state?.screen;
   if (!screen || screen === 'screen-tournament') {
     // Clear session so goHome doesn't re-restore
-    sessionStorage.removeItem('ibjjf_session');
+    sessionStorage.removeItem('mattrack_session');
     selectedTournament = null; watchedTournamentId = ''; allAthletes = []; selectedKeys = new Set();
     document.getElementById('header-sub').textContent = 'Live Tournament Tracker';
     showScreen('screen-tournament', false);
@@ -531,7 +531,7 @@ window.addEventListener('popstate', (e) => {
 // ─── Session persistence ───────────────────────────────────────────────────
 function saveSession() {
   try {
-    sessionStorage.setItem('ibjjf_session', JSON.stringify({
+    sessionStorage.setItem('mattrack_session', JSON.stringify({
       tournament:   selectedTournament,
       tournamentId: watchedTournamentId,
       athletes:     allAthletes,
@@ -543,7 +543,7 @@ function saveSession() {
 
 function restoreSession() {
   try {
-    const raw = sessionStorage.getItem('ibjjf_session');
+    const raw = sessionStorage.getItem('mattrack_session');
     if (!raw) return false;
     const s = JSON.parse(raw);
     if (!s.tournament) return false;
