@@ -941,7 +941,15 @@ function restoreSession() {
       manualRefresh();
     } else if (screen === 'screen-pick' && allAthletes.length) {
       showScreen('screen-pick', false);
-      renderPick();
+      filterPick();
+      _loadPickStatuses();
+    } else if (screen === 'screen-school') {
+      document.getElementById('school-tourney-name').textContent = selectedTournament.name;
+      document.getElementById('school-input').value = '';
+      setSearchMode('team');
+      showScreen('screen-school', false);
+      loadTeamSuggestions(selectedTournament.id);
+      _loadPickStatuses();
     } else {
       return false;
     }
@@ -1004,6 +1012,7 @@ function selectTournament(id, el) {
   showScreen('screen-school');
   loadTeamSuggestions(id);
   _loadPickStatuses();
+  saveSession();
 }
 
 async function loadTeamSuggestions(tournamentId) {
@@ -1276,6 +1285,7 @@ function showPick() {
   showScreen('screen-pick');
   filterPick();
   _loadPickStatuses();
+  saveSession();
 }
 
 const PICK_MEDAL = {'1':'🥇','2':'🥈','3':'🥉'};
