@@ -10,7 +10,7 @@ Scalable architecture:
 from flask import Flask, render_template, jsonify, request, Response, send_file
 import os, threading, time, json, queue, re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 import watcher as _watcher
@@ -660,10 +660,12 @@ def _fight_is_upcoming(fight):
     if not dm:
         return False  # no date/time info — don't block elimination detection
     fight_date = date(date.today().year, int(dm.group(1)), int(dm.group(2)))
-    today = date.today()
-    if fight_date > today:
+    # Use UTC-12 as the reference date so tournaments in any timezone are treated
+    # as "today" even when the Render server has already rolled past UTC midnight.
+    today_safe = (datetime.utcnow() - timedelta(hours=12)).date()
+    if fight_date > today_safe:
         return True
-    if fight_date < today:
+    if fight_date < today_safe:
         return False
 
     # Same day — check time (use UTC-5 as conservative tournament timezone)
