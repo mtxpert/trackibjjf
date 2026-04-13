@@ -16,6 +16,18 @@
 | epp-chatbot | `srv-d6teljkhg0os73fp5vvg` | https://epp-chatbot.onrender.com |
 | epp-retail | `srv-d71enr4r85hc73a0aub0` | https://epp-retail.onrender.com |
 
+## SSH Access
+
+- **SSH address**: `srv-d7dq9k5ckfvc73f0natg@ssh.oregon.render.com`
+- **Public key added**: `~/.ssh/id_ed25519.pub` (mtxpert@windows)
+- **Connect**: `ssh srv-d7dq9k5ckfvc73f0natg@ssh.oregon.render.com`
+- **Note**: SSH connects to the live running container, not the build environment. Use for inspecting runtime state, logs, installed packages, env vars.
+
+```bash
+# Quick health check via SSH
+ssh srv-d7dq9k5ckfvc73f0natg@ssh.oregon.render.com "pip list | grep -iE 'flask|stripe|supabase' && ls /opt/render/project/src/"
+```
+
 ## Common Commands
 
 ```bash
