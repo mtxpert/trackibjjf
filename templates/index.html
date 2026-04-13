@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>MatTrack</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MatTrack">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
@@ -486,6 +492,13 @@
           <p id="step3-desc">Get real-time mat assignments, fight times, and results as they happen.</p>
         </div>
       </div>
+      <div class="how-step">
+        <div class="how-step-num">4</div>
+        <div class="how-step-text">
+          <h3 id="step4-title">Get fight alerts</h3>
+          <p id="step4-desc">Enable push notifications and get buzzed the moment your athlete is called to the mat — even with your phone in your pocket.</p>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -687,7 +700,36 @@
       <button class="btn btn-primary" style="width:100%;margin-bottom:10px" id="account-upgrade-btn" onclick="showModal('modal-paywall');closeModal('modal-account')">Upgrade Plan</button>
       <button class="btn" style="width:100%;margin-bottom:10px;background:var(--gray)" id="account-codes-btn" onclick="openCodesModal()">Manage Team Codes</button>
       <button class="btn" style="width:100%;margin-bottom:10px;background:var(--gray)" id="account-billing-btn" onclick="openBillingPortal()">Manage Billing</button>
+      <button class="btn" id="account-notif-btn" style="width:100%;margin-bottom:10px;background:var(--gray)" onclick="toggleNotifications()">🔔 Enable Fight Alerts</button>
+      <button class="btn" style="width:100%;margin-bottom:10px;background:var(--gray)" onclick="showModal('modal-help');closeModal('modal-account')">❓ Help</button>
       <button class="btn" style="width:100%;background:var(--gray);color:#e74c3c" onclick="signOut()">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- ── Help modal ── -->
+  <div class="modal-overlay" id="modal-help">
+    <div class="modal-sheet" style="max-height:80vh;overflow-y:auto">
+      <button class="btn-modal-close" onclick="closeModal('modal-help')">✕</button>
+      <div class="modal-title">Help</div>
+      <div style="font-size:0.9rem;line-height:1.6;color:var(--text)">
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">How to track athletes</h3>
+        <p style="color:var(--muted)">Pick a tournament → search your school or athlete name → select athletes to watch → tap <strong>Watch</strong>. Updates happen automatically every ~30 seconds.</p>
+
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">Fight alerts (push notifications)</h3>
+        <p style="color:var(--muted)">While watching athletes, tap <strong>Enable Alerts</strong> to get push notifications when a fight is scheduled or completed — even with the app closed. On iPhone, first tap the share button and <strong>Add to Home Screen</strong>, then enable alerts.</p>
+
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">Install as an app</h3>
+        <p style="color:var(--muted)"><strong>Android/Chrome:</strong> Tap the menu (⋮) → <em>Add to Home Screen</em> or <em>Install App</em>.<br><strong>iPhone/Safari:</strong> Tap the share button (□↑) → <em>Add to Home Screen</em>.</p>
+
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">Gym codes</h3>
+        <p style="color:var(--muted)">Gym Pack and Affiliate Pack subscribers get access codes to share with coaches. Each code unlocks the Individual plan for one person. Manage your codes via <strong>Account → Manage Team Codes</strong>.</p>
+
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">Free vs paid</h3>
+        <p style="color:var(--muted)">Free accounts can track 1 athlete. Individual Coach ($2.99/mo) removes that limit. Gym and Affiliate packs cover whole teams.</p>
+
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">Contact</h3>
+        <p style="color:var(--muted)">Questions or issues? Email <a href="mailto:info@mattrack.net" style="color:var(--accent)">info@mattrack.net</a></p>
+      </div>
     </div>
   </div>
 
@@ -1351,6 +1393,19 @@ function goWatch() {
   startRefreshTimer();
   manualRefresh();   // immediately fetch placement + bracket state on entry
   saveSession();
+  // Sync push subscription with currently watched categories
+  _syncPushCategories();
+  // Prompt for notifications if not yet subscribed (after short delay)
+  if ('PushManager' in window && !_pushSubscription && Notification.permission === 'default') {
+    setTimeout(_promptForAlerts, 3000);
+  }
+}
+
+function _promptForAlerts() {
+  // Only prompt if still on watch screen
+  const ws = document.getElementById('screen-watch');
+  if (!ws || ws.style.display === 'none') return;
+  showToast('💡 Tip: Enable fight alerts in Account → Enable Fight Alerts');
 }
 
 // ─── Server-Sent Events ────────────────────────────────────────────────────
@@ -1814,6 +1869,117 @@ async function signOut() {
   window.location.href = '/';
 }
 
+// ── PWA: Service Worker + Push Notifications ─────────────────────────────────
+
+let _swReg = null;
+let _pushSubscription = null;
+
+// Register service worker on load
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js', { scope: '/' })
+    .then(reg => {
+      _swReg = reg;
+      // Check existing push subscription
+      return reg.pushManager.getSubscription();
+    })
+    .then(sub => {
+      _pushSubscription = sub;
+      _updateNotifBtn();
+    })
+    .catch(e => console.warn('SW registration failed:', e));
+}
+
+function _updateNotifBtn() {
+  const btn = document.getElementById('account-notif-btn');
+  if (!btn) return;
+  if (!('PushManager' in window)) { btn.style.display = 'none'; return; }
+  if (_pushSubscription) {
+    btn.textContent = '🔕 Disable Fight Alerts';
+    btn.style.background = 'rgba(99,102,241,0.15)';
+    btn.style.color = '#6366f1';
+  } else {
+    btn.textContent = '🔔 Enable Fight Alerts';
+    btn.style.background = '';
+    btn.style.color = '';
+  }
+}
+
+async function toggleNotifications() {
+  if (!_swReg) { showToast('Browser not supported'); return; }
+  if (_pushSubscription) {
+    // Unsubscribe
+    await _pushSubscription.unsubscribe();
+    await fetch('/api/push/unsubscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: _pushSubscription.endpoint })
+    }).catch(() => {});
+    _pushSubscription = null;
+    _updateNotifBtn();
+    showToast('Fight alerts disabled');
+    return;
+  }
+  // Subscribe
+  try {
+    const keyRes = await fetch('/api/push/vapid-key');
+    const { publicKey } = await keyRes.json();
+    if (!publicKey) { showToast('Push not configured'); return; }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') { showToast('Notifications blocked — check browser settings'); return; }
+    const sub = await _swReg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: _urlBase64ToUint8Array(publicKey)
+    });
+    _pushSubscription = sub;
+    // Save to server with current watching categories
+    const keys = sub.getKey ? { p256dh: _arrayBufferToBase64(sub.getKey('p256dh')), auth: _arrayBufferToBase64(sub.getKey('auth')) } : {};
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: sub.endpoint, ...keys, category_ids: _watchingCategoryIds() })
+    });
+    _updateNotifBtn();
+    showToast('Fight alerts enabled! You\'ll be notified when athletes are called to the mat.');
+  } catch(e) {
+    showToast('Could not enable alerts: ' + e.message);
+  }
+}
+
+// Update the push subscription with currently watched categories
+async function _syncPushCategories() {
+  if (!_pushSubscription) return;
+  const keys = _pushSubscription.getKey ? {
+    p256dh: _arrayBufferToBase64(_pushSubscription.getKey('p256dh')),
+    auth:   _arrayBufferToBase64(_pushSubscription.getKey('auth'))
+  } : {};
+  await fetch('/api/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint: _pushSubscription.endpoint, ...keys, category_ids: _watchingCategoryIds() })
+  }).catch(() => {});
+}
+
+function _watchingCategoryIds() {
+  // Extract category IDs from athletes currently being watched
+  if (typeof allAthletes === 'undefined' || typeof selectedKeys === 'undefined') return [];
+  const ids = new Set();
+  for (const a of allAthletes) {
+    if (selectedKeys.has(a.name.toLowerCase()) && a.category_id) {
+      ids.add(String(a.category_id));
+    }
+  }
+  return [...ids];
+}
+
+function _urlBase64ToUint8Array(b64) {
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+function _arrayBufferToBase64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+
 function landingCheckout(plan) {
   // From landing page — sign in first if needed, then checkout
   if (!_session) {
@@ -1934,6 +2100,7 @@ const TRANSLATIONS = {
     step1_title:'Pick your tournament', step1_desc:'Select from all upcoming and live BJJ competitions.',
     step2_title:'Search your team or athlete', step2_desc:'Type your school name or search any athlete by name.',
     step3_title:'Watch live', step3_desc:'Get real-time mat assignments, fight times, and results as they happen.',
+    step4_title:'Get fight alerts', step4_desc:'Enable push notifications and get buzzed the moment your athlete is called to the mat — even with your phone in your pocket.',
     plans_title:'Plans', free_plan:'Free', free_tagline:'No account required to try',
     plan_individual:'Individual Coach', plan_gym:'Gym Pack', plan_affiliate:'Affiliate Pack',
     most_popular:'Most Popular', cancel_anytime:'All plans include a free trial · Cancel anytime',

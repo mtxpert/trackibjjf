@@ -111,6 +111,68 @@ _sse_clients = {}
 _sse_lock    = threading.Lock()
 
 
+def _send_push_notifications(category_id: str, division: str, changes: list) -> None:
+    """Send web push to all subscribers watching category_id. Runs in daemon thread."""
+    try:
+        from pywebpush import webpush, WebPushException
+        from supabase import create_client
+        import json as _json
+
+        vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
+        vapid_email   = os.environ.get("VAPID_EMAIL", "mailto:info@mattrack.net")
+        if not vapid_private:
+            return
+
+        sb = create_client(
+            os.environ.get("SUPABASE_URL", ""),
+            os.environ.get("SUPABASE_SERVICE_KEY", ""),
+        )
+        rows = sb.table("push_subscriptions") \
+                 .select("endpoint,p256dh,auth") \
+                 .contains("category_ids", [category_id]) \
+                 .execute()
+
+        if not rows.data:
+            return
+
+        # Build a concise notification body from changes
+        notable = [c for c in changes if any(k in c for k in ("Mat", "FINISHED", "COMPLETE", "time:"))]
+        body = notable[0] if notable else changes[0]
+        short_div = division.split(" ")[:4]
+        title = "🥋 " + " ".join(short_div) if division else "🥋 MatTrack"
+
+        payload = _json.dumps({"title": title, "body": body, "tag": f"cat-{category_id}", "url": "/"})
+
+        private_pem = (
+            "-----BEGIN PRIVATE KEY-----\n" +
+            vapid_private + "\n-----END PRIVATE KEY-----"
+            if "BEGIN" not in vapid_private else vapid_private
+        )
+
+        for row in rows.data:
+            try:
+                webpush(
+                    subscription_info={
+                        "endpoint": row["endpoint"],
+                        "keys": {"p256dh": row["p256dh"], "auth": row["auth"]},
+                    },
+                    data=payload,
+                    vapid_private_key=private_pem,
+                    vapid_claims={"sub": vapid_email},
+                )
+            except WebPushException as e:
+                if "410" in str(e) or "404" in str(e):
+                    # Subscription expired — remove it
+                    try:
+                        sb.table("push_subscriptions").delete().eq("endpoint", row["endpoint"]).execute()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error("push notification send failed cat=%s: %s", category_id, e)
+
+
 def _sse_push(tournament_id, event_data):
     with _sse_lock:
         qs = list(_sse_clients.get(tournament_id, []))
@@ -169,6 +231,12 @@ def _process_batch_results(batch_results, tid_by_cid):
                     "category_id": cid,
                     "changes":     changes,
                 })
+                # Fire web push notifications to subscribed users
+                threading.Thread(
+                    target=_send_push_notifications,
+                    args=(cid, state.get("division", ""), changes),
+                    daemon=True,
+                ).start()
                 # Clear immediately so /api/refresh doesn't show them again
                 state["changes"] = []
         except Exception:
@@ -941,6 +1009,76 @@ def api_billing_portal():
     except Exception as e:
         logger.error("billing portal failed user=%s: %s", user.get("sub"), e, exc_info=True)
         return jsonify({"error": "Failed to open billing portal"}), 500
+
+
+@app.route("/manifest.json")
+def serve_manifest():
+    return send_file("static/manifest.json", mimetype="application/manifest+json")
+
+
+@app.route("/sw.js")
+def serve_sw():
+    """Service worker must be served from root scope."""
+    resp = send_file("static/sw.js", mimetype="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/api/push/vapid-key")
+def api_push_vapid_key():
+    """Return the VAPID public key for subscription setup."""
+    return jsonify({"publicKey": os.environ.get("VAPID_PUBLIC_KEY", "")})
+
+
+@app.route("/api/push/subscribe", methods=["POST"])
+@limiter.limit("20 per hour")
+def api_push_subscribe():
+    """Save a push subscription with the category_ids the user is watching."""
+    data = request.json or {}
+    endpoint     = data.get("endpoint", "").strip()
+    p256dh       = data.get("p256dh", "").strip()
+    auth         = data.get("auth", "").strip()
+    category_ids = data.get("category_ids", [])
+    if not endpoint or not p256dh or not auth:
+        return jsonify({"error": "Missing subscription fields"}), 400
+    try:
+        from supabase import create_client
+        sb = create_client(
+            os.environ.get("SUPABASE_URL", ""),
+            os.environ.get("SUPABASE_SERVICE_KEY", ""),
+        )
+        sb.table("push_subscriptions").upsert({
+            "endpoint":     endpoint,
+            "p256dh":       p256dh,
+            "auth":         auth,
+            "category_ids": category_ids,
+            "updated_at":   datetime.utcnow().isoformat(),
+        }, on_conflict="endpoint").execute()
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error("push subscribe failed: %s", e, exc_info=True)
+        return jsonify({"error": "Failed to save subscription"}), 500
+
+
+@app.route("/api/push/unsubscribe", methods=["POST"])
+@limiter.limit("20 per hour")
+def api_push_unsubscribe():
+    """Remove a push subscription by endpoint."""
+    endpoint = (request.json or {}).get("endpoint", "").strip()
+    if not endpoint:
+        return jsonify({"error": "Missing endpoint"}), 400
+    try:
+        from supabase import create_client
+        sb = create_client(
+            os.environ.get("SUPABASE_URL", ""),
+            os.environ.get("SUPABASE_SERVICE_KEY", ""),
+        )
+        sb.table("push_subscriptions").delete().eq("endpoint", endpoint).execute()
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error("push unsubscribe failed: %s", e, exc_info=True)
+        return jsonify({"error": "Failed to remove subscription"}), 500
 
 
 if __name__ == "__main__":

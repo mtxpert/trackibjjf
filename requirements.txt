@@ -9,3 +9,5 @@ supabase
 stripe
 python-jose[cryptography]
 flask-limiter
+pywebpush
+Pillow
