@@ -8,18 +8,29 @@ Scalable architecture:
 """
 
 from flask import Flask, render_template, jsonify, request, Response, send_file
-import os, threading, time, json, queue, re
+import os, threading, time, json, queue, re, logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import watcher as _watcher
 import scraper as _scraper
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "mattrack-secret-key")
+
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=[],
+    storage_uri="memory://",
+)
 
 BASE_URL = "https://www.bjjcompsystem.com"
 
@@ -283,7 +294,8 @@ def refresh_bracket(tournament_id, category_id, category_name=""):
         _brackets[category_id] = state
         return state
     except Exception as e:
-        err = {"error": str(e), "category_id": category_id,
+        logger.error("bracket fetch failed cat=%s: %s", category_id, e, exc_info=True)
+        err = {"error": "Failed to fetch bracket", "category_id": category_id,
                "bracket_url": f"{BASE_URL}/tournaments/{tournament_id}/categories/{category_id}"}
         _brackets[category_id] = err
         return err
@@ -319,7 +331,8 @@ def api_tournaments():
         from scraper import get_tournaments
         return jsonify(get_tournaments())
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("get_tournaments failed: %s", e, exc_info=True)
+        return jsonify({"error": "Failed to load tournaments"}), 500
 
 
 # ── Roster cache endpoints ────────────────────────────────────────────────────
@@ -395,7 +408,11 @@ def api_cache_status(tournament_id):
 
 
 @app.route("/api/cache/<tournament_id>", methods=["POST"])
+@limiter.limit("10 per hour")
 def api_cache_build(tournament_id):
+    expected = os.environ.get("UPLOAD_KEY", "")
+    if not expected or request.headers.get("X-Upload-Key") != expected:
+        return jsonify({"error": "unauthorized"}), 401
     from scraper import build_roster
     job_id = f"roster_{tournament_id}"
     if job_id in _build_jobs and _build_jobs[job_id].get("status") == "running":
@@ -418,6 +435,7 @@ def api_cache_job_status(tournament_id):
 
 
 @app.route("/api/cache/all", methods=["POST"])
+@limiter.limit("5 per day")
 def api_cache_build_all():
     """
     Rebuild roster cache for every active tournament.
@@ -450,6 +468,10 @@ def api_cache_build_all():
 
         _build_jobs["__all__"]["status"]  = "done"
         _build_jobs["__all__"]["results"] = results
+
+    expected = os.environ.get("UPLOAD_KEY", "")
+    if not expected or request.headers.get("X-Upload-Key") != expected:
+        return jsonify({"error": "unauthorized"}), 401
 
     if _build_jobs.get("__all__", {}).get("status") == "running":
         return jsonify({"already_running": True})
@@ -532,6 +554,13 @@ def api_refresh():
     tournament_id    = data.get("tournament_id", "")
     tournament_name  = data.get("tournament_name", "")
     athletes         = data.get("athletes", [])
+
+    # Enforce free tier limit server-side
+    from auth import get_user_from_token, is_plan_active
+    _user = get_user_from_token(request)
+    _paid = _user and is_plan_active(_user["sub"])
+    if not _paid and len(data.get("athletes", [])) > 1:
+        return jsonify({"error": "limit_reached", "plan_required": "individual"}), 402
 
     if not tournament_id or not athletes:
         return jsonify({"error": "tournament_id and athletes required"}), 400
@@ -737,6 +766,136 @@ def _in_ranking(name_lower, state):
         if name_lower in entry.get("name", "").lower():
             return True
     return False
+
+
+# ── Auth & billing endpoints ──────────────────────────────────────────────────
+
+@app.route("/api/auth/me")
+def api_auth_me():
+    """Return current user's plan. Called on page load to restore session state."""
+    from auth import get_user_from_token, get_user_plan, is_plan_active
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"plan": "free", "authenticated": False})
+    plan = get_user_plan(user["sub"])
+    return jsonify({
+        "authenticated": True,
+        "user_id": user["sub"],
+        "email": user.get("email", ""),
+        "plan": plan,
+        "active": is_plan_active(user["sub"]),
+    })
+
+
+@app.route("/api/stripe/checkout", methods=["POST"])
+@limiter.limit("10 per hour")
+def api_stripe_checkout():
+    """Create a Stripe Checkout session and return the URL."""
+    from auth import get_user_from_token
+    from payments import create_checkout_session
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+    data      = request.json or {}
+    plan      = data.get("plan", "individual")
+    if plan not in ("individual", "gym", "affiliate"):
+        return jsonify({"error": "Invalid plan"}), 400
+    base_url  = os.environ.get("APP_URL", request.host_url.rstrip("/"))
+    try:
+        url = create_checkout_session(
+            user_id     = user["sub"],
+            email       = user.get("email", ""),
+            plan        = plan,
+            success_url = f"{base_url}/?checkout=success",
+            cancel_url  = f"{base_url}/?checkout=cancel",
+        )
+        return jsonify({"url": url})
+    except Exception as e:
+        logger.error("checkout failed user=%s: %s", user.get("sub"), e, exc_info=True)
+        return jsonify({"error": "Failed to create checkout session"}), 500
+
+
+@app.route("/api/stripe/webhook", methods=["POST"])
+def api_stripe_webhook():
+    """Stripe webhook receiver. Must use raw body for signature verification."""
+    from payments import handle_webhook
+    payload    = request.get_data()
+    sig_header = request.headers.get("Stripe-Signature", "")
+    ok, reason = handle_webhook(payload, sig_header)
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"received": True})
+
+
+@app.route("/api/gym/codes")
+@limiter.limit("30 per hour")
+def api_gym_codes():
+    """List access codes for the authenticated gym pack owner."""
+    from auth import get_user_from_token
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+    try:
+        from supabase import create_client
+        sb = create_client(
+            os.environ.get("SUPABASE_URL", ""),
+            os.environ.get("SUPABASE_SERVICE_KEY", ""),
+        )
+        packs = sb.table("gym_packs").select("id,school_name,max_codes,sub_status,plan").eq("owner_id", user["sub"]).execute()
+        result = []
+        for pack in (packs.data or []):
+            codes = sb.table("access_codes").select("code,redeemed_by,redeemed_at,created_at").eq("pack_id", pack["id"]).execute()
+            result.append({**pack, "codes": codes.data or []})
+        return jsonify(result)
+    except Exception as e:
+        logger.error("gym codes fetch failed user=%s: %s", user.get("sub"), e, exc_info=True)
+        return jsonify({"error": "Failed to load codes"}), 500
+
+
+@app.route("/api/gym/redeem", methods=["POST"])
+@limiter.limit("10 per hour")
+def api_gym_redeem():
+    """Redeem an access code to upgrade the current user to individual plan."""
+    from auth import get_user_from_token
+    from payments import redeem_access_code
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+    code = (request.json or {}).get("code", "").strip().upper()
+    if not code:
+        return jsonify({"error": "Code required"}), 400
+    ok = redeem_access_code(code, user["sub"])
+    if ok:
+        return jsonify({"success": True, "plan": "individual"})
+    return jsonify({"error": "Invalid or already used code"}), 400
+
+
+@app.route("/api/billing/portal", methods=["POST"])
+@limiter.limit("10 per hour")
+def api_billing_portal():
+    """Return a Stripe customer portal URL for managing subscriptions."""
+    from auth import get_user_from_token
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+    try:
+        import stripe
+        stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+        from supabase import create_client
+        sb = create_client(os.environ.get("SUPABASE_URL",""), os.environ.get("SUPABASE_SERVICE_KEY",""))
+        row = sb.table("users").select("stripe_customer_id").eq("id", user["sub"]).single().execute()
+        customer_id = (row.data or {}).get("stripe_customer_id")
+        if not customer_id:
+            return jsonify({"error": "No billing account found"}), 404
+        base_url = os.environ.get("APP_URL", request.host_url.rstrip("/"))
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=base_url,
+        )
+        return jsonify({"url": session.url})
+    except Exception as e:
+        logger.error("billing portal failed user=%s: %s", user.get("sub"), e, exc_info=True)
+        return jsonify({"error": "Failed to open billing portal"}), 500
 
 
 if __name__ == "__main__":

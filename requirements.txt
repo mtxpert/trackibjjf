@@ -8,3 +8,4 @@ tzdata
 supabase
 stripe
 python-jose[cryptography]
+flask-limiter

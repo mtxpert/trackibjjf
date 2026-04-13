@@ -59,7 +59,7 @@ def get_user_from_token(request) -> dict | None:
             token,
             SUPABASE_JWT_SECRET,
             algorithms=["HS256"],
-            options={"verify_aud": False},
+            audience="authenticated",
         )
         return payload
     except (JWTError, Exception):

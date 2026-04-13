@@ -166,9 +166,21 @@ def build_roster(tournament_id, job):
     return bracket_results
 
 
-def load_roster_cache(tournament_id):
+def _safe_roster_path(tournament_id):
+    """Return a validated path, or None if tournament_id looks malicious."""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', str(tournament_id)):
+        return None
     path = ROSTER_DIR / f"{tournament_id}_roster.json"
-    if path.exists():
+    try:
+        path.resolve().relative_to(ROSTER_DIR.resolve())
+    except ValueError:
+        return None
+    return path
+
+
+def load_roster_cache(tournament_id):
+    path = _safe_roster_path(tournament_id)
+    if path and path.exists():
         try:
             return json.loads(path.read_text())
         except Exception:
@@ -177,8 +189,9 @@ def load_roster_cache(tournament_id):
 
 
 def save_roster_cache(tournament_id, data):
-    path = ROSTER_DIR / f"{tournament_id}_roster.json"
-    path.write_text(json.dumps(data))
+    path = _safe_roster_path(tournament_id)
+    if path:
+        path.write_text(json.dumps(data))
 
 
 def filter_roster(cache, school_name):
