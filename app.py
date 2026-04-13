@@ -610,6 +610,18 @@ def api_cache_all_status():
     return jsonify(job)
 
 
+# ── NAGA club list ────────────────────────────────────────────────────────────
+
+@app.route("/api/naga-clubs/<event_id>")
+def api_naga_clubs(event_id):
+    if not re.match(r'^\d+$', str(event_id)):
+        return jsonify([])
+    from scraper_naga import get_naga_clubs
+    subdomain = _naga_subdomain()
+    clubs = get_naga_clubs(event_id, subdomain)
+    return jsonify(clubs)
+
+
 # ── Search (live scrape fallback) ─────────────────────────────────────────────
 
 @app.route("/api/search", methods=["POST"])

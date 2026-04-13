@@ -1105,19 +1105,50 @@ function _isNagaMode() {
   return selectedTournament?.source === 'naga';
 }
 
-function _setupNagaSchoolScreen() {
+let _nagaClubs = [];   // club names for current NAGA event
+
+async function _setupNagaSchoolScreen() {
   const el    = document.getElementById('cache-status');
   const list  = document.getElementById('item-list');
   const input = document.getElementById('school-input');
-  if (el)    el.textContent = 'Type your academy name and tap Search';
-  if (list)  list.innerHTML = '';
-  if (input) input.placeholder = 'Academy name…';
+  if (input) { input.placeholder = 'Filter schools…'; input.value = ''; }
+  if (el)    el.textContent = 'Loading schools…';
+  if (list)  list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:0.85rem"><div class="spinner" style="margin:0 auto 8px"></div>Loading schools…</div>';
   document.getElementById('mode-team').style.display    = 'none';
   document.getElementById('mode-athlete').style.display = 'none';
   document.getElementById('naga-search-btn').style.display = 'block';
+
+  try {
+    const r = await fetch(`/api/naga-clubs/${selectedTournament.id}`);
+    _nagaClubs = await r.json();
+  } catch(e) {
+    _nagaClubs = [];
+  }
+
+  if (el) el.textContent = _nagaClubs.length ? `${_nagaClubs.length} schools — tap to select` : 'Type your academy name and tap Search';
+  _renderNagaClubList('');
+}
+
+function _renderNagaClubList(filter) {
+  const list = document.getElementById('item-list');
+  if (!_nagaClubs.length) { list.innerHTML = ''; return; }
+  const q = filter.toLowerCase().trim();
+  const filtered = q ? _nagaClubs.filter(n => n.toLowerCase().includes(q)) : _nagaClubs;
+  if (!filtered.length) { list.innerHTML = '<div style="padding:12px;text-align:center;color:var(--muted);font-size:0.85rem">No matching schools</div>'; return; }
+  list.innerHTML = filtered.map(name => `
+    <div class="team-item" data-club="${esc(name)}" onclick="_selectNagaClub(this)" style="cursor:pointer">
+      <span class="team-name">${esc(name)}</span>
+    </div>`).join('');
+}
+
+function _selectNagaClub(el) {
+  const name = el.getAttribute('data-club');
+  document.getElementById('school-input').value = name;
+  nagaSearch();
 }
 
 function _teardownNagaSchoolScreen() {
+  _nagaClubs = [];
   document.getElementById('mode-team').style.display    = '';
   document.getElementById('mode-athlete').style.display = '';
   document.getElementById('naga-search-btn').style.display = 'none';
@@ -1220,6 +1251,7 @@ async function loadTeamSuggestions(tournamentId) {
 
 function onSchoolInput() {
   const val = document.getElementById('school-input').value.trim();
+  if (_isNagaMode()) { _renderNagaClubList(val); return; }
   renderItemList(val);
 }
 

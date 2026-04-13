@@ -148,6 +148,23 @@ def get_naga_events(subdomain="naga", **_kwargs):
 
 # ─── Club lookup ─────────────────────────────────────────────────────────────
 
+def get_naga_clubs(event_id, subdomain="naga"):
+    """Return sorted list of club name strings for a NAGA event."""
+    url = f"{_base(subdomain)}/en/event/{event_id}/schedule/matchlist"
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=15)
+        r.raise_for_status()
+        m = re.search(r'"clubs"\s*:\s*(\[.+?\])\s*[,}]', r.text, re.DOTALL)
+        if not m:
+            m = re.search(r'window\.clubs\s*=\s*(\[.+?\]);', r.text, re.DOTALL)
+        if m:
+            clubs = json.loads(m.group(1))
+            return sorted(c["name"] for c in clubs if c.get("name"))
+    except Exception as e:
+        log.warning("get_naga_clubs failed: %s", e)
+    return []
+
+
 def find_club_id(event_id, school_name, subdomain="naga"):
     """
     Search embedded clubs list in matchlist page for a school name.
