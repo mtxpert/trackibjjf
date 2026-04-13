@@ -609,6 +609,62 @@ def api_bracket(tournament_id, category_id):
     return jsonify(state)
 
 
+# ── Pick-screen status preview (no payment gate — read-only from cached state) ─
+
+@app.route("/api/pick-statuses/<tournament_id>")
+def api_pick_statuses(tournament_id):
+    """Return placement/eliminated/fight_time keyed by athlete name (lowercase).
+    Used for pick-screen preview only — no payment limit since it's just browsing."""
+    from scraper import load_roster_cache
+    from watcher import load_state
+
+    cache = load_roster_cache(tournament_id)
+    if not cache:
+        return jsonify({"statuses": {}})
+
+    tournament_name = request.args.get("name", "")
+    tz_name = _tournament_tz(tournament_name)
+    statuses = {}
+
+    for a in cache.get("athletes", []):
+        cid = a.get("category_id", "")
+        if not cid:
+            continue
+        state = _brackets.get(cid) or load_state(cid)
+        if not state:
+            continue
+        name_lower    = a["name"].lower()
+        results_final = state.get("results_final", False)
+        placement     = _get_placement(name_lower, state)
+
+        rec = {}
+        if placement:
+            rec["placement"]  = placement
+            rec["eliminated"] = False
+        elif results_final:
+            rec["eliminated"] = True
+        else:
+            rec["eliminated"] = _check_eliminated(name_lower, state)
+
+        if not results_final and not rec.get("eliminated"):
+            for fight in state.get("fights", []):
+                if not _fight_is_upcoming(fight):
+                    continue
+                for comp in fight.get("competitors", []):
+                    if name_lower in comp["name"].lower():
+                        rec["fight_time"]     = fight["time"]
+                        rec["fight_time_utc"] = _fight_time_to_utc(fight["time"], tz_name)
+                        rec["mat_name"]       = fight.get("mat", "")
+                        break
+                else:
+                    continue
+                break
+
+        statuses[name_lower] = rec
+
+    return jsonify({"statuses": statuses})
+
+
 # ── Refresh (lightweight — reads shared state, schedules background fetch) ────
 
 @app.route("/api/refresh", methods=["POST"])

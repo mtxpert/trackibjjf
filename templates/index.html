@@ -816,6 +816,7 @@ let currentJobId = null;
 let pollTimer = null;
 let allAthletes = [];      // full search results
 let selectedKeys = new Set(); // keys of athletes user wants to watch
+let _pickStatusCache = {}; // name_lower -> {placement, eliminated, fight_time, ...} for pick screens
 let watchedTournamentId = '';
 let refreshTimer = null;
 let refreshSecondsLeft = 0;
@@ -999,8 +1000,10 @@ function selectTournament(id, el) {
   document.getElementById('school-tourney-name').textContent = selectedTournament.name;
   document.getElementById('school-input').value = '';
   setSearchMode('team');
+  _pickStatusCache = {};
   showScreen('screen-school');
   loadTeamSuggestions(id);
+  _loadPickStatuses();
 }
 
 async function loadTeamSuggestions(tournamentId) {
@@ -1109,8 +1112,9 @@ function renderItemList(query) {
     });
 
     list.innerHTML = athletes.map(a => {
-      // Check for live bracket status from current watch session
-      const known = (allAthletes||[]).find(x => x.name.toLowerCase() === a.name.toLowerCase());
+      // Check for live status: prefer allAthletes (watch session), fall back to _pickStatusCache
+      const known = (allAthletes||[]).find(x => x.name.toLowerCase() === a.name.toLowerCase())
+                 || _pickStatusCache[a.name.toLowerCase()];
       let metaHtml;
       if (known) {
         const medal = known.placement ? PICK_MEDAL[String(known.placement)] : null;
@@ -1250,9 +1254,28 @@ async function startSearch() {
 
 
 // ─── Pick screen ───────────────────────────────────────────────────────────
+
+async function _loadPickStatuses() {
+  if (!selectedTournament) return;
+  try {
+    const name = encodeURIComponent(selectedTournament.name || '');
+    const r = await fetch(`/api/pick-statuses/${selectedTournament.id}?name=${name}`);
+    if (!r.ok) return;
+    const data = await r.json();
+    _pickStatusCache = data.statuses || {};
+    // Merge into allAthletes so _pickStatusBadge can use it
+    allAthletes = allAthletes.map(a => {
+      const s = _pickStatusCache[a.name.toLowerCase()];
+      return s ? {...a, ...s} : a;
+    });
+    filterPick();
+  } catch(e) {}
+}
+
 function showPick() {
   showScreen('screen-pick');
   filterPick();
+  _loadPickStatuses();
 }
 
 const PICK_MEDAL = {'1':'🥇','2':'🥈','3':'🥉'};
