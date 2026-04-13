@@ -1,12 +1,25 @@
+# Dependencies / build artifacts
 __pycache__/
 *.pyc
 *.pyo
-.env
+node_modules/
 instance/
+
+# Local data
 bracket_states/
-.playwright-cli/
 *.db
 *.sqlite
-node_modules/
-.DS_Store
+
+# Credentials and local config — NEVER commit these
+.env
+.env.*
+*.env
 RENDER.md
+CREDENTIALS.md
+*_secrets.*
+secrets/
+credentials/
+
+# OS / editor
+.DS_Store
+.playwright-cli/
