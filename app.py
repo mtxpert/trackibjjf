@@ -116,8 +116,11 @@ threading.Thread(target=_warm_brackets_from_db, daemon=True).start()
 
 # ── NAGA routing helpers ──────────────────────────────────────────────────────
 def _is_naga_tournament(tournament_id):
-    """NAGA/Smoothcomp event IDs are purely numeric; IBJJF IDs are slugs."""
-    return str(tournament_id).isdigit()
+    """NAGA Smoothcomp IDs are 5-digit numbers (≥10000); IBJJF IDs are 4-digit (≤9999)."""
+    try:
+        return str(tournament_id).isdigit() and int(tournament_id) >= 10000
+    except (ValueError, TypeError):
+        return False
 
 def _naga_event_id(tournament_id):
     return str(tournament_id)

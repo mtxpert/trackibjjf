@@ -1330,12 +1330,12 @@ function renderItemList(query) {
       return;
     }
 
-    // Sort: starts-with first, then by athlete count
+    // Sort: starts-with first, then alpha
     teams.sort((a, b) => {
       const aS = a.name.toLowerCase().startsWith(vl) ? 0 : 1;
       const bS = b.name.toLowerCase().startsWith(vl) ? 0 : 1;
       if (aS !== bS) return aS - bS;
-      return b.count - a.count;
+      return a.name.localeCompare(b.name);
     });
 
     list.innerHTML = teams.map(t => `
@@ -2079,6 +2079,7 @@ async function initAuth() {
 
   // Handle OAuth redirect — token arrives in URL hash
   const hash = window.location.hash;
+  let _freshLogin = false;
   if (hash && hash.includes('access_token')) {
     const params = new URLSearchParams(hash.slice(1));
     const access_token  = params.get('access_token');
@@ -2086,6 +2087,9 @@ async function initAuth() {
     if (access_token) {
       await _sb.auth.setSession({ access_token, refresh_token });
       window.history.replaceState({}, '', '/');
+      // Clear any stale saved session so we start fresh on tournament list
+      localStorage.removeItem('mattrack_session');
+      _freshLogin = true;
     }
   }
 
@@ -2116,13 +2120,21 @@ async function initAuth() {
   if (session) {
     await fetchUserPlan(session.access_token);
     updateAuthUI();
-    // Logged in — skip landing, go straight to app
-    if (document.querySelector('.screen.active')?.id === 'screen-landing') {
+    // Logged in — skip landing (or fresh login from magic link) → go to app
+    const activeId = document.querySelector('.screen.active')?.id;
+    if (_freshLogin || activeId === 'screen-landing') {
       showScreen('screen-tournament', false);
       history.replaceState({ screen: 'screen-tournament' }, '', '');
     }
   } else {
     updateAuthUI();
+    // Not logged in — if restoreSession left us somewhere deep, return to landing
+    const activeId = document.querySelector('.screen.active')?.id;
+    if (activeId && activeId !== 'screen-landing' && activeId !== 'screen-tournament') {
+      localStorage.removeItem('mattrack_session');
+      showScreen('screen-landing', false);
+      history.replaceState({ screen: 'screen-landing' }, '', '');
+    }
   }
 
   _sb.auth.onAuthStateChange(async (event, session) => {
