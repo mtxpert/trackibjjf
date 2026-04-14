@@ -36,20 +36,61 @@ def _base(subdomain="naga"):
 
 NAGA_BASE = _base("naga")
 
+_SEED_DIR        = Path(__file__).parent / "seed_cache"
+_NAGA_SEED_FILE  = _SEED_DIR / "naga_events.json"
+# Runtime cache in /tmp — survives process lifetime, wiped on deploy/restart
+_NAGA_CACHE_FILE = Path("/tmp/naga_events_cache.json")
+
+def _load_naga_cache() -> dict:
+    """Return {event_id: event_dict} from seed + runtime cache."""
+    merged = {}
+    for f in [_NAGA_SEED_FILE, _NAGA_CACHE_FILE]:
+        if f.exists():
+            try:
+                for ev in json.loads(f.read_text()):
+                    merged[ev["id"]] = ev
+            except Exception:
+                pass
+    return merged
+
+def _save_naga_cache(events: list) -> None:
+    """Persist all known past events to the runtime cache."""
+    try:
+        _NAGA_CACHE_FILE.write_text(json.dumps(events, ensure_ascii=False))
+    except Exception:
+        pass
+
 # ─── Event discovery ──────────────────────────────────────────────────────────
 
 def get_naga_events(subdomain="naga", **_kwargs):
     """
-    Return list of upcoming NAGA events scraped from nagafighter.com/tournaments-by-city/
-    Each event has: id, name, start (YYYY-MM-DD), location, url, source.
+    Return NAGA events: live scrape from nagafighter.com merged with seed/runtime cache.
+    Past events (up to 90 days) are preserved from cache even after nagafighter.com
+    removes them from the listing.
+    Each event has: id, name, start (YYYY-MM-DD), location, url, source, is_past.
     """
+    cached = _load_naga_cache()   # {id: event} — our known history
+
     url = "https://www.nagafighter.com/tournaments-by-city/"
     try:
         r = requests.get(url, headers=HEADERS, timeout=20)
         r.raise_for_status()
     except Exception as e:
         log.warning("get_naga_events fetch failed: %s", e)
-        return []
+        # Fall back to cache only
+        today = datetime.now(timezone.utc).date()
+        from datetime import date as _date
+        fallback = []
+        for ev in cached.values():
+            if ev.get("start"):
+                try:
+                    d = _date.fromisoformat(ev["start"])
+                    if (today - d).days <= 90:
+                        fallback.append(ev)
+                except Exception:
+                    pass
+        return sorted(fallback, key=lambda e: e.get("start") or "")
+
 
     soup = BeautifulSoup(r.text, "html.parser")
     table = soup.find("table")
@@ -150,8 +191,26 @@ def get_naga_events(subdomain="naga", **_kwargs):
             "is_past":   is_past,
         }
 
+    # Merge with cache: add any cached past events not on the live page
+    from datetime import date as _date
+    for ev_id, ev in cached.items():
+        if ev_id not in seen and ev.get("start"):
+            try:
+                d = _date.fromisoformat(ev["start"])
+                if (today - d).days <= 90:
+                    seen[ev_id] = ev
+            except Exception:
+                pass
+
     events = sorted(seen.values(), key=lambda e: e.get("start") or "")
-    log.info("get_naga_events: found %d events", len(events))
+
+    # Persist all past events so they survive future runs after nagafighter.com drops them
+    new_past = [e for e in events if e.get("is_past")]
+    if new_past:
+        _save_naga_cache(new_past)
+
+    log.info("get_naga_events: found %d events (%d past from cache)",
+             len(events), sum(1 for e in events if e.get("is_past")))
     return events
 
 

@@ -1,0 +1,46 @@
+[
+  {
+    "id": "28884",
+    "name": "El Paso Grappling & BJJ Championship \u2013 El Paso, TX",
+    "start": "2026-04-04",
+    "end": "2026-04-04",
+    "location": "El Paso, TX",
+    "url": "https://naga.smoothcomp.com/en/event/28884",
+    "source": "naga",
+    "subdomain": "naga",
+    "is_past": true
+  },
+  {
+    "id": "28886",
+    "name": "Charlotte Grappling & BJJ Championship \u2013 Hickory, NC",
+    "start": "2026-04-04",
+    "end": "2026-04-04",
+    "location": "Hickory, NC",
+    "url": "https://naga.smoothcomp.com/en/event/28886",
+    "source": "naga",
+    "subdomain": "naga",
+    "is_past": true
+  },
+  {
+    "id": "28889",
+    "name": "Los Angeles Grappling & BJJ Championship \u2013 Los Angeles, CA",
+    "start": "2026-04-11",
+    "end": "2026-04-11",
+    "location": "Los Angeles, CA",
+    "url": "https://naga.smoothcomp.com/en/event/28889",
+    "source": "naga",
+    "subdomain": "naga",
+    "is_past": true
+  },
+  {
+    "id": "28887",
+    "name": "Atlanta Grappling & BJJ Championship \u2013 Atlanta, GA",
+    "start": "2026-04-11",
+    "end": "2026-04-11",
+    "location": "Atlanta, GA",
+    "url": "https://naga.smoothcomp.com/en/event/28887",
+    "source": "naga",
+    "subdomain": "naga",
+    "is_past": true
+  }
+]
