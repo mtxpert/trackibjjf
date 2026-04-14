@@ -1128,10 +1128,14 @@ def _in_ranking(name_lower, state):
 def api_auth_me():
     """Return current user's plan. Called on page load to restore session state."""
     from auth import get_user_from_token, get_user_plan, is_plan_active
+    auth_header = request.headers.get("Authorization", "")
+    has_token = bool(auth_header.startswith("Bearer ") and len(auth_header) > 10)
     user = get_user_from_token(request)
     if not user:
+        logger.info("/api/auth/me → unauthenticated (has_token=%s)", has_token)
         return jsonify({"plan": "free", "authenticated": False})
     plan = get_user_plan(user["sub"])
+    logger.info("/api/auth/me → user=%s plan=%s", user.get("email", user["sub"][:8]), plan)
     return jsonify({
         "authenticated": True,
         "user_id": user["sub"],
@@ -1140,6 +1144,69 @@ def api_auth_me():
         "active": is_plan_active(user["sub"]),
     })
 
+
+@app.route("/debug/shot", methods=["GET", "POST"])
+def debug_shot():
+    """Dev-only screenshot paste page. Resizes to max 800px and saves to /tmp/shot.png."""
+    if request.method == "POST":
+        import base64, struct, zlib
+        data = request.json.get("img", "")
+        if data.startswith("data:image"):
+            data = data.split(",", 1)[1]
+        raw = base64.b64decode(data)
+        # Resize via PIL if available, else save raw
+        try:
+            from PIL import Image
+            import io
+            img = Image.open(io.BytesIO(raw))
+            img.thumbnail((800, 1600), Image.LANCZOS)
+            out = io.BytesIO()
+            img.save(out, format="PNG", optimize=True)
+            raw = out.getvalue()
+        except ImportError:
+            pass
+        with open("/tmp/shot.png", "wb") as f:
+            f.write(raw)
+        kb = len(raw) // 1024
+        logger.info("debug_shot saved %d KB → /tmp/shot.png", kb)
+        return jsonify({"ok": True, "kb": kb})
+    return """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paste Screenshot</title>
+<style>body{background:#1a1a2e;color:#eee;font-family:sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;gap:20px}
+#drop{width:90vw;max-width:500px;height:220px;border:3px dashed #555;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;color:#aaa;cursor:pointer;transition:border-color .2s}
+#drop.over{border-color:#e74c3c}#status{font-size:0.9rem;color:#aaa;min-height:24px}
+#preview{max-width:90vw;max-height:300px;border-radius:8px;display:none}</style></head>
+<body>
+<h2 style="margin:0">📸 Paste Screenshot</h2>
+<div id="drop">Paste (Ctrl+V) or drag &amp; drop a screenshot here</div>
+<div id="status">Waiting…</div>
+<img id="preview">
+<script>
+const status = document.getElementById('status');
+const preview = document.getElementById('preview');
+const drop = document.getElementById('drop');
+
+function send(file) {
+  const r = new FileReader();
+  r.onload = async e => {
+    preview.src = e.target.result; preview.style.display='block';
+    status.textContent = 'Uploading…';
+    const res = await fetch('/debug/shot', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({img:e.target.result})});
+    const d = await res.json();
+    status.textContent = d.ok ? `✓ Saved (${d.kb} KB) — Claude can now read it` : 'Error saving';
+  };
+  r.readAsDataURL(file);
+}
+
+document.addEventListener('paste', e => {
+  const item = [...e.clipboardData.items].find(i => i.type.startsWith('image'));
+  if (item) send(item.getAsFile());
+});
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if(f) send(f); });
+drop.addEventListener('click', () => { const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=e=>send(e.target.files[0]); inp.click(); });
+</script></body></html>"""
 
 @app.route("/api/fighter/<path:name>")
 def api_fighter(name):
@@ -1379,4 +1446,4 @@ def api_push_unsubscribe():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5001)))

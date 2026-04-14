@@ -531,9 +531,9 @@
     <h1 id="header-title">MatTrack</h1>
     <div class="header-sub" id="header-sub" data-i18n="nav_subtitle">Live Tournament Tracker</div>
   </div>
-  <div id="user-pill" class="user-pill" style="display:none" onclick="event.stopPropagation();showModal('modal-account')">
-    <span id="pill-label">Free</span>
-    <span class="pill-plan free" id="pill-plan-badge">FREE</span>
+  <div id="user-pill" class="user-pill" onclick="event.stopPropagation();_onPillClick()">
+    <span id="pill-label">Sign In</span>
+    <span class="pill-plan free" id="pill-plan-badge" style="display:none">FREE</span>
   </div>
   <div class="lang-picker" onclick="event.stopPropagation()">
     <button class="lang-btn" onclick="toggleLangDropdown()" id="lang-btn">🌐 <span id="lang-current">EN</span></button>
@@ -680,6 +680,12 @@
     </div>
     <div id="cache-status" style="margin:0 0 8px;font-size:0.78rem;color:var(--muted);min-height:18px"></div>
     <button id="ath-watch-top" onclick="startAthleteQueueSearch()"></button>
+    <div id="school-select-all-bar" style="display:none;margin-bottom:8px">
+      <button id="school-select-all-btn" onclick="schoolSelectAll()"
+        style="width:100%;padding:10px;background:var(--gray);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:0.85rem;font-weight:600;cursor:pointer">
+        Select All
+      </button>
+    </div>
     <div id="item-list"></div>
     <button id="ath-watch-bottom" onclick="startAthleteQueueSearch()"></button>
     <div style="margin-top: 12px; text-align: center;">
@@ -709,13 +715,19 @@
     <div class="results-meta">
       <span id="pick-count">Tap athletes to watch</span>
       <div style="display:flex;gap:6px">
-        <button class="back-btn" id="select-all-btn" onclick="toggleSelectAll()">Select All</button>
         <button class="back-btn" onclick="showScreen('screen-school')">← Back</button>
       </div>
     </div>
     <input class="search-input" type="text" id="pick-search"
       placeholder="Filter by name..." oninput="filterPick()"
       autocomplete="off">
+  </div>
+  <!-- Select All bar — always visible, red; switches to Watch once athletes selected -->
+  <div style="padding:8px 16px;background:var(--bg);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5">
+    <button id="select-all-btn" onclick="toggleSelectAll()"
+      style="width:100%;padding:14px;border-radius:12px;background:var(--red);color:white;border:none;font-size:1rem;font-weight:700;cursor:pointer">
+      Select All
+    </button>
   </div>
   <div id="pick-top-bar">
     <button id="watch-btn-top" onclick="goWatch()">Watch Selected →</button>
@@ -730,17 +742,36 @@
 <div class="screen" id="screen-watch">
   <div class="results-header">
     <div class="results-meta">
-      <span id="watch-count"></span>
-      <div style="display:flex;gap:6px;align-items:center">
+      <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">
+        <span id="watch-tourney-name" style="font-size:0.82rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span>
+        <span id="watch-context" style="font-size:0.72rem;color:var(--muted)"></span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
         <span id="refresh-countdown" style="font-size:0.72rem;color:var(--muted)"></span>
         <button id="refresh-btn" onclick="manualRefresh()" class="back-btn">⟳ Refresh</button>
         <button class="back-btn" onclick="showScreen('screen-pick')">← Edit</button>
-        <button id="share-results-btn" onclick="shareResults()" class="back-btn" style="display:none">📋 Copy</button>
       </div>
     </div>
     <input class="search-input" type="text" id="watch-search"
-      placeholder="Search..." oninput="renderWatch()"
+      placeholder="Search athletes..." oninput="renderWatch()"
       autocomplete="off">
+  </div>
+  <!-- Copy + filter bar — shown when results are final -->
+  <div id="share-results-bar" style="display:none;padding:10px 16px 4px">
+    <button id="share-results-btn" onclick="shareResults()"
+      style="width:100%;padding:14px;background:var(--green);color:white;border:none;border-radius:12px;font-size:0.95rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px">
+      📋 Copy Results for Social Media
+    </button>
+    <div style="display:flex;gap:8px">
+      <button id="watch-filter-all" onclick="setWatchFilter('all')"
+        style="flex:1;padding:9px;border-radius:10px;border:none;font-size:0.82rem;font-weight:600;cursor:pointer;background:var(--red);color:white">
+        All Athletes
+      </button>
+      <button id="watch-filter-placing" onclick="setWatchFilter('placing')"
+        style="flex:1;padding:9px;border-radius:10px;border:none;font-size:0.82rem;font-weight:600;cursor:pointer;background:var(--gray);color:var(--text)">
+        Placing Only
+      </button>
+    </div>
   </div>
   <div id="changes-banner" style="display:none"></div>
   <div id="watch-list" class="athletes-list"></div>
@@ -793,6 +824,30 @@
              oninput="this.value=this.value.toUpperCase()">
       <button class="btn btn-primary" style="width:100%" onclick="redeemCode()">Redeem Code</button>
       <div id="redeem-error" style="color:#e74c3c;font-size:0.82rem;margin-top:8px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── Login modal ── -->
+  <div class="modal-overlay" id="modal-login">
+    <div class="modal-sheet">
+      <button class="btn-modal-close" onclick="closeModal('modal-login')">✕</button>
+      <div class="modal-title">Sign In to MatTrack</div>
+      <div style="color:var(--muted);font-size:0.85rem;margin-bottom:20px;text-align:center">Track unlimited athletes, save your setup</div>
+      <button class="btn-google" onclick="signInWithGoogle()">
+        <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+        Continue with Google
+      </button>
+      <div style="display:flex;align-items:center;gap:10px;margin:14px 0">
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span style="color:var(--muted);font-size:0.78rem">or</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+      <input id="login-email-input" type="email" placeholder="your@email.com"
+        style="width:100%;padding:12px 14px;border-radius:12px;background:var(--gray);border:1px solid var(--border);color:var(--text);font-size:0.95rem;box-sizing:border-box;margin-bottom:10px"
+        onkeydown="if(event.key==='Enter')sendMagicLink()">
+      <button class="btn btn-primary" style="width:100%" onclick="sendMagicLink()">Send Magic Link</button>
+      <div id="login-email-status" style="text-align:center;font-size:0.82rem;margin-top:10px;min-height:18px"></div>
+      <div style="text-align:center;margin-top:8px;color:var(--muted);font-size:0.78rem">Free account · 1 athlete included</div>
     </div>
   </div>
 
@@ -871,6 +926,7 @@ let refreshTimer = null;
 let refreshSecondsLeft = 0;
 let refreshing = false;
 let sseConnection = null;  // EventSource for bracket push updates
+let _watchFilter = 'all';  // 'all' | 'placing'
 let _pickRefreshing = false;
 
 // ─── Search mode + suggestion caches ─────────────────────────────────────────
@@ -887,7 +943,29 @@ function setSearchMode(mode) {
   const inp = document.getElementById('school-input');
   inp.placeholder = mode === 'team' ? 'Filter teams…' : 'Filter athletes…';
   inp.value = '';
+  const saBar = document.getElementById('school-select-all-bar');
+  if (saBar) saBar.style.display = mode === 'athlete' ? '' : 'none';
   renderItemList('');
+}
+
+function schoolSelectAll() {
+  // Add all currently visible athletes to the queue
+  const q = document.getElementById('school-input')?.value.trim() || '';
+  const vl = q.toLowerCase();
+  let athletes = _athleteSugg.slice();
+  if (vl) athletes = athletes.filter(a => a.name.toLowerCase().includes(vl));
+  let added = 0;
+  for (const a of athletes) {
+    const key = a.name.toLowerCase();
+    if (!_athleteQueue.find(x => x.name.toLowerCase() === key)) {
+      if (!checkAthleteLimit(_athleteQueue.length, true)) break;
+      _athleteQueue.push(a);
+      added++;
+    }
+  }
+  renderItemList(q);
+  _updateAthWatchBtns();
+  if (added) showToast(`${added} athlete${added>1?'s':''} selected`);
 }
 
 function timeSince(isoStr) {
@@ -899,6 +977,8 @@ function timeSince(isoStr) {
 
 // ─── Screens ───────────────────────────────────────────────────────────────
 function showScreen(id, pushState = true) {
+  const prev = document.querySelector('.screen.active')?.id || 'none';
+  console.log('[nav] showScreen %s → %s (push=%s)', prev, id, pushState);
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   window.scrollTo(0, 0);
@@ -959,6 +1039,8 @@ window.addEventListener('popstate', (e) => {
 // ─── Session persistence ───────────────────────────────────────────────────
 function saveSession() {
   try {
+    const screen = document.querySelector('.screen.active')?.id || '';
+    console.log('[session] saveSession screen=%s tourney=%s athletes=%d', screen, selectedTournament?.name, allAthletes.length);
     localStorage.setItem('mattrack_session', JSON.stringify({
       tournament:   selectedTournament,
       tournamentId: watchedTournamentId,
@@ -973,9 +1055,11 @@ function saveSession() {
 function restoreSession() {
   try {
     const raw = localStorage.getItem('mattrack_session');
-    if (!raw) return false;
+    if (!raw) { console.log('[session] restoreSession: no saved session'); return false; }
     const s = JSON.parse(raw);
-    if (!s.tournament) return false;
+    if (!s.tournament) { console.log('[session] restoreSession: session missing tournament'); return false; }
+    console.log('[session] restoreSession: found screen=%s tourney=%s athletes=%d selected=%d',
+      s.screen, s.tournament?.name, (s.athletes||[]).length, (s.selected||[]).length);
     selectedTournament   = s.tournament;
     watchedTournamentId  = s.tournamentId || '';
     allAthletes          = s.athletes || [];
@@ -988,11 +1072,13 @@ function restoreSession() {
     const screen         = s.screen || 'screen-tournament';
     if (screen === 'screen-watch' && selectedKeys.size) {
       showScreen('screen-watch', false);
-      // Update header subtitle
       const names = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
-      document.getElementById('header-sub').textContent =
-        (names[0]?.team || '') + ' · ' + (selectedTournament.name || '').split(' ').slice(0,3).join(' ') + '...';
-      document.getElementById('watch-count').textContent = selectedKeys.size + ' athlete' + (selectedKeys.size !== 1 ? 's' : '');
+      const team  = names[0]?.team || '';
+      const n     = selectedKeys.size;
+      const tourneyEl = document.getElementById('watch-tourney-name');
+      const ctxEl     = document.getElementById('watch-context');
+      if (tourneyEl) tourneyEl.textContent = selectedTournament?.name || '';
+      if (ctxEl) ctxEl.textContent = [team, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
       renderWatch();
       connectSSE(watchedTournamentId);
       startRefreshTimer();
@@ -1624,12 +1710,18 @@ function filterPick() {
     topBar.classList.toggle('visible', selectedKeys.size > 0);
   }
 
-  // Update select-all button label
+  // Update select-all button
   const saBtn = document.getElementById('select-all-btn');
   if (saBtn) {
     const visibleKeys = list.map(a => a.name.toLowerCase());
     const allSel = visibleKeys.length > 0 && visibleKeys.every(k => selectedKeys.has(k));
-    saBtn.textContent = allSel ? 'Deselect All' : 'Select All';
+    if (selectedKeys.size > 0 && !allSel) {
+      saBtn.textContent = `Watch ${selectedKeys.size} Athlete${selectedKeys.size>1?'s':''} →`;
+      saBtn.onclick = goWatch;
+    } else {
+      saBtn.textContent = allSel ? 'Deselect All' : 'Select All';
+      saBtn.onclick = toggleSelectAll;
+    }
   }
 
   const container = document.getElementById('pick-list');
@@ -1718,6 +1810,18 @@ function goWatch() {
   if (!selectedKeys.size) return;
   watchedTournamentId = selectedTournament ? selectedTournament.id : '';
   document.getElementById('changes-banner').style.display = 'none';
+  _watchFilter = 'all';
+
+  // Context header
+  const tourneyEl = document.getElementById('watch-tourney-name');
+  const ctxEl     = document.getElementById('watch-context');
+  if (tourneyEl) tourneyEl.textContent = selectedTournament?.name || '';
+  if (ctxEl) {
+    const team = allAthletes.find(a => selectedKeys.has(a.name.toLowerCase()))?.team || '';
+    const n    = selectedKeys.size;
+    ctxEl.textContent = [team, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
+  }
+
   showScreen('screen-watch');
   renderWatch();
   connectSSE(watchedTournamentId);
@@ -1767,10 +1871,20 @@ function disconnectSSE() {
   if (sseConnection) { sseConnection.close(); sseConnection = null; }
 }
 
+function setWatchFilter(f) {
+  _watchFilter = f;
+  document.getElementById('watch-filter-all').style.background    = f === 'all'     ? 'var(--red)'  : 'var(--gray)';
+  document.getElementById('watch-filter-all').style.color         = f === 'all'     ? 'white'       : 'var(--text)';
+  document.getElementById('watch-filter-placing').style.background = f === 'placing' ? 'var(--red)'  : 'var(--gray)';
+  document.getElementById('watch-filter-placing').style.color      = f === 'placing' ? 'white'       : 'var(--text)';
+  renderWatch();
+}
+
 // ─── Watch screen ──────────────────────────────────────────────────────────
 function renderWatch() {
   const q = (document.getElementById('watch-search')?.value || '').toLowerCase().trim();
   let list = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+  if (_watchFilter === 'placing') list = list.filter(a => a.placement || a.eliminated);
   if (q) list = list.filter(a => a.name.toLowerCase().includes(q));
 
   // Sort: placed/eliminated at bottom, then by fight time
@@ -1781,8 +1895,13 @@ function renderWatch() {
     return (a.fight_time || 'z').localeCompare(b.fight_time || 'z');
   });
 
-  document.getElementById('watch-count').textContent =
-    `${selectedKeys.size} athlete${selectedKeys.size>1?'s':''}`;
+  // Update context line with live count
+  const ctxEl = document.getElementById('watch-context');
+  if (ctxEl) {
+    const team = allAthletes.find(a => selectedKeys.has(a.name.toLowerCase()))?.team || '';
+    const n    = selectedKeys.size;
+    ctxEl.textContent = [team, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
+  }
 
   const container = document.getElementById('watch-list');
   container.innerHTML = list.map(a => watchCard(a)).join('');
@@ -1987,10 +2106,10 @@ function _setFinalResultsMode() {
   stopRefreshTimer();
   const cd  = document.getElementById('refresh-countdown');
   const btn = document.getElementById('refresh-btn');
-  const share = document.getElementById('share-results-btn');
+  const bar = document.getElementById('share-results-bar');
   if (cd)  cd.textContent  = 'Results final';
   if (btn) { btn.textContent = '⟳ Reload'; btn.disabled = false; }
-  if (share) share.style.display = '';
+  if (bar) bar.style.display = '';
 }
 
 function shareResults() {
@@ -2013,9 +2132,10 @@ function shareResults() {
   }
   if (elim.length) {
     lines.push('');
+    lines.push('🥋 Competed and represented with heart:');
     for (const a of elim) {
       const div = a.division ? ` | ${a.division}` : '';
-      lines.push(`❌  ${a.name}${div}`);
+      lines.push(`   ${a.name}${div}`);
     }
   }
   lines.push('\nTracked with MatTrack · mattrack.net');
@@ -2117,19 +2237,26 @@ async function initAuth() {
 
   const { data: { session } } = await _sb.auth.getSession();
   _session = session;
+  const activeId = document.querySelector('.screen.active')?.id;
+  console.log('[auth] initAuth getSession: session=%s activeId=%s freshLogin=%s',
+    session ? session.user?.email : 'null', activeId, _freshLogin);
   if (session) {
     await fetchUserPlan(session.access_token);
     updateAuthUI();
-    // Logged in — skip landing (or fresh login from magic link) → go to app
-    const activeId = document.querySelector('.screen.active')?.id;
-    if (_freshLogin || activeId === 'screen-landing') {
+    // Fresh magic-link login → always go to tournament list
+    if (_freshLogin) {
+      showScreen('screen-tournament', false);
+      history.replaceState({ screen: 'screen-tournament' }, '', '');
+    } else if (activeId === 'screen-landing') {
+      // Returning user — skip landing
       showScreen('screen-tournament', false);
       history.replaceState({ screen: 'screen-tournament' }, '', '');
     }
+    // Otherwise: stay where restoreSession put us (watch/pick/school)
   } else {
     updateAuthUI();
     // Not logged in — if restoreSession left us somewhere deep, return to landing
-    const activeId = document.querySelector('.screen.active')?.id;
+    console.log('[auth] initAuth: no session, activeId=%s', activeId);
     if (activeId && activeId !== 'screen-landing' && activeId !== 'screen-tournament') {
       localStorage.removeItem('mattrack_session');
       showScreen('screen-landing', false);
@@ -2138,6 +2265,7 @@ async function initAuth() {
   }
 
   _sb.auth.onAuthStateChange(async (event, session) => {
+    console.log('[auth] onAuthStateChange event=%s user=%s', event, session?.user?.email || 'null');
     _session = session;
     if (session) {
       await fetchUserPlan(session.access_token);
@@ -2180,12 +2308,13 @@ function updateAuthUI() {
   if (!pill) return;
 
   if (_session) {
-    pill.style.display = 'flex';
     const name = _userEmail.split('@')[0] || 'Account';
     pillLabel.textContent = name;
     const paid = _userPlan !== 'free';
+    pillBadge.style.display = '';
     pillBadge.textContent = _userPlan.toUpperCase();
     pillBadge.className   = 'pill-plan' + (paid ? '' : ' free');
+    console.log('[auth] updateAuthUI: logged in email=%s plan=%s', _userEmail, _userPlan);
 
     // Update account modal
     const em = document.getElementById('account-email');
@@ -2205,7 +2334,19 @@ function updateAuthUI() {
       ? '<p style="text-align:center;color:var(--muted);font-size:0.82rem">Select a plan above to upgrade</p>'
       : '<button class="btn btn-primary" style="width:100%" onclick="startCheckout(\'individual\')">Upgrade for $2.99/mo</button><div style="text-align:center;margin-top:8px"><a href="#" onclick="showModal(\'modal-redeem\');closeModal(\'modal-paywall\');return false" style="color:var(--muted);font-size:0.82rem">Have a gym code? Redeem it here</a></div>';
   } else {
-    pill.style.display = 'none';
+    pillLabel.textContent = 'Sign In';
+    pillBadge.style.display = 'none';
+    console.log('[auth] updateAuthUI: not logged in');
+  }
+}
+
+function _onPillClick() {
+  if (_session) {
+    console.log('[auth] pill click → account modal');
+    showModal('modal-account');
+  } else {
+    console.log('[auth] pill click → login modal');
+    showModal('modal-login');
   }
 }
 
@@ -2267,10 +2408,31 @@ function copyCode(code, btn) {
 async function signInWithGoogle() {
   if (!_sb) return;
   const base = window.location.origin;
+  console.log('[auth] signInWithGoogle redirectTo=%s', base);
   await _sb.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: base }
   });
+}
+
+async function sendMagicLink() {
+  if (!_sb) return;
+  const email = document.getElementById('login-email-input')?.value?.trim();
+  const status = document.getElementById('login-email-status');
+  if (!email) { if (status) status.textContent = 'Enter your email first'; return; }
+  const base = window.location.origin;
+  console.log('[auth] sendMagicLink email=%s redirectTo=%s', email, base);
+  if (status) status.textContent = 'Sending…';
+  const { error } = await _sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: base }
+  });
+  if (error) {
+    if (status) status.textContent = error.message;
+  } else {
+    if (status) status.textContent = '✓ Check your email for the login link';
+    document.getElementById('login-email-input').value = '';
+  }
 }
 
 async function signOut() {

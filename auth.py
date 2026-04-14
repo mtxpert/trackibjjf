@@ -7,10 +7,13 @@ to work if Supabase is unreachable.
 
 import os
 import time
+import logging
 import requests
 from jose import jwt, JWTError, jwk
 from jose.utils import base64url_decode
 from supabase import create_client, Client
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -90,6 +93,7 @@ def get_user_from_token(request) -> dict | None:
             jwks = _get_jwks()
             key_data = jwks.get(kid)
             if not key_data:
+                log.warning("JWT kid=%s not found in JWKS (cached keys: %s)", kid, list(jwks.keys()))
                 return None
             public_key = jwk.construct(key_data)
             payload = jwt.decode(
@@ -108,11 +112,16 @@ def get_user_from_token(request) -> dict | None:
             )
 
         return payload
-    except (JWTError, Exception):
+    except JWTError as e:
+        log.warning("JWT verification failed: %s", e)
+        return None
+    except Exception as e:
+        log.warning("get_user_from_token unexpected error: %s", e)
         return None
 
 
 def get_user_plan(user_id: str) -> str:
+    log.info("get_user_plan looking up user_id=%s", user_id)
     """
     Look up the plan for *user_id* in ``public.users``.
 
@@ -135,11 +144,14 @@ def get_user_plan(user_id: str) -> str:
 
         data = response.data
         if not data:
+            log.warning("get_user_plan: no row found for user_id=%s", user_id)
             return "free"
 
         plan = data.get("plan", "free")
+        log.info("get_user_plan: user_id=%s plan=%s", user_id, plan)
         return plan if plan in ("free", "individual", "gym", "affiliate") else "free"
-    except Exception:
+    except Exception as e:
+        log.warning("get_user_plan error for user_id=%s: %s", user_id, e)
         return "free"
 
 
