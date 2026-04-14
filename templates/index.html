@@ -1924,8 +1924,8 @@ async function manualRefresh() {
     renderWatch();
 
     // Stop auto-refresh if all watched athletes have final results
-    const watched = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
-    const allDone = watched.length > 0 && watched.every(a => a.placement || a.eliminated);
+    const watchedNow = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+    const allDone = watchedNow.length > 0 && watchedNow.every(a => a.placement || a.eliminated);
     if (allDone) {
       showToast('Results final');
     } else {
