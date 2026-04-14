@@ -1922,13 +1922,30 @@ async function manualRefresh() {
     }
 
     renderWatch();
-    showToast('Updated');
+
+    // Stop auto-refresh if all watched athletes have final results
+    const watched = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+    const allDone = watched.length > 0 && watched.every(a => a.placement || a.eliminated);
+    if (allDone) {
+      showToast('Results final');
+    } else {
+      showToast('Updated');
+    }
   } catch(e) {
     showToast('Refresh failed');
   } finally {
     refreshing = false;
     if (btn) { btn.disabled = false; btn.textContent = '⟳ Refresh'; }
-    startRefreshTimer(); // reset countdown after every refresh attempt
+    // Stop auto-refresh when all results are in
+    const watched2 = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+    const allDone2 = watched2.length > 0 && watched2.every(a => a.placement || a.eliminated);
+    if (allDone2) {
+      stopRefreshTimer();
+      const cd = document.getElementById('refresh-countdown');
+      if (cd) cd.textContent = 'Results final';
+    } else {
+      startRefreshTimer();
+    }
   }
 }
 
