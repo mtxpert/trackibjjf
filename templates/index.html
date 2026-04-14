@@ -1442,7 +1442,6 @@ async function loadBrowseEvents() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     _browseEvents = await r.json();
     _browseFetched = true;
-    _buildBrowseOrgPills();
     renderBrowse();
   } catch(e) {
     list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Failed to load (${e.message})</div>`;
@@ -1461,7 +1460,7 @@ function renderBrowse() {
   let events = _browseEvents.filter(e => {
     if (!e.start || e.start < todayStr) return false;     // skip past & already-started
     if (e.start > cutoff) return false;                   // outside date window
-    if (_browseOrg !== 'all' && e.org !== _browseOrg) return false;
+    if (_browseOrg !== 'all' && _browseOrg !== 'other' && e.org !== _browseOrg) return false;
     if (_browseQ && !(e.name||'').toLowerCase().includes(_browseQ) &&
                     !(e.city||'').toLowerCase().includes(_browseQ)) return false;
     return true;

@@ -1399,6 +1399,33 @@ drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('
 drop.addEventListener('click', () => { const inp = document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.onchange=e=>send(e.target.files[0]); inp.click(); });
 </script></body></html>"""
 
+@app.route("/debug/logos")
+def debug_logos():
+    """Dev-only MatTrack logo gallery."""
+    import glob as _glob
+    logos_dir = "/mnt/c/Users/mtxpert/claude/mattrack-social/logos"
+    files = sorted(_glob.glob(f"{logos_dir}/*.png"))
+    imgs = "".join(
+        f'<div style="margin:30px 0;text-align:center">'
+        f'<p style="font-family:monospace;color:#aaa;margin-bottom:8px">{os.path.basename(f)}</p>'
+        f'<img src="/debug/logos/img/{os.path.basename(f)}" style="max-width:520px;border-radius:8px;border:1px solid #333"/>'
+        f'</div>'
+        for f in files
+    )
+    return Response(
+        f'<!DOCTYPE html><html><body style="background:#111;color:#eee;font-family:sans-serif;padding:20px">'
+        f'<h1 style="text-align:center">MatTrack Logo Options</h1>{imgs}</body></html>',
+        mimetype="text/html",
+    )
+
+@app.route("/debug/logos/img/<filename>")
+def debug_logos_img(filename):
+    logos_dir = "/mnt/c/Users/mtxpert/claude/mattrack-social/logos"
+    path = os.path.join(logos_dir, filename)
+    if not os.path.exists(path):
+        return "not found", 404
+    return send_file(path, mimetype="image/png")
+
 @app.route("/api/fighter/<path:name>")
 def api_fighter(name):
     """
