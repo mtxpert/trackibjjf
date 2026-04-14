@@ -8,7 +8,7 @@ Scalable architecture:
 """
 
 from flask import Flask, render_template, jsonify, request, Response, send_file
-import os, threading, time, json, queue, re, logging
+import os, threading, time, json, queue, re, logging, requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -131,6 +131,11 @@ def _naga_subdomain(tournament_name=""):
     if "compnet" in name_lower:
         return "compnet"
     return "naga"
+
+
+def _subdomain_to_source(subdomain: str) -> str:
+    """Map Smoothcomp subdomain to MatTrack source string."""
+    return "compnet" if subdomain == "compnet" else "naga"
 
 # ── Shared bracket watcher ────────────────────────────────────────────────────
 # category_id -> {tournament_id, last_fetched, interval_sec}
@@ -355,7 +360,7 @@ def _naga_register_watch(tournament_id, category_id, subdomain="naga", interval_
             "tournament_id": str(tournament_id),
             "last_fetched":  existing.get("last_fetched", 0),
             "interval_sec":  interval_sec,
-            "source":        "naga",
+            "source":        _subdomain_to_source(subdomain),
             "subdomain":     subdomain,
         }
 
@@ -381,7 +386,7 @@ def _background_poller():
                 if (now - info["last_fetched"]) >= info["interval_sec"]:
                     tid = info["tournament_id"]
                     tid_by_cid[cid] = tid
-                    if info.get("source") == "naga":
+                    if info.get("source") in ("naga", "compnet"):
                         naga_refresh.append((tid, cid, info.get("subdomain", "naga")))
                     else:
                         ibjjf_refresh.append((tid, cid, ""))
@@ -400,6 +405,7 @@ def _background_poller():
                 _process_batch_results(batch_results, tid_by_cid)
             except Exception:
                 pass
+
 
         time.sleep(10)   # check every 10s for newly stale entries
 
@@ -513,26 +519,158 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/browser")
+def tournament_browser():
+    return send_file(os.path.join(os.path.dirname(__file__), "tournament_browser.html"))
+
+
+_IBJJF_LOGO_CACHE: dict = {}   # {ts, svg_bytes}
+
+@app.route("/api/org-logo/ibjjf")
+def org_logo_ibjjf():
+    """Proxy the IBJJF logo SVG at a stable URL (resolves webpack hash automatically)."""
+    import re as _re
+    cached = _IBJJF_LOGO_CACHE
+    if cached.get("ts") and time.time() - cached["ts"] < 86400:
+        return Response(cached["svg"], mimetype="image/svg+xml",
+                        headers={"Cache-Control": "public, max-age=86400"})
+    try:
+        hdrs = {"User-Agent": "Mozilla/5.0"}
+        page = requests.get("https://ibjjf.com", headers=hdrs, timeout=8).text
+        m = _re.search(r'(/packs/media/images/ibjjf/logo-ibjjf[^\'"]+\.svg)', page)
+        if m:
+            svg = requests.get("https://ibjjf.com" + m.group(1), headers=hdrs, timeout=8).content
+            cached["svg"] = svg
+            cached["ts"]  = time.time()
+            return Response(svg, mimetype="image/svg+xml",
+                            headers={"Cache-Control": "public, max-age=86400"})
+    except Exception as e:
+        logger.error("ibjjf logo proxy failed: %s", e)
+    return Response(status=404)
+
+
+@app.route("/api/geocode")
+def api_geocode():
+    """Geocode a city/state string. Uses static dict first, then Nominatim."""
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify({"error": "no query"}), 400
+    from scraper import _geocode, _CITY_COORDS
+    # Try static dict
+    coords = _geocode(q, "")
+    if coords:
+        return jsonify({"lat": coords[0], "lng": coords[1], "source": "static"})
+    # Nominatim fallback
+    try:
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": q, "format": "json", "limit": 1},
+            headers={"User-Agent": "MatTrack/1.0"},
+            timeout=5,
+        )
+        data = resp.json()
+        if data:
+            return jsonify({"lat": float(data[0]["lat"]), "lng": float(data[0]["lon"]), "source": "nominatim"})
+    except Exception as e:
+        logger.warning("Nominatim geocode failed for %r: %s", q, e)
+    return jsonify({"error": "not found"}), 404
+
+
+@app.route("/api/browser-events")
+def api_browser_events():
+    """All events for the tournament browser: Smoothcomp (all orgs) + IBJJF schedule."""
+    from scraper_smoothcomp import get_smoothcomp_events
+    from scraper import get_ibjjf_schedule
+
+    sc, ibjjf = [], []
+    try:
+        sc = get_smoothcomp_events()
+    except Exception as e:
+        logger.error("get_smoothcomp_events failed: %s", e)
+    try:
+        ibjjf = [dict(ev, org="ibjjf") for ev in get_ibjjf_schedule()]
+    except Exception as e:
+        logger.error("get_ibjjf_schedule failed: %s", e)
+
+    return jsonify(sc + ibjjf)
+
+
 @app.route("/api/tournaments")
 def api_tournaments():
     from scraper_naga import get_naga_events
 
-    # IBJJF: get_tournaments() handles seed cache + live fetch + date inference
+    # IBJJF — merge bjjcompsystem (brackets built) with ibjjf.com schedule (full calendar)
     try:
-        from scraper import get_tournaments
-        ibjjf = [dict(t, source="ibjjf") for t in get_tournaments()]
-    except Exception as e:
-        logger.error("get_tournaments failed: %s", e)
-        ibjjf = []
+        from scraper import get_tournaments, get_ibjjf_schedule
+        bracket_events = get_tournaments()   # events on bjjcompsystem (have rosters)
+        schedule       = get_ibjjf_schedule()  # all events on ibjjf.com/events/championships
 
-    # NAGA: always live fetch (single request to nagafighter.com)
+        # Index bracket events by start date; also build name→location map from schedule
+        brackets_by_start = {}
+        for bt in bracket_events:
+            if bt.get("start"):
+                brackets_by_start.setdefault(bt["start"], []).append(bt)
+
+        # Secondary lookup: location by slug keywords (for bracket events not in upcoming API)
+        sched_loc_by_slug = {}
+        for ev in schedule:
+            slug_key = ev.get("id", "")  # championship id == slug fallback
+            name_key = ev.get("name", "").lower()
+            if ev.get("location"):
+                sched_loc_by_slug[slug_key] = ev["location"]
+                sched_loc_by_slug[name_key] = ev["location"]
+
+        ibjjf = []
+        matched_bracket_ids = set()
+        for ev in schedule:
+            match = None
+            if ev.get("start"):
+                candidates = brackets_by_start.get(ev["start"], [])
+                for bt in candidates:
+                    if bt["id"] not in matched_bracket_ids:
+                        match = bt
+                        matched_bracket_ids.add(bt["id"])
+                        break
+            if match:
+                # Use bjjcompsystem id (for roster lookup) + location from schedule
+                ibjjf.append(dict(match, source="ibjjf", has_brackets=True,
+                                  location=ev.get("location", "")))
+            else:
+                ibjjf.append(ev)  # future/no-bracket event from schedule
+
+        # Add any bracket events that didn't match a schedule entry
+        # (typically events already underway / just past — not in "upcoming" API)
+        for bt in bracket_events:
+            if bt["id"] not in matched_bracket_ids:
+                loc = (bt.get("location") or
+                       sched_loc_by_slug.get(bt.get("name", "").lower(), ""))
+                ibjjf.append(dict(bt, source="ibjjf", has_brackets=True, location=loc))
+    except Exception as e:
+        logger.error("ibjjf schedule merge failed: %s", e)
+        try:
+            from scraper import get_tournaments
+            ibjjf = [dict(t, source="ibjjf", has_brackets=True) for t in get_tournaments()]
+        except Exception as e2:
+            logger.error("get_tournaments fallback failed: %s", e2)
+            ibjjf = []
+
+    # NAGA
     try:
         naga = get_naga_events()
     except Exception as e:
         logger.error("get_naga_events failed: %s", e)
         naga = []
 
-    return jsonify(ibjjf + naga)
+    # CompNet — sourced from Smoothcomp (same platform, no separate scraper needed)
+    try:
+        from scraper_smoothcomp import get_smoothcomp_events
+        compnet = [dict(e, source="compnet") for e in get_smoothcomp_events()
+                   if e.get("org") == "compnet"]
+    except Exception as e:
+        logger.error("compnet from smoothcomp failed: %s", e)
+        compnet = []
+
+    return jsonify(ibjjf + naga + compnet)
 
 
 # ── Roster cache endpoints ────────────────────────────────────────────────────
@@ -696,7 +834,8 @@ def api_naga_clubs(event_id):
     if not re.match(r'^\d+$', str(event_id)):
         return jsonify([])
     from scraper_naga import get_naga_clubs
-    subdomain = _naga_subdomain()
+    tournament_name = request.args.get("name", "")
+    subdomain = _naga_subdomain(tournament_name)
     clubs = get_naga_clubs(event_id, subdomain)
     return jsonify(clubs)
 
@@ -715,20 +854,24 @@ def api_search():
 
     job_id = f"{tournament_id}_{school_name.replace(' ', '_')}_{int(time.time())}"
 
-    # ── NAGA / Smoothcomp path ────────────────────────────────────────────────
+    # ── NAGA / CompNet / Smoothcomp path ─────────────────────────────────────
     if _is_naga_tournament(tournament_id):
         from scraper_naga import build_naga_roster
         subdomain = _naga_subdomain(tournament_name)
+        source    = _subdomain_to_source(subdomain)
         athletes  = build_naga_roster(tournament_id, school_name, subdomain)
+        for a in athletes:
+            a["source"] = source
         if athletes:
+            label = "CompNet" if source == "compnet" else "NAGA"
             _jobs[job_id] = {
                 "status":      "done",
                 "progress":    len(athletes),
                 "total":       len(athletes),
-                "current_cat": f"NAGA · {len(athletes)} division entries",
+                "current_cat": f"{label} · {len(athletes)} division entries",
                 "athletes":    athletes,
                 "from_cache":  False,
-                "source":      "naga",
+                "source":      source,
             }
             return jsonify({"job_id": job_id})
         return jsonify({"error": "school_not_found", "message": f"No athletes found for '{school_name}'"}), 404
@@ -938,9 +1081,10 @@ def api_refresh():
 
 
 def _naga_refresh(tournament_id, tournament_name, athletes):
-    """Handle /api/refresh for NAGA/Smoothcomp events."""
+    """Handle /api/refresh for NAGA/Smoothcomp events (naga + compnet)."""
     from scraper_naga import fetch_naga_bracket
     subdomain = _naga_subdomain(tournament_name)
+    source    = _subdomain_to_source(subdomain)
     updated   = []
     all_changes = []
 
@@ -956,10 +1100,11 @@ def _naga_refresh(tournament_id, tournament_name, athletes):
         if cid not in _brackets:
             state = fetch_naga_bracket(tournament_id, int(cid), subdomain)
             if "error" not in state:
+                state["source"] = source
                 _brackets[cid] = state
                 if state.get("results_final"):
                     _persist_final_bracket(cid, tournament_id, state,
-                                           source="naga",
+                                           source=source,
                                            tournament_name=tournament_name)
 
     for athlete in athletes:
@@ -1025,7 +1170,7 @@ def _naga_refresh(tournament_id, tournament_name, athletes):
                 a["eliminated"] = lost and not has_upcoming
 
             a["bracket_url"] = (
-                f"https://naga.smoothcomp.com/en/event/{tournament_id}/bracket/{cid}"
+                f"https://{subdomain}.smoothcomp.com/en/event/{tournament_id}/bracket/{cid}"
             )
 
         updated.append(a)

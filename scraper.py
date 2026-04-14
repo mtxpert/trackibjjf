@@ -6,6 +6,7 @@ Rosters are built by fetching all bracket pages concurrently (~2-5s per tourname
 
 import re
 import json
+import calendar
 from pathlib import Path
 from datetime import datetime
 import requests
@@ -182,6 +183,172 @@ def get_tournaments(use_cache_on_fail=True):
             _TOURNEY_CACHE_FILE.write_text(json.dumps(result))
         except Exception:
             pass
+    return result
+
+
+# ── IBJJF city geocoding ──────────────────────────────────────────────────────
+# Static lat/lng for cities that appear frequently in the IBJJF schedule.
+# Key: lowercase "city, state" or "city" for international.
+_CITY_COORDS: dict[str, tuple[float, float]] = {
+    # USA
+    "long beach, ca":       (33.770, -118.193),
+    "college park, ga":     (33.653, -84.449),
+    "chicago, il":          (41.878, -87.630),
+    "denver, co":           (39.739, -104.984),
+    "columbus, oh":         (39.961, -82.999),
+    "boston, ma":           (42.360, -71.059),
+    "san diego, ca":        (32.716, -117.161),
+    "santa cruz, ca":       (36.974, -122.030),
+    "san antonio, tx":      (29.424, -98.494),
+    "las vegas, nv":        (36.175, -115.136),
+    "kissimmee, fl":        (28.292, -81.408),
+    "miami, fl":            (25.775, -80.208),
+    "orlando, fl":          (28.538, -81.379),
+    "houston, tx":          (29.760, -95.370),
+    "dallas, tx":           (32.776, -96.797),
+    "los angeles, ca":      (34.052, -118.244),
+    "new york, ny":         (40.713, -74.006),
+    "philadelphia, pa":     (39.953, -75.165),
+    "charlotte, nc":        (35.227, -80.843),
+    "seattle, wa":          (47.606, -122.332),
+    "phoenix, az":          (33.448, -112.074),
+    "salt lake city, ut":   (40.761, -111.891),
+    "sacramento, ca":       (38.581, -121.494),
+    "reno, nv":             (39.530, -119.813),
+    "richmond, va":         (37.541, -77.434),
+    "washington":           (38.907, -77.037),
+    # International
+    "lisbon":               (38.717, -9.139),
+    "dublin":               (53.349, -6.260),
+    "barcelona":            (41.389,  2.159),
+    "madrid":               (40.417, -3.703),
+    "london":               (51.507, -0.128),
+    "paris":                (48.857,  2.353),
+    "milan":                (45.464,  9.190),
+    "rome":                 (41.902, 12.496),
+    "amsterdam":            (52.370,  4.895),
+    "berlin":               (52.520, 13.405),
+    "abu dhabi":            (24.453, 54.377),
+    "barueri":              (-23.505, -46.876),
+    "tokyo":                (35.689, 139.692),
+    "sydney":               (-33.868, 151.209),
+    "dubai":                (25.204, 55.270),
+    "petit-lancy":          (46.184,  6.112),
+}
+
+def _geocode(city: str, state: str = "") -> tuple[float, float] | None:
+    """Return (lat, lng) for a city from the static lookup only — no external calls."""
+    key = f"{city.lower()}, {state.lower()}".strip(", ") if state else city.lower()
+    if key in _CITY_COORDS:
+        return _CITY_COORDS[key]
+    city_only = city.lower().split(",")[0].strip()
+    if city_only in _CITY_COORDS:
+        return _CITY_COORDS[city_only]
+    return None
+
+
+IBJJF_UPCOMING_API = "https://ibjjf.com/api/v1/events/upcomings.json"
+_LOGO_ID_RE  = re.compile(r'/Championship/Logo/(\d+)')
+_MONTH_MAP   = {m.lower(): i for i, m in enumerate(calendar.month_abbr) if m}
+_IBJJF_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Referer": "https://ibjjf.com/events/championships",
+    "X-Requested-With": "XMLHttpRequest",
+}
+
+
+def _parse_ibjjf_date(text: str, year: int):
+    """Parse 'May 28* - May 31' → ('2026-05-28', '2026-05-31'). Returns ('','') on failure."""
+    from datetime import date as _date
+    text = text.replace('*', '').strip()
+    parts = [p.strip() for p in text.split(' - ')]
+
+    def _single(s, fallback_month=None):
+        tokens = s.split()
+        if len(tokens) == 2:
+            m = _MONTH_MAP.get(tokens[0].lower())
+            if m:
+                return m, int(tokens[1])
+        elif len(tokens) == 1 and tokens[0].isdigit():
+            return fallback_month, int(tokens[0])
+        return None, None
+
+    sm, sd = _single(parts[0])
+    if sm is None:
+        return '', ''
+    try:
+        start_iso = _date(year, sm, sd).isoformat()
+        if len(parts) == 2:
+            em, ed = _single(parts[1], fallback_month=sm)
+            end_iso = _date(year, em or sm, ed or sd).isoformat() if ed else start_iso
+        else:
+            end_iso = start_iso
+        return start_iso, end_iso
+    except (ValueError, TypeError):
+        return '', ''
+
+
+def get_ibjjf_schedule():
+    """Fetch all upcoming IBJJF championship events from the ibjjf.com JSON API.
+
+    Returns dicts with: id (championship_id), name, start, end, location,
+    source='ibjjf', is_past, has_brackets=False.
+    api_tournaments() merges this with get_tournaments() to set has_brackets=True
+    and replace ids with bjjcompsystem ids where brackets exist.
+    """
+    from datetime import date as _date
+    today = _date.today()
+
+    resp = requests.get(IBJJF_UPCOMING_API, headers=_IBJJF_HEADERS, timeout=(5, 20))
+    resp.raise_for_status()
+    data = resp.json()
+    championships = data.get("championships", [])
+
+    result = []
+    for ev in championships:
+        try:
+            slug      = ev.get("slug", "")
+            name      = ev.get("name", slug)
+            logo_url  = ev.get("urlLogo", "")
+            date_text = ev.get("eventIntervalDays", "")
+            city      = ev.get("city", "").strip()
+            state     = ev.get("state", "").strip()
+
+            # Championship ID from logo URL
+            m = _LOGO_ID_RE.search(logo_url)
+            champ_id  = m.group(1) if m else slug
+
+            # Year from slug
+            year_m = re.search(r'(\d{4})', slug)
+            year   = int(year_m.group(1)) if year_m else today.year
+
+            start_iso, end_iso = _parse_ibjjf_date(date_text, year)
+            location = f"{city}, {state}" if state else city
+            is_past  = bool(end_iso and _date.fromisoformat(end_iso) < today)
+            coords   = _geocode(city, state)
+
+            result.append({
+                "id":           champ_id,
+                "name":         name,
+                "start":        start_iso,
+                "end":          end_iso,
+                "location":     location,
+                "city":         f"{city}, {state}" if state else city,
+                "country":      ev.get("country", ""),
+                "country_code": "US" if state and len(state) == 2 else "",
+                "lat":          coords[0] if coords else None,
+                "lng":          coords[1] if coords else None,
+                "cover_image":  f"https://www.ibjjfdb.com/Championship/Logo/{champ_id}" if champ_id and champ_id.isdigit() else "",
+                "url":          f"https://ibjjf.com/events/{slug}",
+                "source":       "ibjjf",
+                "is_past":      is_past,
+                "has_brackets": False,
+            })
+        except Exception:
+            continue
+
     return result
 
 

@@ -120,22 +120,40 @@
       margin-bottom: 20px;
     }
 
-    /* Source tabs (IBJJF / NAGA) */
-    .source-tabs {
-      display: flex; gap: 10px; margin-bottom: 18px;
+    /* ── Find Tournaments button ── */
+    .find-local-btn {
+      width:100%; padding:13px; border-radius:12px; border:none;
+      background:var(--red); color:#fff; font-size:0.95rem; font-weight:700;
+      cursor:pointer; margin-bottom:14px; display:flex; align-items:center;
+      justify-content:center; gap:8px;
     }
-    .source-tab {
-      flex: 1; display: flex; flex-direction: column; align-items: center;
-      gap: 6px; padding: 14px 10px; border-radius: 14px;
-      background: var(--card); border: 2px solid var(--border);
-      color: var(--muted); cursor: pointer;
-      transition: border-color 0.15s, background 0.15s, color 0.15s;
+    .find-local-btn:active { opacity:0.85; }
+
+    /* ── Org grid ── */
+    .org-grid {
+      display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px;
     }
-    .source-tab--active {
-      border-color: var(--red); background: rgba(192,57,43,0.1); color: var(--text);
+    .org-tile {
+      display:flex; flex-direction:column; align-items:center; gap:5px;
+      padding:9px 4px 8px; border-radius:12px;
+      border:1.5px solid var(--border); background:var(--card); color:var(--muted);
+      cursor:pointer; font-size:0.63rem; font-weight:700; letter-spacing:0.3px;
+      text-transform:uppercase; transition:border-color 0.12s, color 0.12s, background 0.12s;
     }
-    .source-tab-icon { font-size: 1.6rem; line-height: 1; }
-    .source-tab-label { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+    .org-tile:active { background:var(--gray); }
+    .org-tile.active { border-color:var(--red); color:var(--text); background:rgba(192,57,43,0.1); }
+    .org-tile-img {
+      width:36px; height:36px; border-radius:50%; object-fit:cover;
+    }
+    .org-tile-img[src$=".svg"] { object-fit:contain; background:#1a1a1a; padding:3px; }
+    .org-tile-icon {
+      width:36px; height:36px; border-radius:50%; background:var(--gray);
+      display:flex; align-items:center; justify-content:center; font-size:1.2rem;
+    }
+
+    /* Source tabs — kept for session-restore compat but hidden */
+    .source-tabs { display:none; }
+    .source-tab {}
 
     /* Tournament list */
     .tourney-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
@@ -146,6 +164,9 @@
     }
     .tourney-source-badge.badge-naga {
       background: rgba(41,128,185,0.15); color: #5dade2;
+    }
+    .tourney-source-badge.badge-compnet {
+      background: rgba(39,174,96,0.15); color: #58d68d;
     }
     .tourney-item {
       background: var(--card);
@@ -158,6 +179,13 @@
     .tourney-item:active { background: var(--gray); }
     .tourney-item.selected { border-color: var(--red); background: rgba(192,57,43,0.12); }
     .tourney-item.past { opacity: 0.75; }
+    .tourney-item.no-brackets { cursor: default; opacity: 0.6; }
+    .tourney-item.no-brackets:active { background: var(--card); }
+    .tourney-no-brackets-badge {
+      display: inline-block; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.4px;
+      text-transform: uppercase; padding: 2px 7px; border-radius: 5px;
+      background: rgba(255,255,255,0.06); color: var(--muted); margin-top: 5px;
+    }
     .tourney-name { font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
     .tourney-meta { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
     .tourney-section-label {
@@ -165,6 +193,94 @@
       color: var(--muted); padding: 4px 2px 2px; margin-top: 8px;
     }
     .tourney-section-label:first-child { margin-top: 0; }
+
+    /* ── Browse mode ── */
+    #browse-container { display:none; }
+    .browse-search {
+      width:100%; padding:10px 14px; background:var(--gray); border:1px solid var(--border);
+      border-radius:10px; color:var(--text); font-size:0.9rem; outline:none; margin-bottom:10px;
+    }
+    .browse-org-grid {
+      display:grid; grid-template-columns:repeat(4,1fr); gap:7px; margin-bottom:12px;
+    }
+    .browse-org-pill {
+      display:flex; flex-direction:column; align-items:center; gap:5px;
+      padding:8px 4px 7px; border-radius:12px;
+      border:1.5px solid var(--border); background:var(--card); color:var(--muted);
+      cursor:pointer; font-size:0.65rem; font-weight:700; letter-spacing:0.3px;
+      text-transform:uppercase; transition:border-color 0.12s, color 0.12s;
+    }
+    .browse-org-pill.active { border-color:var(--red); color:var(--text); background:rgba(192,57,43,0.1); }
+    .browse-org-pill-img {
+      width:34px; height:34px; border-radius:50%; object-fit:cover; flex-shrink:0;
+    }
+    .browse-org-pill-img[src$=".svg"] { object-fit:contain; background:#1a1a1a; padding:3px; }
+    .browse-org-pill-icon {
+      width:34px; height:34px; border-radius:50%; background:var(--gray);
+      display:flex; align-items:center; justify-content:center; font-size:1.1rem;
+    }
+    .browse-date-row {
+      display:flex; gap:7px; overflow-x:auto; padding-bottom:6px; margin-bottom:10px;
+      scrollbar-width:none;
+    }
+    .browse-date-row::-webkit-scrollbar { display:none; }
+    .browse-date-chip {
+      padding:5px 12px; border-radius:20px; border:1.5px solid var(--border);
+      background:var(--card); color:var(--muted); cursor:pointer;
+      font-size:0.72rem; font-weight:600; white-space:nowrap; flex-shrink:0;
+    }
+    .browse-date-chip.active { border-color:var(--red); color:var(--text); background:rgba(192,57,43,0.1); }
+    .browse-card {
+      display:flex; gap:10px; background:var(--card); border:1px solid var(--border);
+      border-radius:12px; padding:10px 12px; margin-bottom:8px;
+      text-decoration:none; color:inherit; cursor:pointer;
+    }
+    .browse-card:active { background:var(--gray); }
+    .browse-thumb {
+      width:44px; height:44px; border-radius:8px; object-fit:cover; flex-shrink:0; background:var(--gray);
+    }
+    .browse-thumb[src$=".svg"] { object-fit:contain; background:#1a1a1a; padding:5px; }
+    .browse-thumb-ph {
+      width:44px; height:44px; border-radius:8px; flex-shrink:0; background:var(--gray);
+      display:flex; align-items:center; justify-content:center; font-size:1.2rem;
+    }
+    .browse-body { flex:1; min-width:0; }
+    .browse-name { font-size:0.88rem; font-weight:600; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .browse-meta { font-size:0.72rem; color:var(--muted); margin-top:3px; }
+    .browse-badge {
+      font-size:0.6rem; font-weight:700; letter-spacing:0.4px; text-transform:uppercase;
+      padding:2px 6px; border-radius:5px; display:inline-block; margin-right:4px;
+    }
+    #browse-list { margin-bottom:20px; }
+
+    /* ── Find Local modal ── */
+    #local-modal { display:none; }
+    #local-modal.open { display:flex; }
+    .local-sheet-title { font-size:1.1rem; font-weight:800; margin-bottom:4px; }
+    .local-sheet-sub { font-size:0.82rem; color:var(--muted); margin-bottom:18px; line-height:1.4; }
+    .local-loc-btn {
+      width:100%; padding:13px; border-radius:12px; border:2px solid var(--border);
+      background:var(--card); color:var(--text); font-size:0.9rem; font-weight:600;
+      cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px;
+    }
+    .local-loc-btn:active { background:var(--gray); }
+    .local-loc-btn.located { border-color:var(--green); color:var(--green); }
+    .local-or { text-align:center; color:var(--muted); font-size:0.78rem; margin:8px 0; }
+    .local-city-input {
+      width:100%; padding:12px 14px; background:var(--gray); border:1.5px solid var(--border);
+      border-radius:10px; color:var(--text); font-size:0.9rem; outline:none; margin-bottom:14px;
+    }
+    .local-city-input:focus { border-color:var(--red); }
+    .local-row { display:flex; gap:8px; margin-bottom:14px; }
+    .local-select {
+      flex:1; padding:10px; background:var(--gray); border:1.5px solid var(--border);
+      border-radius:10px; color:var(--text); font-size:0.85rem; outline:none; cursor:pointer;
+    }
+    .local-search-btn {
+      width:100%; padding:14px; border-radius:12px; border:none;
+      background:var(--red); color:#fff; font-size:0.95rem; font-weight:700; cursor:pointer;
+    }
+    .local-search-btn:active { opacity:0.85; }
 
     /* School input */
     .mode-btn {
@@ -640,18 +756,16 @@
 <div class="screen active" id="screen-tournament">
   <div class="setup-wrap">
     <div class="setup-title" data-i18n="select_tournament">Select Tournament</div>
-    <!-- Source tabs -->
-    <div class="source-tabs">
-      <button class="source-tab" id="src-ibjjf" onclick="setTournamentSource('ibjjf')">
-        <span class="source-tab-icon">🥋</span>
-        <span class="source-tab-label">IBJJF</span>
-      </button>
-      <button class="source-tab" id="src-naga" onclick="setTournamentSource('naga')">
-        <span class="source-tab-icon">🏆</span>
-        <span class="source-tab-label">NAGA</span>
-      </button>
-    </div>
-    <!-- Upcoming / Past toggle — shown after a source is selected -->
+
+    <!-- Find Local Tournaments button -->
+    <button class="find-local-btn" onclick="openLocalModal()">
+      📍 Find Tournaments Near Me
+    </button>
+
+    <!-- Org grid -->
+    <div class="org-grid" id="org-grid"></div>
+
+    <!-- Upcoming / Past toggle (shown for bracket-tracking orgs) -->
     <div id="tourney-era-toggle" style="display:none;gap:6px;margin-bottom:10px">
       <button id="era-upcoming" onclick="setTourneyEra('upcoming')"
         style="flex:1;padding:9px;border-radius:10px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:var(--red);color:white">
@@ -662,11 +776,69 @@
         Past Results
       </button>
     </div>
-    <div id="tourney-loading" class="state-msg">
+
+    <!-- Bracket-tracking tournament list (IBJJF / NAGA / CompNet) -->
+    <div id="tourney-loading" class="state-msg" style="display:none">
       <div class="spinner"></div>
-      <span data-i18n="loading_tournaments">Loading tournaments...</span>
+      <span>Loading tournaments…</span>
     </div>
     <div id="tourney-list" class="tourney-list" style="display:none"></div>
+
+    <!-- Browse list (all other orgs + independent) -->
+    <div id="browse-container" style="display:none">
+      <div class="browse-date-row">
+        <button class="browse-date-chip active" data-days="30" onclick="setBrowseDate(30,this)">Next 30 days</button>
+        <button class="browse-date-chip" data-days="90" onclick="setBrowseDate(90,this)">3 months</button>
+        <button class="browse-date-chip" data-days="365" onclick="setBrowseDate(365,this)">This year</button>
+        <button class="browse-date-chip" data-days="0" onclick="setBrowseDate(0,this)">All upcoming</button>
+      </div>
+      <div id="browse-list"></div>
+    </div>
+
+    <!-- Hidden source-tab stubs for session-restore compat -->
+    <div class="source-tabs">
+      <button class="source-tab" id="src-ibjjf"></button>
+      <button class="source-tab" id="src-naga"></button>
+      <button class="source-tab" id="src-compnet"></button>
+      <button class="source-tab" id="src-browse"></button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Find Local Modal ── -->
+<div class="modal-overlay" id="local-modal" onclick="if(event.target===this)closeLocalModal()">
+  <div class="modal-sheet">
+    <button class="btn-modal-close" onclick="closeLocalModal()">✕</button>
+    <div class="local-sheet-title">📍 Find Tournaments Near You</div>
+    <div class="local-sheet-sub">Use your location or enter a city to find upcoming events nearby.</div>
+
+    <button class="local-loc-btn" id="local-gps-btn" onclick="useMyLocation()">
+      <span>📡</span> Use My Location
+    </button>
+    <div class="local-or">— or enter city —</div>
+    <input class="local-city-input" id="local-city-input" type="text"
+           placeholder="e.g. Atlanta, GA" autocomplete="off"
+           onkeydown="if(event.key==='Enter')runLocalSearch()">
+
+    <div class="local-row">
+      <select class="local-select" id="local-dist">
+        <option value="25">Within 25 mi</option>
+        <option value="50" selected>Within 50 mi</option>
+        <option value="100">Within 100 mi</option>
+        <option value="250">Within 250 mi</option>
+        <option value="500">Within 500 mi</option>
+      </select>
+      <select class="local-select" id="local-days">
+        <option value="30" selected>Next 30 days</option>
+        <option value="60">Next 60 days</option>
+        <option value="90">Next 3 months</option>
+        <option value="180">Next 6 months</option>
+        <option value="0">All upcoming</option>
+      </select>
+    </div>
+
+    <div id="local-status" style="font-size:0.8rem;color:var(--muted);margin-bottom:10px;min-height:18px"></div>
+    <button class="local-search-btn" onclick="runLocalSearch()">Search</button>
   </div>
 </div>
 
@@ -925,8 +1097,40 @@ function esc(str) { return String(str || '').replace(/[&<>"']/g, c => _ESC[c]); 
 
 // ─── State ─────────────────────────────────────────────────────────────────
 let allTournaments = [];
-let _tournamentSource = null;   // null | 'ibjjf' | 'naga'
+let _tournamentSource = null;   // null | 'ibjjf' | 'naga' | 'compnet' | 'browse'
 let selectedTournament = null;
+
+// ── Browse state ──
+let _browseEvents = [];
+let _browseFetched = false;
+let _browseOrg = 'all';
+let _browseDays = 30;
+let _browseQ = '';
+
+const _BROWSE_ORGS = [
+  // Row 1 — marquee orgs
+  { key:'ibjjf',        name:'IBJJF',        icon:'🏆', color:'#e74c3c', bg:'rgba(231,76,60,0.15)',   logo:'/static/org-logos/ibjjf.svg' },
+  { key:'adcc',         name:'ADCC',         icon:'🏅', color:'#f0b429', bg:'rgba(240,180,41,0.15)',  logo:'/static/org-logos/adcc.jpg' },
+  { key:'naga',         name:'NAGA',         icon:'🏆', color:'#5dade2', bg:'rgba(93,173,226,0.15)',  logo:'/static/org-logos/naga.jpg' },
+  { key:'compnet',      name:'CompNet',      icon:'🌿', color:'#58d68d', bg:'rgba(88,214,141,0.15)',  logo:'/static/org-logos/compnet.jpg' },
+  // Row 2
+  { key:'gi',           name:'Grappling Ind',icon:'🔥', color:'#e67e22', bg:'rgba(230,126,34,0.15)',  logo:'/static/org-logos/gi.jpg' },
+  { key:'tco',          name:'Tap Cancer',   icon:'💜', color:'#a569bd', bg:'rgba(165,105,189,0.15)', logo:'/static/org-logos/tco.jpg' },
+  { key:'pbjjf',        name:'PBJJF',        icon:'🎖', color:'#c0392b', bg:'rgba(192,57,43,0.15)',   logo:'/static/org-logos/pbjjf.jpg' },
+  { key:'newbreed',     name:'New Breed',    icon:'⚡', color:'#1abc9c', bg:'rgba(26,188,156,0.15)',  logo:'/static/org-logos/newbreed.jpg' },
+  // Row 3
+  { key:'fuji',         name:'Fuji BJJ',     icon:'🔵', color:'#3498db', bg:'rgba(52,152,219,0.15)',  logo:'/static/org-logos/fuji.jpg' },
+  { key:'goodfight',    name:'Good Fight',   icon:'✊', color:'#2ecc71', bg:'rgba(46,204,113,0.15)',  logo:'/static/org-logos/goodfight.jpg' },
+  { key:'united',       name:'United',       icon:'🤝', color:'#9b59b6', bg:'rgba(155,89,182,0.15)',  logo:'/static/org-logos/united.jpg' },
+  { key:'nfc',          name:'NFC',          icon:'🎯', color:'#e74c3c', bg:'rgba(231,76,60,0.15)',   logo:'/static/org-logos/nfc.jpg' },
+  // Row 4
+  { key:'subchallenge', name:'Sub Challenge',icon:'🎯', color:'#e74c3c', bg:'rgba(231,76,60,0.15)',   logo:'/static/org-logos/subchallenge.jpg' },
+  { key:'grapplingx',   name:'Grappling X',  icon:'❌', color:'#f39c12', bg:'rgba(243,156,18,0.15)',  logo:'/static/org-logos/grapplingx.jpg' },
+  { key:'rollalot',     name:'Roll-a-Lot',   icon:'🎲', color:'#16a085', bg:'rgba(22,160,133,0.15)',  logo:'/static/org-logos/rollalot.jpg' },
+  { key:'other',        name:'Browse All',   icon:'📋', color:'#888',    bg:'rgba(136,136,136,0.1)',  logo:null },
+];
+const _BROWSE_ORG_MAP = Object.fromEntries(_BROWSE_ORGS.map(o => [o.key, o]));
+const _BROWSE_LOGOS = Object.fromEntries(_BROWSE_ORGS.filter(o=>o.logo).map(o=>[o.key,o.logo]));
 let currentJobId = null;
 let pollTimer = null;
 let allAthletes = [];      // full search results
@@ -1015,6 +1219,9 @@ function goHome() {
   _tournamentSource = null;
   document.getElementById('src-ibjjf').classList.remove('source-tab--active');
   document.getElementById('src-naga').classList.remove('source-tab--active');
+  document.getElementById('src-compnet').classList.remove('source-tab--active');
+  document.getElementById('src-browse').classList.remove('source-tab--active');
+  document.getElementById('browse-container').style.display = 'none';
   document.getElementById('header-sub').textContent = 'Live Tournament Tracker';
   showScreen('screen-tournament', false);
   history.pushState({ screen: 'screen-tournament' }, '', '');
@@ -1077,8 +1284,10 @@ function restoreSession() {
     selectedKeys         = new Set(s.selected || []);
     if (s.source) {
       _tournamentSource = s.source;
-      document.getElementById('src-ibjjf').classList.toggle('source-tab--active', s.source === 'ibjjf');
-      document.getElementById('src-naga').classList.toggle('source-tab--active',  s.source === 'naga');
+      document.getElementById('src-ibjjf').classList.toggle('source-tab--active',   s.source === 'ibjjf');
+      document.getElementById('src-naga').classList.toggle('source-tab--active',    s.source === 'naga');
+      document.getElementById('src-compnet').classList.toggle('source-tab--active', s.source === 'compnet');
+      document.getElementById('src-browse').classList.toggle('source-tab--active',  s.source === 'browse');
     }
     const screen         = s.screen || 'screen-tournament';
     if (screen === 'screen-watch' && selectedKeys.size) {
@@ -1103,7 +1312,7 @@ function restoreSession() {
       document.getElementById('school-input').value = '';
       setSearchMode('team');
       showScreen('screen-school', false);
-      if (selectedTournament.source === 'naga') {
+      if (_isNagaMode()) {
         _setupNagaSchoolScreen();
       } else {
         loadTeamSuggestions(selectedTournament.id);
@@ -1123,6 +1332,7 @@ function startApp() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  buildOrgGrid();   // render org grid immediately
   // Always show landing until auth check completes — initAuth will skip it if logged in
   showScreen('screen-landing', false);
   history.replaceState({ screen: 'screen-landing' }, '', '');
@@ -1146,13 +1356,266 @@ let _tourneyEra = 'upcoming'; // 'upcoming' | 'past'
 function setTournamentSource(src) {
   _tournamentSource = src;
   _tourneyEra = 'upcoming';
-  document.getElementById('src-ibjjf').classList.toggle('source-tab--active', src === 'ibjjf');
-  document.getElementById('src-naga').classList.toggle('source-tab--active',  src === 'naga');
-  const toggle = document.getElementById('tourney-era-toggle');
-  if (toggle) { toggle.style.display = 'flex'; }
-  _updateEraToggleUI();
-  if (!allTournaments.length) loadTournaments();
-  else renderTournaments();
+  document.getElementById('src-ibjjf').classList.toggle('source-tab--active',   src === 'ibjjf');
+  document.getElementById('src-naga').classList.toggle('source-tab--active',    src === 'naga');
+  document.getElementById('src-compnet').classList.toggle('source-tab--active', src === 'compnet');
+  document.getElementById('src-browse').classList.toggle('source-tab--active',  src === 'browse');
+
+  const isBrowse = src === 'browse';
+  const toggle   = document.getElementById('tourney-era-toggle');
+  const browseEl = document.getElementById('browse-container');
+  const loading  = document.getElementById('tourney-loading');
+  const list     = document.getElementById('tourney-list');
+
+  if (isBrowse) {
+    if (toggle) toggle.style.display = 'none';
+    browseEl.style.display = 'block';
+    loading.style.display  = 'none';
+    list.style.display     = 'none';
+    if (!_browseFetched) loadBrowseEvents();
+    else renderBrowse();
+  } else {
+    browseEl.style.display = 'none';
+    if (toggle) toggle.style.display = 'flex';
+    _updateEraToggleUI();
+    if (!allTournaments.length) loadTournaments();
+    else renderTournaments();
+  }
+}
+
+// ─── Browse functions ────────────────────────────────────────────────────────
+function buildOrgGrid() {
+  document.getElementById('org-grid').innerHTML = _BROWSE_ORGS.map(o => {
+    const imgHtml = o.logo
+      ? `<img class="org-tile-img" src="${o.logo}" onerror="this.outerHTML='<div class=\\'org-tile-icon\\'>${o.icon}</div>'">`
+      : `<div class="org-tile-icon">${o.icon}</div>`;
+    return `<button class="org-tile${o.key===_browseOrg?' active':''}"
+      onclick="selectOrgTile('${o.key}')">${imgHtml}<span>${o.name}</span></button>`;
+  }).join('');
+}
+
+function selectOrgTile(key) {
+  _browseOrg = key;
+  document.querySelectorAll('.org-tile').forEach(b =>
+    b.classList.toggle('active', b.getAttribute('onclick') === `selectOrgTile('${key}')`));
+
+  const bracketOrgs = ['ibjjf','naga','compnet'];
+  if (bracketOrgs.includes(key)) {
+    // Use existing bracket-tracking flow
+    setTournamentSource(key);
+  } else {
+    // Show browse events for this org
+    _tournamentSource = 'browse';
+    document.getElementById('tourney-era-toggle').style.display = 'none';
+    document.getElementById('tourney-loading').style.display = 'none';
+    document.getElementById('tourney-list').style.display = 'none';
+    document.getElementById('browse-container').style.display = 'block';
+    if (!_browseFetched) loadBrowseEvents();
+    else renderBrowse();
+  }
+}
+
+function setBrowseOrg(key) {
+  _browseOrg = key;
+  document.querySelectorAll('.browse-org-pill').forEach(b =>
+    b.classList.toggle('active', b.getAttribute('onclick') === `setBrowseOrg('${key}')`));
+  renderBrowse();
+}
+
+function setBrowseDate(days, btn) {
+  _browseDays = days;
+  document.querySelectorAll('.browse-date-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderBrowse();
+}
+
+function onBrowseSearch() {
+  _browseQ = document.getElementById('browse-search').value.trim().toLowerCase();
+  renderBrowse();
+}
+
+async function loadBrowseEvents() {
+  const list = document.getElementById('browse-list');
+  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading events…</div>';
+  try {
+    const r = await fetch('/api/browser-events');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    _browseEvents = await r.json();
+    _browseFetched = true;
+    _buildBrowseOrgPills();
+    renderBrowse();
+  } catch(e) {
+    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Failed to load (${e.message})</div>`;
+  }
+}
+
+function _browseLocalDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function renderBrowse() {
+  const list = document.getElementById('browse-list');
+  const todayStr = _browseLocalDate(new Date());
+  const cutoff   = _browseDays > 0 ? (() => { const d=new Date(); d.setDate(d.getDate()+_browseDays); return _browseLocalDate(d); })() : '9999-99-99';
+
+  let events = _browseEvents.filter(e => {
+    if (!e.start || e.start < todayStr) return false;     // skip past & already-started
+    if (e.start > cutoff) return false;                   // outside date window
+    if (_browseOrg !== 'all' && e.org !== _browseOrg) return false;
+    if (_browseQ && !(e.name||'').toLowerCase().includes(_browseQ) &&
+                    !(e.city||'').toLowerCase().includes(_browseQ)) return false;
+    return true;
+  }).sort((a,b) => a.start.localeCompare(b.start)).slice(0, 80);
+
+  if (!events.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No events found</div>';
+    return;
+  }
+
+  list.innerHTML = events.map(e => {
+    const org  = _BROWSE_ORG_MAP[e.org] || { name:e.org||'Other', color:'#888', bg:'rgba(136,136,136,0.1)', icon:'📋' };
+    const logo = _BROWSE_LOGOS[e.org];
+    const thumb = logo
+      ? `<img class="browse-thumb" src="${logo}" onerror="this.outerHTML='<div class=\\'browse-thumb-ph\\'>${org.icon}</div>'">`
+      : `<div class="browse-thumb-ph">${org.icon}</div>`;
+    const date = _fmtTourneyDate(e.start, e.end);
+    const loc  = e.city ? (e.country_code==='US' ? e.city : `${e.city}, ${e.country}`) : e.country || '';
+    const meta = [date, loc].filter(Boolean).join(' · ');
+    const href = e.url || '#';
+    const esc2 = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return `<a class="browse-card" href="${href}" target="_blank" rel="noopener">
+      ${thumb}
+      <div class="browse-body">
+        <div class="browse-name">${esc2(e.name)}</div>
+        <div class="browse-meta">
+          <span class="browse-badge" style="background:${org.bg};color:${org.color}">${org.name}</span>
+          ${esc2(meta)}
+        </div>
+      </div>
+    </a>`;
+  }).join('');
+}
+
+// ─── Find Local Modal ────────────────────────────────────────────────────────
+let _localLat = null, _localLng = null, _localLabel = '';
+
+function openLocalModal() {
+  document.getElementById('local-modal').classList.add('open');
+  _localLat = null; _localLng = null;
+  document.getElementById('local-gps-btn').className = 'local-loc-btn';
+  document.getElementById('local-gps-btn').innerHTML = '<span>📡</span> Use My Location';
+  document.getElementById('local-city-input').value = '';
+  document.getElementById('local-status').textContent = '';
+}
+
+function closeLocalModal() {
+  document.getElementById('local-modal').classList.remove('open');
+}
+
+function useMyLocation() {
+  const btn = document.getElementById('local-gps-btn');
+  const status = document.getElementById('local-status');
+  btn.innerHTML = '<span>⏳</span> Getting location…';
+  status.textContent = '';
+  navigator.geolocation.getCurrentPosition(pos => {
+    _localLat = pos.coords.latitude;
+    _localLng = pos.coords.longitude;
+    _localLabel = 'your location';
+    btn.className = 'local-loc-btn located';
+    btn.innerHTML = '<span>✅</span> Location found';
+    status.textContent = `${_localLat.toFixed(3)}, ${_localLng.toFixed(3)}`;
+  }, err => {
+    btn.innerHTML = '<span>📡</span> Use My Location';
+    status.textContent = 'Location denied — enter a city below.';
+  });
+}
+
+async function runLocalSearch() {
+  const status = document.getElementById('local-status');
+  const cityVal = document.getElementById('local-city-input').value.trim();
+  const distMi  = parseInt(document.getElementById('local-dist').value);
+  const days    = parseInt(document.getElementById('local-days').value);
+
+  let lat = _localLat, lng = _localLng, label = _localLabel;
+
+  if (lat === null && cityVal) {
+    status.textContent = 'Geocoding…';
+    try {
+      const r = await fetch(`/api/geocode?q=${encodeURIComponent(cityVal)}`);
+      const d = await r.json();
+      if (d.lat) { lat = d.lat; lng = d.lng; label = cityVal; }
+      else { status.textContent = `Could not find "${cityVal}" — try "City, State"`; return; }
+    } catch { status.textContent = 'Geocode failed. Try again.'; return; }
+  }
+
+  if (lat === null) { status.textContent = 'Enter a city or use your location first.'; return; }
+
+  closeLocalModal();
+
+  // Ensure browse events are loaded
+  if (!_browseFetched) {
+    await loadBrowseEvents();
+  }
+
+  // Filter by distance + date and show in browse section
+  const todayStr = _browseLocalDate(new Date());
+  const cutoff   = days > 0 ? (() => { const d=new Date(); d.setDate(d.getDate()+days); return _browseLocalDate(d); })() : '9999-99-99';
+
+  function haversineMi(lat1,lng1,lat2,lng2) {
+    if (lat2==null||lng2==null) return null;
+    const R=3959, r=d=>d*Math.PI/180;
+    const dLat=r(lat2-lat1), dLng=r(lng2-lng1);
+    const a=Math.sin(dLat/2)**2+Math.cos(r(lat1))*Math.cos(r(lat2))*Math.sin(dLng/2)**2;
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  }
+
+  const results = _browseEvents
+    .filter(e => {
+      if (!e.start || e.start < todayStr || e.start > cutoff) return false;
+      const mi = haversineMi(lat, lng, e.lat, e.lng);
+      if (mi === null || mi > distMi) return false;
+      e._distMi = mi;
+      return true;
+    })
+    .sort((a,b) => a._distMi - b._distMi);
+
+  // Show results in browse section, clear org selection
+  _browseOrg = 'all';
+  document.querySelectorAll('.org-tile').forEach(b => b.classList.remove('active'));
+  document.getElementById('tourney-era-toggle').style.display = 'none';
+  document.getElementById('tourney-loading').style.display = 'none';
+  document.getElementById('tourney-list').style.display = 'none';
+  document.getElementById('browse-container').style.display = 'block';
+
+  const list = document.getElementById('browse-list');
+  if (!results.length) {
+    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No events within ${distMi} mi of ${label}</div>`;
+    return;
+  }
+
+  const esc2 = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  list.innerHTML = `<div style="font-size:0.75rem;color:var(--muted);margin-bottom:8px">📍 ${results.length} events within ${distMi} mi of ${esc2(label)}</div>` +
+    results.map(e => {
+      const org  = _BROWSE_ORG_MAP[e.org] || { name:e.org||'Other', color:'#888', bg:'rgba(136,136,136,0.1)', icon:'📋' };
+      const logo = _BROWSE_LOGOS[e.org];
+      const thumb = logo
+        ? `<img class="browse-thumb" src="${logo}" onerror="this.outerHTML='<div class=\\'browse-thumb-ph\\'>${org.icon}</div>'">`
+        : `<div class="browse-thumb-ph">${org.icon}</div>`;
+      const date = _fmtTourneyDate(e.start, e.end);
+      const loc  = e.city ? (e.country_code==='US' ? e.city : `${e.city}, ${e.country}`) : '';
+      const dist = e._distMi != null ? `${Math.round(e._distMi)} mi` : '';
+      const meta = [date, loc, dist].filter(Boolean).join(' · ');
+      return `<a class="browse-card" href="${e.url||'#'}" target="_blank" rel="noopener">
+        ${thumb}
+        <div class="browse-body">
+          <div class="browse-name">${esc2(e.name)}</div>
+          <div class="browse-meta">
+            <span class="browse-badge" style="background:${org.bg};color:${org.color}">${org.name}</span>
+            ${esc2(meta)}
+          </div>
+        </div>
+      </a>`;
+    }).join('');
 }
 
 function setTourneyEra(era) {
@@ -1189,7 +1652,7 @@ function renderTournaments() {
   const list    = document.getElementById('tourney-list');
 
   if (!_tournamentSource) {
-    loading.innerHTML = '<div class="icon">👆</div><h3>Choose a source above</h3><p>Select IBJJF or NAGA to see upcoming events.</p>';
+    loading.innerHTML = '<div class="icon">👆</div><h3>Choose a source above</h3><p>Select IBJJF, NAGA, or CompNet to see upcoming events.</p>';
     loading.style.display = 'flex';
     list.style.display = 'none';
     return;
@@ -1205,7 +1668,8 @@ function renderTournaments() {
   }
 
   if (!filtered.length) {
-    loading.innerHTML = `<div class="icon">${_tournamentSource === 'naga' ? '🏆' : '🥋'}</div><h3>No upcoming ${_tournamentSource.toUpperCase()} events</h3><p>Check back soon.</p>`;
+    const srcIcon = _tournamentSource === 'naga' ? '🏆' : _tournamentSource === 'compnet' ? '🌐' : '🥋';
+    loading.innerHTML = `<div class="icon">${srcIcon}</div><h3>No upcoming ${_tournamentSource.toUpperCase()} events</h3><p>Check back soon.</p>`;
     loading.style.display = 'flex';
     list.style.display = 'none';
     return;
@@ -1221,19 +1685,24 @@ function renderTournaments() {
       : (a.start || '').localeCompare(b.start || '')); // soonest first
 
   if (!showing.length) {
-    loading.innerHTML = `<div class="icon">📅</div><h3>No ${_tourneyEra === 'past' ? 'past' : 'upcoming'} ${_tournamentSource.toUpperCase()} events</h3>`;
+    const srcLabel = _tournamentSource.toUpperCase();
+    loading.innerHTML = `<div class="icon">📅</div><h3>No ${_tourneyEra === 'past' ? 'past' : 'upcoming'} ${srcLabel} events</h3>`;
     loading.style.display = 'flex';
     list.style.display = 'none';
     return;
   }
 
   list.innerHTML = showing.map(t => {
-    const datePart = _fmtTourneyDate(t.start, t.end);
-    const locPart  = t.location || '';
-    const meta     = [datePart, locPart].filter(Boolean).join(' · ');
-    return `<div class="tourney-item" id="t-${esc(t.id)}" onclick="selectTournament('${esc(t.id)}', this)">
+    const datePart    = _fmtTourneyDate(t.start, t.end);
+    const locPart     = t.location || '';
+    const meta        = [datePart, locPart].filter(Boolean).join(' · ');
+    const noBrackets  = t.has_brackets === false;
+    const clickAttr   = noBrackets ? '' : `onclick="selectTournament('${esc(t.id)}', this)"`;
+    const cls         = ['tourney-item', noBrackets ? 'no-brackets' : ''].filter(Boolean).join(' ');
+    return `<div class="${cls}" id="t-${esc(t.id)}" ${clickAttr}>
       <div class="tourney-name">${esc(t.name)}</div>
       ${meta ? `<div class="tourney-meta">${esc(meta)}</div>` : ''}
+      ${noBrackets ? '<span class="tourney-no-brackets-badge">Brackets not yet available</span>' : ''}
     </div>`;
   }).join('');
 }
@@ -1250,7 +1719,7 @@ function selectTournament(id, el) {
   _pickStatusCache = {};
   _teardownNagaSchoolScreen();
   showScreen('screen-school');
-  if (selectedTournament.source === 'naga') {
+  if (_isNagaMode()) {
     _setupNagaSchoolScreen();
   } else {
     loadTeamSuggestions(id);
@@ -1260,7 +1729,7 @@ function selectTournament(id, el) {
 }
 
 function _isNagaMode() {
-  return selectedTournament?.source === 'naga';
+  return selectedTournament?.source === 'naga' || selectedTournament?.source === 'compnet';
 }
 
 let _nagaClubs = [];   // club names for current NAGA event
@@ -1277,7 +1746,7 @@ async function _setupNagaSchoolScreen() {
   document.getElementById('naga-search-btn').style.display = 'none';
 
   try {
-    const r = await fetch(`/api/naga-clubs/${selectedTournament.id}`);
+    const r = await fetch(`/api/naga-clubs/${selectedTournament.id}?name=${encodeURIComponent(selectedTournament.name || '')}`);
     _nagaClubs = await r.json();
   } catch(e) {
     _nagaClubs = [];
@@ -1336,8 +1805,9 @@ async function nagaSearch() {
 
   const el = document.getElementById('cache-status');
   if (el) el.textContent = 'Searching…';
+  const srcLabel = (selectedTournament?.source || 'naga').toUpperCase();
   document.getElementById('item-list').innerHTML =
-    '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Searching NAGA…</div>';
+    `<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Searching ${srcLabel}…</div>`;
 
   try {
     const r = await fetch('/api/search', {

@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>MatTrack — Find Tournaments</title>
+  <style>
+    :root {
+      --bg: #0a0a0a; --card: #1a1a1a; --border: #2a2a2a;
+      --text: #f0f0f0; --muted: #888; --red: #c0392b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── Header ── */
+    .hdr {
+      background: rgba(10,10,10,0.97); backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100; padding: 10px 14px 0;
+    }
+    .hdr-top {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+    }
+    .hdr-title { font-size: 1.05rem; font-weight: 700; flex: 1; }
+    .count-badge { font-size: 0.75rem; color: var(--muted); }
+
+    /* Search row */
+    .search-row { display: flex; gap: 8px; margin-bottom: 10px; }
+    .search-wrap {
+      flex: 1; position: relative;
+    }
+    .search-wrap input {
+      width: 100%; background: #111; border: 1px solid var(--border);
+      border-radius: 10px; padding: 9px 12px 9px 34px;
+      color: var(--text); font-size: 0.9rem; outline: none;
+    }
+    .search-wrap input:focus { border-color: #444; }
+    .search-icon {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      font-size: 0.9rem; pointer-events: none;
+    }
+    .btn-loc {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      color: var(--text); padding: 0 13px; font-size: 0.82rem; font-weight: 600;
+      cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 5px;
+      transition: border-color 0.15s;
+    }
+    .btn-loc.active { border-color: #4caf50; color: #4caf50; }
+    .btn-loc:active { background: #222; }
+
+    /* Filter row */
+    .filter-row {
+      display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;
+    }
+    .filter-row select {
+      background: #111; border: 1px solid var(--border); border-radius: 9px;
+      color: var(--text); padding: 7px 10px; font-size: 0.8rem;
+      outline: none; cursor: pointer; flex: 1; min-width: 0;
+    }
+    .dist-select { display: none; }
+    .dist-select.visible { display: block; }
+
+    /* Org pills */
+    .org-scroll {
+      display: flex; gap: 7px; overflow-x: auto; padding-bottom: 10px;
+      scrollbar-width: none;
+    }
+    .org-scroll::-webkit-scrollbar { display: none; }
+    .org-pill {
+      flex-shrink: 0; border: 1.5px solid var(--border); border-radius: 20px;
+      padding: 5px 11px 5px 6px; font-size: 0.75rem; font-weight: 700;
+      letter-spacing: 0.3px; cursor: pointer; color: var(--muted);
+      background: var(--card); white-space: nowrap; transition: all 0.12s;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .org-pill:active { opacity: 0.7; }
+    .org-pill.active {
+      color: var(--pill-color, #fff);
+      border-color: var(--pill-color, #fff);
+      background: var(--pill-bg, rgba(255,255,255,0.1));
+    }
+    .org-icon {
+      width: 22px; height: 22px; border-radius: 50%; object-fit: cover;
+      flex-shrink: 0; background: #1a1a1a;
+    }
+    .org-icon[src$=".svg"] { object-fit: contain; background: #1a1a1a; padding: 2px; }
+    .org-icon-emoji {
+      width: 22px; height: 22px; border-radius: 50%; background: #2a2a2a;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem; flex-shrink: 0;
+    }
+
+    /* ── Cards ── */
+    .main { padding: 12px 12px 80px; }
+    .section-label {
+      font-size: 0.68rem; font-weight: 700; letter-spacing: 1.2px;
+      text-transform: uppercase; color: var(--muted); margin: 12px 2px 8px;
+    }
+    .event-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; display: flex; gap: 10px;
+      padding: 10px 12px; margin-bottom: 8px;
+      cursor: pointer; transition: border-color 0.12s;
+      text-decoration: none; color: inherit;
+    }
+    .event-card:active { background: #222; }
+    .event-card:hover { border-color: #3a3a3a; }
+    .event-thumb {
+      width: 52px; height: 52px; border-radius: 8px; object-fit: cover;
+      flex-shrink: 0; background: #2a2a2a;
+    }
+    .event-thumb-svg { object-fit: contain; background: #1a1a1a; padding: 6px; }
+    .event-thumb-placeholder {
+      width: 52px; height: 52px; border-radius: 8px; flex-shrink: 0;
+      background: #222; display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem;
+    }
+    .event-body { flex: 1; min-width: 0; }
+    .event-name {
+      font-size: 0.88rem; font-weight: 600; line-height: 1.3;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .event-meta {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px;
+      align-items: center;
+    }
+    .event-meta span { font-size: 0.74rem; color: var(--muted); }
+    .org-badge {
+      font-size: 0.62rem; font-weight: 700; letter-spacing: 0.4px;
+      text-transform: uppercase; padding: 2px 7px; border-radius: 5px;
+      flex-shrink: 0;
+    }
+    .dist-badge {
+      font-size: 0.72rem; font-weight: 700; color: #4caf50;
+    }
+    .no-brackets-note {
+      font-size: 0.68rem; color: #555; margin-top: 2px;
+    }
+
+    /* Load more */
+    .load-more {
+      display: block; width: 100%; background: var(--card);
+      border: 1px solid var(--border); border-radius: 10px; padding: 13px;
+      color: var(--muted); font-size: 0.88rem; font-weight: 600;
+      cursor: pointer; margin-top: 8px; text-align: center;
+    }
+    .load-more:active { background: #222; }
+
+    /* Skeleton */
+    @keyframes shimmer {
+      0% { background-position: -400px 0; }
+      100% { background-position: 400px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%);
+      background-size: 800px 100%; animation: shimmer 1.4s infinite; border-radius: 6px;
+    }
+
+    /* Empty state */
+    .empty {
+      text-align: center; padding: 60px 20px; color: var(--muted);
+    }
+    .empty .icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .empty h3 { font-size: 1rem; color: var(--text); margin-bottom: 6px; }
+    .empty p { font-size: 0.85rem; }
+
+    /* Error banner */
+    .err-banner {
+      background: rgba(192,57,43,0.15); border: 1px solid rgba(192,57,43,0.3);
+      border-radius: 8px; padding: 8px 12px; font-size: 0.8rem;
+      color: #e74c3c; margin-bottom: 10px; display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-top">
+    <div class="hdr-title">🥋 Find Tournaments</div>
+    <span class="count-badge" id="count-badge"></span>
+  </div>
+
+  <div class="search-row">
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="search" id="search-input" placeholder="Search name, city, state..."
+             oninput="onSearch()" autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
+    <button class="btn-loc" id="loc-btn" onclick="toggleLocation()">
+      📍 Near Me
+    </button>
+  </div>
+
+  <div class="filter-row">
+    <select id="date-filter" onchange="showCount=50;render()">
+      <option value="upcoming">Upcoming</option>
+      <option value="7">Next 7 days</option>
+      <option value="14">Next 2 weeks</option>
+      <option value="30">Next month</option>
+      <option value="90">Next 3 months</option>
+      <option value="180">Next 6 months</option>
+      <option value="365">Next year</option>
+      <option value="all">All future</option>
+      <option value="past">Past events</option>
+    </select>
+    <select id="dist-filter" class="dist-select" onchange="render()">
+      <option value="25">Within 25 mi</option>
+      <option value="50" selected>Within 50 mi</option>
+      <option value="100">Within 100 mi</option>
+      <option value="250">Within 250 mi</option>
+      <option value="500">Within 500 mi</option>
+      <option value="any">Any distance</option>
+    </select>
+  </div>
+
+  <div class="org-scroll" id="org-pills"></div>
+</div>
+
+<div class="main">
+  <div class="err-banner" id="err-banner"></div>
+  <div id="results"></div>
+</div>
+
+<script>
+// ─── Org config ───────────────────────────────────────────────────────────────
+const ORGS = [
+  { key: 'all',           name: 'All',                color: '#f0f0f0', bg: 'rgba(240,240,240,0.1)', icon: '🌐' },
+  { key: 'ibjjf',         name: 'IBJJF',              color: '#e74c3c', bg: 'rgba(231,76,60,0.15)',  icon: '🏆' },
+  { key: 'naga',          name: 'NAGA',               color: '#5dade2', bg: 'rgba(93,173,226,0.15)', icon: '🏆' },
+  { key: 'gi',            name: 'Grappling Ind.',     color: '#e67e22', bg: 'rgba(230,126,34,0.15)', icon: '🔥' },
+  { key: 'newbreed',      name: 'New Breed',          color: '#1abc9c', bg: 'rgba(26,188,156,0.15)', icon: '⚡' },
+  { key: 'fuji',          name: 'Fuji BJJ',           color: '#3498db', bg: 'rgba(52,152,219,0.15)', icon: '🔵' },
+  { key: 'tco',           name: 'Tap Cancer Out',     color: '#a569bd', bg: 'rgba(165,105,189,0.15)',icon: '💜' },
+  { key: 'adcc',          name: 'ADCC',               color: '#f0b429', bg: 'rgba(240,180,41,0.15)', icon: '🏅' },
+  { key: 'pbjjf',         name: 'PBJJF',              color: '#c0392b', bg: 'rgba(192,57,43,0.15)',  icon: '🎖' },
+  { key: 'goodfight',     name: 'Good Fight',         color: '#2ecc71', bg: 'rgba(46,204,113,0.15)', icon: '✊' },
+  { key: 'compnet',       name: 'CompNet',            color: '#58d68d', bg: 'rgba(88,214,141,0.15)', icon: '🌿' },
+  { key: 'united',        name: 'United Grappling',   color: '#9b59b6', bg: 'rgba(155,89,182,0.15)', icon: '🤝' },
+  { key: 'subchallenge',  name: 'Sub. Challenge',     color: '#e74c3c', bg: 'rgba(231,76,60,0.15)',  icon: '🎯' },
+  { key: 'grapplingx',    name: 'Grappling X',        color: '#f39c12', bg: 'rgba(243,156,18,0.15)', icon: '❌' },
+  { key: 'allstarsbjj',   name: 'All Stars BJJ',      color: '#d4ac0d', bg: 'rgba(212,172,13,0.15)', icon: '⭐' },
+  { key: 'other',         name: 'Other / Indep.',     color: '#888',    bg: 'rgba(136,136,136,0.1)', icon: '📋' },
+];
+const ORG_MAP = Object.fromEntries(ORGS.map(o => [o.key, o]));
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let allEvents   = [];
+let userLat     = null, userLng = null;
+let selectedOrg = 'all';
+let searchQ     = '';
+let showCount   = 50;
+let searchTimer = null;
+
+// ─── Haversine distance (miles) ───────────────────────────────────────────────
+function distMiles(lat1, lng1, lat2, lng2) {
+  if (lat1 == null || lat2 == null) return null;
+  const R = 3959, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function fmtDist(mi) {
+  if (mi == null) return null;
+  if (mi < 10)   return `${Math.round(mi)} mi`;
+  if (mi < 100)  return `${Math.round(mi/5)*5} mi`;
+  return `${Math.round(mi/10)*10} mi`;
+}
+
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+// Use local date (not UTC) so filter boundaries are correct for all timezones
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function today() { return localDate(new Date()); }
+function addDays(n) {
+  const d = new Date(); d.setDate(d.getDate() + n);
+  return localDate(d);
+}
+// Recompute freshly on the client — server-side is_past can be stale from cache
+function isPast(e) {
+  const end = e.end || e.start;
+  return end ? end < today() : false;
+}
+function fmtDate(start, end) {
+  if (!start) return '';
+  const opts = { month: 'short', day: 'numeric' };
+  const s = new Date(start + 'T12:00:00');
+  if (!end || end === start) return s.toLocaleDateString('en-US', opts);
+  const e = new Date(end + 'T12:00:00');
+  if (s.getMonth() === e.getMonth())
+    return `${s.toLocaleDateString('en-US', opts)} – ${e.getDate()}`;
+  return `${s.toLocaleDateString('en-US', opts)} – ${e.toLocaleDateString('en-US', opts)}`;
+}
+
+// ─── Org logo images — served locally from /static/org-logos/ ────────────────
+const ORG_LOGOS = {
+  ibjjf:       '/static/org-logos/ibjjf.svg',
+  naga:        '/static/org-logos/naga.jpg',
+  gi:          '/static/org-logos/gi.jpg',
+  newbreed:    '/static/org-logos/newbreed.jpg',
+  fuji:        '/static/org-logos/fuji.jpg',
+  tco:         '/static/org-logos/tco.jpg',
+  adcc:        '/static/org-logos/adcc.jpg',
+  pbjjf:       '/static/org-logos/pbjjf.jpg',
+  goodfight:   '/static/org-logos/goodfight.jpg',
+  compnet:     '/static/org-logos/compnet.jpg',
+  united:      '/static/org-logos/united.jpg',
+  grapplingx:  '/static/org-logos/grapplingx.jpg',
+  subchallenge:'/static/org-logos/subchallenge.jpg',
+  nfc:         '/static/org-logos/nfc.jpg',
+};
+
+function buildPills(orgCoverMap) {
+  // Merge static fallbacks with dynamically found covers
+  // Dynamic covers fill in unknowns; static ORG_LOGOS take final precedence for known orgs
+  const logos = Object.assign({}, orgCoverMap || {}, ORG_LOGOS);
+  document.getElementById('org-pills').innerHTML = ORGS.map(o => {
+    const imgSrc = logos[o.key];
+    const iconHtml = imgSrc
+      ? `<img class="org-icon" src="${imgSrc}" loading="lazy" onerror="this.outerHTML='<span class=\\'org-icon-emoji\\'>${o.icon}</span>'">`
+      : `<span class="org-icon-emoji">${o.icon}</span>`;
+    return `
+    <button class="org-pill ${o.key === selectedOrg ? 'active' : ''}"
+            id="pill-${o.key}"
+            style="--pill-color:${o.color};--pill-bg:${o.bg}"
+            onclick="setOrg('${o.key}')">
+      ${iconHtml}${o.name}
+    </button>`;
+  }).join('');
+}
+
+function setOrg(key) {
+  selectedOrg = key;
+  showCount   = 50;
+  document.querySelectorAll('.org-pill').forEach(p => p.classList.remove('active'));
+  const pill = document.getElementById('pill-' + key);
+  if (pill) pill.classList.add('active');
+  render();
+}
+
+// ─── Location ─────────────────────────────────────────────────────────────────
+function toggleLocation() {
+  if (userLat !== null) {
+    userLat = userLng = null;
+    document.getElementById('loc-btn').classList.remove('active');
+    document.getElementById('loc-btn').textContent = '📍 Near Me';
+    document.getElementById('dist-filter').classList.remove('visible');
+    render(); return;
+  }
+  if (!navigator.geolocation) {
+    alert('Geolocation is not supported by this browser.'); return;
+  }
+  const btn = document.getElementById('loc-btn');
+  btn.textContent = '⏳ Locating…';
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude;
+    userLng = pos.coords.longitude;
+    btn.classList.add('active');
+    btn.innerHTML = '📍 Near Me ✓';
+    document.getElementById('dist-filter').classList.add('visible');
+    showCount = 50;
+    render();
+  }, err => {
+    btn.textContent = '📍 Near Me';
+    alert('Could not get your location. Please allow location access and try again.');
+  });
+}
+
+// ─── Filter + render ──────────────────────────────────────────────────────────
+function getFilteredEvents() {
+  const dateVal  = document.getElementById('date-filter').value;
+  const distVal  = document.getElementById('dist-filter').value;
+  const todayStr = today();
+  return allEvents.filter(e => {
+    const past = isPast(e);
+    // Date filter
+    if (dateVal === 'past') {
+      if (!past) return false;
+    } else if (dateVal === 'upcoming') {
+      if (past) return false;
+      if (e.start && e.start < todayStr) return false;   // hide events that already started
+    } else if (dateVal === 'all') {
+      if (past) return false;
+    } else {
+      const days = parseInt(dateVal);
+      if (past) return false;
+      if (!e.start) return false;
+      if (e.start < todayStr) return false;          // exclude ongoing events that started earlier
+      if (e.start > addDays(days)) return false;
+    }
+
+    // Org filter
+    if (selectedOrg !== 'all' && e.org !== selectedOrg) return false;
+
+    // Distance filter (only when location active)
+    if (userLat !== null && distVal !== 'any') {
+      const mi = distMiles(userLat, userLng, e.lat, e.lng);
+      if (mi === null || mi > parseFloat(distVal)) return false;
+    }
+
+    // Text search
+    if (searchQ) {
+      const hay = `${e.name} ${e.city} ${e.country}`.toLowerCase();
+      if (!hay.includes(searchQ)) return false;
+    }
+
+    return true;
+  }).sort((a, b) => {
+    // Sort: if location active → by distance; else by date
+    if (userLat !== null && document.getElementById('dist-filter').value !== 'any') {
+      const da = distMiles(userLat, userLng, a.lat, a.lng) ?? 99999;
+      const db = distMiles(userLat, userLng, b.lat, b.lng) ?? 99999;
+      if (da !== db) return da - db;
+    }
+    const dateSort = document.getElementById('date-filter').value === 'past' ? -1 : 1;
+    return dateSort * ((a.start || '').localeCompare(b.start || ''));
+  });
+}
+
+function render() {
+  const events   = getFilteredEvents();
+  const showing  = events.slice(0, showCount);
+  const badge    = document.getElementById('count-badge');
+  const results  = document.getElementById('results');
+
+  badge.textContent = events.length
+    ? `${events.length.toLocaleString()} event${events.length === 1 ? '' : 's'}`
+    : '';
+
+  if (!allEvents.length) {
+    results.innerHTML = showSkeletons(); return;
+  }
+  if (!events.length) {
+    results.innerHTML = `
+      <div class="empty">
+        <div class="icon">🔍</div>
+        <h3>No events found</h3>
+        <p>Try adjusting your filters or search terms.</p>
+      </div>`; return;
+  }
+
+  results.innerHTML = showing.map(e => cardHtml(e)).join('') +
+    (events.length > showCount ? `
+      <button class="load-more" onclick="loadMore()">
+        Load more (${events.length - showCount} remaining)
+      </button>` : '');
+}
+
+function loadMore() {
+  showCount += 50;
+  render();
+}
+
+function cardHtml(e) {
+  const org   = ORG_MAP[e.org] || { name: e.org || 'Other', color: '#888', bg: 'rgba(136,136,136,0.1)' };
+  const date  = fmtDate(e.start, e.end);
+  const loc   = e.city ? (e.country_code === 'US' ? e.city : `${e.city}, ${e.country}`) : e.country;
+  const mi    = userLat !== null ? distMiles(userLat, userLng, e.lat, e.lng) : null;
+  const href  = e.url || '#';
+
+  // For known orgs use the local logo; otherwise use the event's cover_image
+  const thumbSrc = ORG_LOGOS[e.org] || e.cover_image;
+  const isLocalSvg = thumbSrc && thumbSrc.endsWith('.svg');
+  const thumb = thumbSrc
+    ? `<img class="event-thumb${isLocalSvg ? ' event-thumb-svg' : ''}" src="${thumbSrc}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+      + `<div class="event-thumb-placeholder" style="display:none">${org.icon || '🏅'}</div>`
+    : `<div class="event-thumb-placeholder">${org.icon || '🏅'}</div>`;
+
+  return `<a class="event-card" href="${href}" target="_blank" rel="noopener">
+    ${thumb}
+    <div class="event-body">
+      <div class="event-name">${esc(e.name)}</div>
+      <div class="event-meta">
+        ${date ? `<span>📅 ${date}</span>` : ''}
+        ${loc  ? `<span>📍 ${esc(loc)}</span>` : ''}
+        ${mi !== null ? `<span class="dist-badge">📏 ${fmtDist(mi)}</span>` : ''}
+        <span class="org-badge"
+          style="background:${org.bg};color:${org.color}">${org.name}</span>
+      </div>
+      ${e.has_brackets === false && e.source === 'ibjjf'
+        ? '<div class="no-brackets-note">No brackets yet</div>' : ''}
+    </div>
+  </a>`;
+}
+
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Search ───────────────────────────────────────────────────────────────────
+function onSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    searchQ   = document.getElementById('search-input').value.trim().toLowerCase();
+    showCount = 50;
+    render();
+  }, 150);
+}
+
+// ─── Skeletons ────────────────────────────────────────────────────────────────
+function showSkeletons() {
+  return Array(8).fill(0).map(() => `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;
+                display:flex;gap:10px;padding:10px 12px;margin-bottom:8px">
+      <div class="skeleton" style="width:52px;height:52px;border-radius:8px;flex-shrink:0"></div>
+      <div style="flex:1">
+        <div class="skeleton" style="height:14px;width:75%;border-radius:4px;margin-bottom:8px"></div>
+        <div class="skeleton" style="height:11px;width:55%;border-radius:4px;margin-bottom:5px"></div>
+        <div class="skeleton" style="height:11px;width:40%;border-radius:4px"></div>
+      </div>
+    </div>`).join('');
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+buildPills();
+document.getElementById('results').innerHTML = showSkeletons();
+
+async function loadEvents() {
+  try {
+    const r = await fetch('/api/browser-events');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    allEvents = await r.json();
+
+    // Build cover-image map: first event with a cover_image for each org
+    const coverMap = {};
+    for (const e of allEvents) {
+      if (e.org && e.cover_image && !coverMap[e.org]) {
+        coverMap[e.org] = e.cover_image;
+      }
+    }
+    buildPills(coverMap);
+    render();
+  } catch (err) {
+    const banner = document.getElementById('err-banner');
+    banner.style.display = 'block';
+    banner.textContent = `Could not load events (${err.message}). Check connection.`;
+    document.getElementById('results').innerHTML = `
+      <div class="empty">
+        <div class="icon">⚠️</div>
+        <h3>Failed to load</h3>
+        <p>Make sure the MatTrack server is running.</p>
+      </div>`;
+  }
+}
+
+loadEvents();
+</script>
+</body>
+</html>

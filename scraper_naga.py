@@ -30,8 +30,11 @@ HEADERS = {
     "Accept": "application/json, text/html, */*",
 }
 
-# Base for any subdomain (naga, compnet, etc.)
+# Base for any subdomain (naga, compnet, tco, etc.)
+# subdomain="" means main smoothcomp.com (used by TCO and other no-subdomain orgs)
 def _base(subdomain="naga"):
+    if not subdomain:
+        return "https://smoothcomp.com"
     return f"https://{subdomain}.smoothcomp.com"
 
 NAGA_BASE = _base("naga")
