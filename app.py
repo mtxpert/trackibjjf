@@ -312,10 +312,11 @@ def _process_batch_results(batch_results, tid_by_cid):
             _brackets[cid]       = state
 
             if state.get("results_final"):
+                # Read source BEFORE popping — after pop, the entry is gone
+                info = _watch_registry.get(cid) or {}
                 with _watch_lock:
                     _watch_registry.pop(cid, None)
                 # Persist to Supabase so results survive restarts
-                info = _watch_registry.get(cid) or {}
                 _persist_final_bracket(cid, tournament_id, state, source=info.get("source", "ibjjf"))
             else:
                 with _watch_lock:
