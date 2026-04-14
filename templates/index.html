@@ -735,6 +735,7 @@
         <span id="refresh-countdown" style="font-size:0.72rem;color:var(--muted)"></span>
         <button id="refresh-btn" onclick="manualRefresh()" class="back-btn">⟳ Refresh</button>
         <button class="back-btn" onclick="showScreen('screen-pick')">← Edit</button>
+        <button id="share-results-btn" onclick="shareResults()" class="back-btn" style="display:none">📋 Copy</button>
       </div>
     </div>
     <input class="search-input" type="text" id="watch-search"
@@ -1959,11 +1960,11 @@ async function manualRefresh() {
 
     renderWatch();
 
-    // Stop auto-refresh if all watched athletes have final results
     const watchedNow = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
     const allDone = watchedNow.length > 0 && watchedNow.every(a => a.placement || a.eliminated);
     if (allDone) {
       showToast('Results final');
+      _setFinalResultsMode();
     } else {
       showToast('Updated');
     }
@@ -1972,17 +1973,60 @@ async function manualRefresh() {
   } finally {
     refreshing = false;
     if (btn) { btn.disabled = false; btn.textContent = '⟳ Refresh'; }
-    // Stop auto-refresh when all results are in
     const watched2 = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
     const allDone2 = watched2.length > 0 && watched2.every(a => a.placement || a.eliminated);
     if (allDone2) {
-      stopRefreshTimer();
-      const cd = document.getElementById('refresh-countdown');
-      if (cd) cd.textContent = 'Results final';
+      _setFinalResultsMode();
     } else {
       startRefreshTimer();
     }
   }
+}
+
+function _setFinalResultsMode() {
+  stopRefreshTimer();
+  const cd  = document.getElementById('refresh-countdown');
+  const btn = document.getElementById('refresh-btn');
+  const share = document.getElementById('share-results-btn');
+  if (cd)  cd.textContent  = 'Results final';
+  if (btn) { btn.textContent = '⟳ Reload'; btn.disabled = false; }
+  if (share) share.style.display = '';
+}
+
+function shareResults() {
+  const watched = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+  const placementLabel = { '1': '🥇 Gold', '2': '🥈 Silver', '3': '🥉 Bronze' };
+  const tourney = selectedTournament?.name || '';
+  const date    = selectedTournament?.start
+    ? ` — ${_fmtTourneyDate(selectedTournament.start, selectedTournament.end)}`
+    : '';
+
+  const lines = [`🏆 ${tourney}${date}\n`];
+  const placed = watched.filter(a => a.placement);
+  const elim   = watched.filter(a => a.eliminated && !a.placement);
+
+  placed.sort((a,b) => (a.placement||'9').localeCompare(b.placement||'9'));
+  for (const a of placed) {
+    const medal = placementLabel[a.placement] || `#${a.placement}`;
+    const div   = a.division ? ` | ${a.division}` : '';
+    lines.push(`${medal}  ${a.name}${div}`);
+  }
+  if (elim.length) {
+    lines.push('');
+    for (const a of elim) {
+      const div = a.division ? ` | ${a.division}` : '';
+      lines.push(`❌  ${a.name}${div}`);
+    }
+  }
+  lines.push('\nTracked with MatTrack · mattrack.net');
+
+  const text = lines.join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Results copied!');
+  }).catch(() => {
+    // Fallback: show in a modal-like alert
+    prompt('Copy results:', text);
+  });
 }
 
 function showChangesBanner(changes) {

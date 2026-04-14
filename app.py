@@ -101,6 +101,19 @@ _jobs        = {}   # search jobs (legacy live-scrape path)
 _build_jobs  = {}   # roster build jobs
 _brackets    = {}   # category_id -> latest bracket state (shared by all users)
 
+# Pre-load completed brackets from Supabase so past-tournament results survive
+# server restarts without re-fetching from bjjcompsystem / Smoothcomp.
+def _warm_brackets_from_db():
+    try:
+        from results import load_bracket_finals
+        loaded = load_bracket_finals()
+        _brackets.update(loaded)
+        logger.info("Warmed %d bracket finals from Supabase", len(loaded))
+    except Exception as e:
+        logger.warning("Could not warm brackets from Supabase: %s", e)
+
+threading.Thread(target=_warm_brackets_from_db, daemon=True).start()
+
 # ── NAGA routing helpers ──────────────────────────────────────────────────────
 def _is_naga_tournament(tournament_id):
     """NAGA/Smoothcomp event IDs are purely numeric; IBJJF IDs are slugs."""
@@ -213,6 +226,36 @@ def register_watch(tournament_id, category_id, interval_sec=30):
         }
 
 
+def _persist_final_bracket(cid, tournament_id, state, source="ibjjf", tournament_name=""):
+    """Fire-and-forget: save a results_final bracket to Supabase in a daemon thread."""
+    def _save():
+        try:
+            from results import save_bracket_final
+            # Infer event_date from fight times in state
+            import re as _re
+            event_date = ""
+            for fight in state.get("fights", []):
+                m = _re.search(r'(\d{2})/(\d{2})', fight.get("time") or "")
+                if m:
+                    from datetime import date as _date
+                    y = _date.today().year
+                    event_date = f"{y}-{m.group(1)}-{m.group(2)}"
+                    break
+            save_bracket_final(
+                category_id=cid,
+                tournament_id=tournament_id,
+                tournament_name=tournament_name or tournament_id,
+                division=state.get("division", ""),
+                source=source,
+                ranking=state.get("ranking", []),
+                state=state,
+                event_date=event_date,
+            )
+        except Exception as e:
+            logger.warning("_persist_final_bracket(%s): %s", cid, e)
+    threading.Thread(target=_save, daemon=True).start()
+
+
 def _process_batch_results(batch_results, tid_by_cid):
     """
     After a fetch_brackets_batch run: update shared state, push SSE events,
@@ -235,6 +278,9 @@ def _process_batch_results(batch_results, tid_by_cid):
             if state.get("results_final"):
                 with _watch_lock:
                     _watch_registry.pop(cid, None)
+                # Persist to Supabase so results survive restarts
+                info = _watch_registry.get(cid) or {}
+                _persist_final_bracket(cid, tournament_id, state, source=info.get("source", "ibjjf"))
             else:
                 with _watch_lock:
                     if cid in _watch_registry:
@@ -869,12 +915,16 @@ def _naga_refresh(tournament_id, tournament_name, athletes):
     for cid in cat_ids:
         _naga_register_watch(tournament_id, cid, subdomain)
 
-    # Fetch any not yet in cache
+    # Fetch any not yet in cache (or re-fetch to get latest)
     for cid in cat_ids:
         if cid not in _brackets:
             state = fetch_naga_bracket(tournament_id, int(cid), subdomain)
             if "error" not in state:
                 _brackets[cid] = state
+                if state.get("results_final"):
+                    _persist_final_bracket(cid, tournament_id, state,
+                                           source="naga",
+                                           tournament_name=tournament_name)
 
     for athlete in athletes:
         cid   = athlete.get("category_id", "")
@@ -1099,6 +1149,17 @@ def api_auth_me():
         "plan": plan,
         "active": is_plan_active(user["sub"]),
     })
+
+
+@app.route("/api/fighter/<path:name>")
+def api_fighter(name):
+    """
+    Return all recorded results for a fighter by name (case-insensitive).
+    Foundation for athlete profiles — aggregates IBJJF, NAGA, etc.
+    """
+    from results import get_fighter_profile
+    results = get_fighter_profile(name.strip())
+    return jsonify({"name": name, "results": results})
 
 
 @app.route("/api/stripe/checkout", methods=["POST"])

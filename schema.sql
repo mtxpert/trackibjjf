@@ -97,6 +97,63 @@ create trigger on_auth_user_created
 
 
 -- ---------------------------------------------------------------------------
+-- public.bracket_finals
+-- Persists completed bracket states across server restarts.
+-- One row per category (division). Upserted whenever results_final=True.
+-- ---------------------------------------------------------------------------
+create table if not exists public.bracket_finals (
+    category_id     text        primary key,
+    tournament_id   text        not null,
+    tournament_name text        not null default '',
+    division        text        not null default '',
+    source          text        not null default 'ibjjf'
+                                check (source in ('ibjjf', 'naga')),
+    ranking         jsonb       not null default '[]',
+    state_json      jsonb       not null default '{}',
+    event_date      text        not null default '',
+    saved_at        timestamptz not null default now()
+);
+
+create index if not exists bracket_finals_tournament_idx
+    on public.bracket_finals (tournament_id);
+
+create index if not exists bracket_finals_event_date_idx
+    on public.bracket_finals (event_date);
+
+
+-- ---------------------------------------------------------------------------
+-- public.fighter_results
+-- One row per athlete per division. Foundation for athlete profiles.
+-- Derived from bracket_finals whenever a bracket completes.
+-- ---------------------------------------------------------------------------
+create table if not exists public.fighter_results (
+    id              uuid        primary key default gen_random_uuid(),
+    athlete_name    text        not null,   -- normalized lowercase for searching
+    athlete_display text        not null,   -- original case for display
+    team            text        not null default '',
+    tournament_id   text        not null,
+    tournament_name text        not null default '',
+    category_id     text        not null,
+    division        text        not null default '',
+    source          text        not null default 'ibjjf'
+                                check (source in ('ibjjf', 'naga')),
+    placement       text        not null,   -- '1' '2' '3' or 'eliminated'
+    event_date      text        not null default '',
+    saved_at        timestamptz not null default now(),
+    unique (athlete_name, category_id)
+);
+
+create index if not exists fighter_results_name_idx
+    on public.fighter_results (athlete_name);
+
+create index if not exists fighter_results_tournament_idx
+    on public.fighter_results (tournament_id);
+
+create index if not exists fighter_results_event_date_idx
+    on public.fighter_results (event_date);
+
+
+-- ---------------------------------------------------------------------------
 -- Row-Level Security
 -- ---------------------------------------------------------------------------
 
