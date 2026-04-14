@@ -786,6 +786,8 @@
 
     <!-- Browse list (all other orgs + independent) -->
     <div id="browse-container" style="display:none">
+      <input class="browse-search" id="browse-search" type="search"
+        placeholder="Search tournaments, cities…" oninput="onBrowseSearch()">
       <div class="browse-date-row">
         <button class="browse-date-chip active" data-days="30" onclick="setBrowseDate(30,this)">Next 30 days</button>
         <button class="browse-date-chip" data-days="90" onclick="setBrowseDate(90,this)">3 months</button>
@@ -1399,20 +1401,14 @@ function selectOrgTile(key) {
   document.querySelectorAll('.org-tile').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `selectOrgTile('${key}')`));
 
-  const bracketOrgs = ['ibjjf','naga','compnet'];
-  if (bracketOrgs.includes(key)) {
-    // Use existing bracket-tracking flow
-    setTournamentSource(key);
-  } else {
-    // Show browse events for this org
-    _tournamentSource = 'browse';
-    document.getElementById('tourney-era-toggle').style.display = 'none';
-    document.getElementById('tourney-loading').style.display = 'none';
-    document.getElementById('tourney-list').style.display = 'none';
-    document.getElementById('browse-container').style.display = 'block';
-    if (!_browseFetched) loadBrowseEvents();
-    else renderBrowse();
-  }
+  // Always show browse container for all org tiles
+  _tournamentSource = 'browse';
+  document.getElementById('tourney-era-toggle').style.display = 'none';
+  document.getElementById('tourney-loading').style.display = 'none';
+  document.getElementById('tourney-list').style.display = 'none';
+  document.getElementById('browse-container').style.display = 'block';
+  if (!_browseFetched) loadBrowseEvents();
+  else renderBrowse();
 }
 
 function setBrowseOrg(key) {
