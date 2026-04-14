@@ -104,12 +104,12 @@ def get_naga_events(subdomain="naga", **_kwargs):
             except Exception:
                 pass
 
-        # Skip events in the past (>7 days ago)
+        # Skip events more than 90 days in the past
         if start_iso:
             try:
                 from datetime import date as _date
                 d = _date.fromisoformat(start_iso)
-                if (today - d).days > 7:
+                if (today - d).days > 90:
                     continue
             except Exception:
                 pass
@@ -130,6 +130,14 @@ def get_naga_events(subdomain="naga", **_kwargs):
         else:
             location = city_text
 
+        is_past = False
+        if start_iso:
+            try:
+                from datetime import date as _date
+                is_past = _date.fromisoformat(start_iso) < today
+            except Exception:
+                pass
+
         seen[event_id] = {
             "id":        event_id,
             "name":      name,
@@ -139,6 +147,7 @@ def get_naga_events(subdomain="naga", **_kwargs):
             "url":       f"https://naga.smoothcomp.com/en/event/{event_id}",
             "source":    "naga",
             "subdomain": subdomain,
+            "is_past":   is_past,
         }
 
     events = sorted(seen.values(), key=lambda e: e.get("start") or "")

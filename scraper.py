@@ -43,19 +43,99 @@ BASE    = "https://www.bjjcompsystem.com"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 
-_BLOCK_RE = re.compile(r"id=['\"]tournament-display-(\d+)['\"]", re.DOTALL)
-_IMG_ALT  = re.compile(r'alt=["\']([^"\']+)["\']')
-_CAT_HREF = re.compile(r'/tournaments/(\d+)/categories/(\d+)["\']')
+_BLOCK_RE   = re.compile(r"id=['\"]tournament-display-(\d+)['\"]", re.DOTALL)
+_IMG_ALT    = re.compile(r'alt=["\']([^"\']+)["\']')
+_CAT_HREF   = re.compile(r'/tournaments/(\d+)/categories/(\d+)["\']')
+_TDAYS_HREF = re.compile(r'/tournaments/(\d+)/tournament_days/(\d+)["\']')
+_TDAYS_DATE = re.compile(r'(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*(\d{2}/\d{2})')
+
+
+def _infer_ibjjf_dates(tournament_id: str) -> tuple[str, str]:
+    """Return (start_iso, end_iso) for an IBJJF tournament.
+
+    Tries roster cache first (fight_time: 'Sat 04/11 at 03:40 PM').
+    Falls back to fetching the tournament_days page.
+    Returns ('', '') if nothing found.
+    """
+    from datetime import date as _date
+    today = _date.today()
+
+    # ── 1. try roster cache ────────────────────────────────────────────────
+    for roster_dir in [ROSTER_DIR, SEED_DIR]:
+        f = roster_dir / f"{tournament_id}_roster.json"
+        if f.exists():
+            try:
+                athletes = json.loads(f.read_text()).get("athletes", [])
+                dates = set()
+                for a in athletes:
+                    ft = a.get("fight_time", "")
+                    m = re.search(r'(\d{2}/\d{2})', ft)
+                    if m:
+                        dates.add(m.group(1))
+                if dates:
+                    year = today.year
+                    parsed = []
+                    for d in dates:
+                        mm, dd = d.split("/")
+                        candidate = _date(year, int(mm), int(dd))
+                        # if it looks >6 months in the future, it's probably last year
+                        if (candidate - today).days > 180:
+                            candidate = candidate.replace(year=year - 1)
+                        parsed.append(candidate)
+                    parsed.sort()
+                    return parsed[0].isoformat(), parsed[-1].isoformat()
+            except Exception:
+                pass
+
+    # ── 2. fall back to fetching tournament_days page ──────────────────────
+    # (only reached if no roster cache — avoids extra HTTP on normal path)
+    try:
+        resp = requests.get(f"{BASE}/tournaments/{tournament_id}/tournament_days",
+                            headers=HEADERS, timeout=(3, 8))
+        if resp.ok:
+            dates = sorted(set(_TDAYS_DATE.findall(resp.text)))
+            if dates:
+                year = today.year
+                parsed = []
+                for d in dates:
+                    mm, dd = d.split("/")
+                    candidate = _date(year, int(mm), int(dd))
+                    if (candidate - today).days > 180:
+                        candidate = candidate.replace(year=year - 1)
+                    parsed.append(candidate)
+                parsed.sort()
+                return parsed[0].isoformat(), parsed[-1].isoformat()
+    except Exception:
+        pass
+
+    return "", ""
+
 
 def get_tournaments(use_cache_on_fail=True):
-    """Fetch all currently listed tournaments from bjjcompsystem.com (regex, no BS4)."""
+    """Fetch all currently listed tournaments from bjjcompsystem.com (regex, no BS4).
+
+    Returns dicts with: id, name, start (YYYY-MM-DD), end (YYYY-MM-DD), is_past.
+    """
+    from datetime import date as _date
+    today = _date.today()
+
     try:
         resp = requests.get(f"{BASE}/tournaments", headers=HEADERS, timeout=(5, 12))
         resp.raise_for_status()
     except Exception:
         if use_cache_on_fail and _TOURNEY_CACHE_FILE.exists():
-            return json.loads(_TOURNEY_CACHE_FILE.read_text())
+            raw = json.loads(_TOURNEY_CACHE_FILE.read_text())
+            # Back-fill dates if cache is old format (no start field)
+            enriched = []
+            for t in raw:
+                if not t.get("start"):
+                    s, e = _infer_ibjjf_dates(t["id"])
+                    t = dict(t, start=s, end=e,
+                             is_past=bool(s and _date.fromisoformat(s) < today))
+                enriched.append(t)
+            return enriched
         raise
+
     html   = resp.text
     result = []
     seen   = set()
@@ -68,7 +148,35 @@ def get_tournaments(use_cache_on_fail=True):
         block = html[pos:end]
         img_m = _IMG_ALT.search(block)
         name  = img_m.group(1) if img_m else f"Tournament {tid}"
-        result.append({"id": tid, "name": name})
+        start, end_date = _infer_ibjjf_dates(tid)
+        is_past = bool(start and _date.fromisoformat(start) < today)
+        result.append({"id": tid, "name": name, "start": start, "end": end_date,
+                       "is_past": is_past})
+
+    # Also include any roster-cached tournaments not currently on bjjcompsystem.com
+    live_ids = {t["id"] for t in result}
+    for roster_file in sorted(SEED_DIR.glob("*_roster.json")):
+        tid = roster_file.stem.replace("_roster", "")
+        if tid in live_ids:
+            continue
+        start, end_date = _infer_ibjjf_dates(tid)
+        if not start:
+            continue  # can't determine date, skip
+        is_past = _date.fromisoformat(start) < today
+        # Try to get name from seed tournaments.json
+        name = f"Tournament {tid}"
+        t_seed = SEED_DIR / "tournaments.json"
+        if t_seed.exists():
+            try:
+                for t in json.loads(t_seed.read_text()):
+                    if str(t["id"]) == tid:
+                        name = t["name"]
+                        break
+            except Exception:
+                pass
+        result.append({"id": tid, "name": name, "start": start, "end": end_date,
+                       "is_past": is_past})
+
     if result:
         try:
             _TOURNEY_CACHE_FILE.write_text(json.dumps(result))
