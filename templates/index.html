@@ -651,6 +651,17 @@
         <span class="source-tab-label">NAGA</span>
       </button>
     </div>
+    <!-- Upcoming / Past toggle — shown after a source is selected -->
+    <div id="tourney-era-toggle" style="display:none;gap:6px;margin-bottom:10px">
+      <button id="era-upcoming" onclick="setTourneyEra('upcoming')"
+        style="flex:1;padding:9px;border-radius:10px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:var(--red);color:white">
+        Upcoming
+      </button>
+      <button id="era-past" onclick="setTourneyEra('past')"
+        style="flex:1;padding:9px;border-radius:10px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:var(--gray);color:var(--text)">
+        Past Results
+      </button>
+    </div>
     <div id="tourney-loading" class="state-msg">
       <div class="spinner"></div>
       <span data-i18n="loading_tournaments">Loading tournaments...</span>
@@ -1092,8 +1103,12 @@ function restoreSession() {
       document.getElementById('school-input').value = '';
       setSearchMode('team');
       showScreen('screen-school', false);
-      loadTeamSuggestions(selectedTournament.id);
-      _loadPickStatuses();
+      if (selectedTournament.source === 'naga') {
+        _setupNagaSchoolScreen();
+      } else {
+        loadTeamSuggestions(selectedTournament.id);
+        _loadPickStatuses();
+      }
     } else {
       return false;
     }
@@ -1126,12 +1141,34 @@ async function loadTournaments() {
   }
 }
 
+let _tourneyEra = 'upcoming'; // 'upcoming' | 'past'
+
 function setTournamentSource(src) {
   _tournamentSource = src;
+  _tourneyEra = 'upcoming';
   document.getElementById('src-ibjjf').classList.toggle('source-tab--active', src === 'ibjjf');
   document.getElementById('src-naga').classList.toggle('source-tab--active',  src === 'naga');
+  const toggle = document.getElementById('tourney-era-toggle');
+  if (toggle) { toggle.style.display = 'flex'; }
+  _updateEraToggleUI();
   if (!allTournaments.length) loadTournaments();
   else renderTournaments();
+}
+
+function setTourneyEra(era) {
+  _tourneyEra = era;
+  _updateEraToggleUI();
+  renderTournaments();
+}
+
+function _updateEraToggleUI() {
+  const up   = document.getElementById('era-upcoming');
+  const past = document.getElementById('era-past');
+  if (!up || !past) return;
+  up.style.background   = _tourneyEra === 'upcoming' ? 'var(--red)' : 'var(--gray)';
+  up.style.color        = _tourneyEra === 'upcoming' ? 'white'      : 'var(--text)';
+  past.style.background = _tourneyEra === 'past'     ? 'var(--red)' : 'var(--gray)';
+  past.style.color      = _tourneyEra === 'past'     ? 'white'      : 'var(--text)';
 }
 
 function _fmtTourneyDate(start, end) {
@@ -1177,32 +1214,28 @@ function renderTournaments() {
   loading.style.display = 'none';
   list.style.display = 'flex';
 
-  const upcoming = filtered.filter(t => !t.is_past);
-  const past     = filtered.filter(t =>  t.is_past)
-                            .sort((a, b) => (b.start || '').localeCompare(a.start || ''));
+  const showing = filtered
+    .filter(t => _tourneyEra === 'past' ? t.is_past : !t.is_past)
+    .sort((a, b) => _tourneyEra === 'past'
+      ? (b.start || '').localeCompare(a.start || '')  // most recent first
+      : (a.start || '').localeCompare(b.start || '')); // soonest first
 
-  function tourneyCard(t) {
+  if (!showing.length) {
+    loading.innerHTML = `<div class="icon">📅</div><h3>No ${_tourneyEra === 'past' ? 'past' : 'upcoming'} ${_tournamentSource.toUpperCase()} events</h3>`;
+    loading.style.display = 'flex';
+    list.style.display = 'none';
+    return;
+  }
+
+  list.innerHTML = showing.map(t => {
     const datePart = _fmtTourneyDate(t.start, t.end);
     const locPart  = t.location || '';
     const meta     = [datePart, locPart].filter(Boolean).join(' · ');
-    const pastCls  = t.is_past ? ' past' : '';
-    return `
-    <div class="tourney-item${pastCls}" id="t-${esc(t.id)}" onclick="selectTournament('${esc(t.id)}', this)">
+    return `<div class="tourney-item" id="t-${esc(t.id)}" onclick="selectTournament('${esc(t.id)}', this)">
       <div class="tourney-name">${esc(t.name)}</div>
       ${meta ? `<div class="tourney-meta">${esc(meta)}</div>` : ''}
     </div>`;
-  }
-
-  let html = '';
-  if (upcoming.length) {
-    html += '<div class="tourney-section-label">Upcoming</div>';
-    html += upcoming.map(tourneyCard).join('');
-  }
-  if (past.length) {
-    html += '<div class="tourney-section-label">Past Results</div>';
-    html += past.map(tourneyCard).join('');
-  }
-  list.innerHTML = html;
+  }).join('');
 }
 
 function selectTournament(id, el) {
@@ -1211,6 +1244,8 @@ function selectTournament(id, el) {
   selectedTournament = allTournaments.find(t => t.id === id);
   document.getElementById('school-tourney-name').textContent = selectedTournament.name;
   document.getElementById('school-input').value = '';
+  _teamSuggestions = [];
+  _athleteSugg = [];
   setSearchMode('team');
   _pickStatusCache = {};
   _teardownNagaSchoolScreen();
@@ -1234,7 +1269,7 @@ async function _setupNagaSchoolScreen() {
   const el    = document.getElementById('cache-status');
   const list  = document.getElementById('item-list');
   const input = document.getElementById('school-input');
-  if (input) { input.placeholder = 'Filter schools…'; input.value = ''; }
+  if (input) input.placeholder = 'Filter schools…';
   if (el)    el.textContent = 'Loading schools…';
   if (list)  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading…</div>';
   document.getElementById('mode-team').style.display    = 'none';
@@ -1247,6 +1282,10 @@ async function _setupNagaSchoolScreen() {
   } catch(e) {
     _nagaClubs = [];
   }
+
+  // Bail if user has already navigated away (e.g. already searched and went to pick screen)
+  if (!document.getElementById('screen-school').classList.contains('active')) return;
+  if (input) input.value = '';
 
   if (_nagaClubs.length) {
     if (el) el.textContent = '';
@@ -1319,9 +1358,9 @@ async function nagaSearch() {
     const jr  = await fetch(`/api/search/${data.job_id}`);
     const job = await jr.json();
     allAthletes  = job.athletes || [];
-    selectedKeys = new Set(allAthletes.map(a => a.name.toLowerCase()));
+    selectedKeys = new Set();
     if (el) el.textContent = `${allAthletes.length} division entries for ${school}`;
-    _renderNagaAthleteList(allAthletes, school);
+    showPick();
   } catch(e) {
     if (el) el.textContent = 'Search failed — check connection';
   }
@@ -2120,7 +2159,8 @@ function shareResults() {
     ? ` — ${_fmtTourneyDate(selectedTournament.start, selectedTournament.end)}`
     : '';
 
-  const lines = [`🏆 ${tourney}${date}\n`];
+  const team = watched.map(a => a.team).find(t => t) || '';
+  const lines = team ? [`${team}\n`, `🏆 ${tourney}${date}\n`] : [`🏆 ${tourney}${date}\n`];
   const placed = watched.filter(a => a.placement);
   const elim   = watched.filter(a => a.eliminated && !a.placement);
 

@@ -202,7 +202,13 @@ def get_naga_events(subdomain="naga", **_kwargs):
             except Exception:
                 pass
 
-    events = sorted(seen.values(), key=lambda e: e.get("start") or "")
+    # Deduplicate: if two events share the same (name, start) keep the highest numeric ID
+    deduped = {}
+    for ev in seen.values():
+        key = (ev.get("name", "").lower(), ev.get("start", ""))
+        if key not in deduped or int(ev["id"]) > int(deduped[key]["id"]):
+            deduped[key] = ev
+    events = sorted(deduped.values(), key=lambda e: e.get("start") or "")
 
     # Persist all past events so they survive future runs after nagafighter.com drops them
     new_past = [e for e in events if e.get("is_past")]

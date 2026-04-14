@@ -214,12 +214,45 @@ def _sse_push(tournament_id, event_data):
             pass   # slow client — drop event rather than block
 
 
+def _tournament_is_live(tournament_id: str) -> bool:
+    """Return True only if the tournament's start date is today (day-of only)."""
+    today = date.today().isoformat()
+    # Check all known tournament lists for this id
+    try:
+        from pathlib import Path as _P
+        import json as _j
+        seed = _P(__file__).parent / "seed_cache" / "tournaments.json"
+        if seed.exists():
+            for t in _j.loads(seed.read_text()):
+                if str(t.get("id")) == str(tournament_id):
+                    start = t.get("start") or t.get("date", "")
+                    end   = t.get("end", start)
+                    return start <= today <= end
+    except Exception:
+        pass
+    # NAGA: check naga seed cache
+    try:
+        from scraper_naga import _load_naga_cache
+        ev = _load_naga_cache().get(str(tournament_id))
+        if ev:
+            start = ev.get("start", "")
+            end   = ev.get("end", start)
+            return bool(start) and start <= today <= (end or start)
+    except Exception:
+        pass
+    return False
+
+
 def register_watch(tournament_id, category_id, interval_sec=30):
-    """Register a category for background polling. Skips if already marked complete."""
+    """Register a category for background polling.
+    Skips if bracket is already final (in DB or memory) or tournament isn't today."""
     with _watch_lock:
-        # Don't re-add brackets we already know are finished
+        # Already finished — never re-poll
         cached = _brackets.get(category_id)
         if cached and cached.get("results_final"):
+            return
+        # Only poll live (day-of) tournaments
+        if not _tournament_is_live(tournament_id):
             return
         existing = _watch_registry.get(category_id, {})
         _watch_registry[category_id] = {
@@ -308,11 +341,13 @@ def _process_batch_results(batch_results, tid_by_cid):
 
 
 def _naga_register_watch(tournament_id, category_id, subdomain="naga", interval_sec=30):
-    """Register a NAGA bracket for background polling."""
+    """Register a NAGA bracket for background polling. Day-of only."""
     cid = str(category_id)
     with _watch_lock:
         cached = _brackets.get(cid)
         if cached and cached.get("results_final"):
+            return
+        if not _tournament_is_live(str(tournament_id)):
             return
         existing = _watch_registry.get(cid, {})
         _watch_registry[cid] = {
@@ -423,11 +458,18 @@ def _auto_discover():
                 from scraper import get_tournaments
                 tournaments = get_tournaments()
 
+            from datetime import date as _date
+            today = _date.today().isoformat()
             for t in tournaments:
                 try:
+                    start = t.get("start") or t.get("date", "")
+                    end   = t.get("end", start)
+                    # Only build rosters for today's tournaments
+                    if not (start <= today <= (end or start)):
+                        continue
                     if not load_roster_cache(t["id"]):
                         _build_one_tournament(t)
-                        _time.sleep(5)   # pause between builds
+                        _time.sleep(5)
                 except Exception:
                     pass
 
@@ -823,14 +865,17 @@ def api_refresh():
     if not cat_ids:
         return jsonify({"updated": athletes, "changes": []})
 
-    # Register for background watching (idempotent)
-    for cid in cat_ids:
-        register_watch(tournament_id, cid)
+    is_live = _tournament_is_live(tournament_id)
 
-    # Check if any categories have never been fetched — kick off an immediate fetch
-    for cid in cat_ids:
-        if cid not in _brackets:
-            threading.Thread(target=refresh_bracket, args=(tournament_id, cid), daemon=True).start()
+    # Register for background watching (day-of only — register_watch also guards this)
+    if is_live:
+        for cid in cat_ids:
+            register_watch(tournament_id, cid)
+
+        # Kick off immediate fetch for categories not yet in memory
+        for cid in cat_ids:
+            if cid not in _brackets:
+                threading.Thread(target=refresh_bracket, args=(tournament_id, cid), daemon=True).start()
 
     # Return current cached state (instant)
     all_changes = []

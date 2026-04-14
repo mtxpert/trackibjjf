@@ -64,7 +64,7 @@ def save_bracket_final(
             "source":          source,
             "ranking":         ranking,
             "state_json":      state,
-            "event_date":      event_date,
+            "event_date":      event_date or None,
         }).execute()
 
         # ── fighter_results ───────────────────────────────────────────────────
@@ -95,7 +95,7 @@ def save_bracket_final(
                 "division":        division,
                 "source":          source,
                 "placement":       r["pos"],   # '1' / '2' / '3'
-                "event_date":      event_date,
+                "event_date":      event_date or None,
             })
 
         # Anyone who fought but isn't on the podium = eliminated
@@ -111,7 +111,7 @@ def save_bracket_final(
                     "division":        division,
                     "source":          source,
                     "placement":       "eliminated",
-                    "event_date":      event_date,
+                    "event_date":      event_date or None,
                 })
 
         if rows:
