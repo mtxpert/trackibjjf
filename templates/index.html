@@ -916,7 +916,7 @@ function showScreen(id, pushState = true) {
 }
 
 function goHome() {
-  sessionStorage.removeItem('mattrack_session');
+  localStorage.removeItem('mattrack_session');
   selectedTournament = null;
   watchedTournamentId = '';
   allAthletes = [];
@@ -934,7 +934,7 @@ window.addEventListener('popstate', (e) => {
   const screen = e.state?.screen;
   if (!screen || screen === 'screen-tournament' || screen === 'screen-landing') {
     // Clear session so goHome doesn't re-restore
-    sessionStorage.removeItem('mattrack_session');
+    localStorage.removeItem('mattrack_session');
     selectedTournament = null; watchedTournamentId = ''; allAthletes = []; selectedKeys = new Set();
     document.getElementById('header-sub').textContent = 'Live Tournament Tracker';
     showScreen('screen-tournament', false);
@@ -959,7 +959,7 @@ window.addEventListener('popstate', (e) => {
 // ─── Session persistence ───────────────────────────────────────────────────
 function saveSession() {
   try {
-    sessionStorage.setItem('mattrack_session', JSON.stringify({
+    localStorage.setItem('mattrack_session', JSON.stringify({
       tournament:   selectedTournament,
       tournamentId: watchedTournamentId,
       athletes:     allAthletes,
@@ -972,7 +972,7 @@ function saveSession() {
 
 function restoreSession() {
   try {
-    const raw = sessionStorage.getItem('mattrack_session');
+    const raw = localStorage.getItem('mattrack_session');
     if (!raw) return false;
     const s = JSON.parse(raw);
     if (!s.tournament) return false;
