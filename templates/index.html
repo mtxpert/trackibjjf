@@ -2700,7 +2700,31 @@ let _pendingCheckoutPlan = null;
 
 async function initAuth() {
   if (typeof window.supabase === 'undefined') return;
-  _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+    auth: {
+      persistSession:   true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storageKey: 'mattrack_sb_session',
+    }
+  });
+
+  // Re-check session when tab becomes visible again (handles backgrounded token expiry)
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && _sb) {
+      const { data: { session } } = await _sb.auth.getSession();
+      if (session && !_session) {
+        _session = session;
+        await fetchUserPlan(session.access_token);
+        updateAuthUI();
+      } else if (!session && _session) {
+        // Token truly expired and refresh failed
+        _session = null;
+        _userPlan = 'free'; _userEmail = '';
+        updateAuthUI();
+      }
+    }
+  });
 
   // Handle OAuth redirect — token arrives in URL hash
   const hash = window.location.hash;
