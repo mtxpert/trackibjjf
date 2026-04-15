@@ -2721,20 +2721,16 @@ async function initAuth() {
     }
   });
 
-  // Handle OAuth redirect — token arrives in URL hash
+  // Detect OAuth redirect — detectSessionInUrl:true handles the actual exchange automatically.
+  // We just detect whether this is a fresh login to skip the landing screen.
   const hash = window.location.hash;
   let _freshLogin = false;
   if (hash && hash.includes('access_token')) {
-    const params = new URLSearchParams(hash.slice(1));
-    const access_token  = params.get('access_token');
-    const refresh_token = params.get('refresh_token');
-    if (access_token) {
-      await _sb.auth.setSession({ access_token, refresh_token });
-      window.history.replaceState({}, '', '/');
-      // Clear any stale saved session so we start fresh on tournament list
-      localStorage.removeItem('mattrack_session');
-      _freshLogin = true;
-    }
+    // Don't call setSession() manually — that double-processes the tokens with detectSessionInUrl
+    // and causes a race that fires SIGNED_OUT, logging the user out immediately.
+    window.history.replaceState({}, '', '/');
+    localStorage.removeItem('mattrack_session');
+    _freshLogin = true;
   }
 
   // Handle checkout return
