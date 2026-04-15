@@ -125,6 +125,92 @@ def fetch_event_list_page(page: int) -> list[dict]:
     return events
 
 
+# ── Hardcoded ADCC Worlds pages (not in paginated event list) ─────────────────
+# These use a table layout: Weight Class | Medal | Place | Name
+ADCC_WORLDS_EXTRA = [
+    {"title": "ADCC Submission Fighting World Championship 2017", "url": "https://adcombat.com/adcc-events/adcc-2017-results/", "date": "2017"},
+    {"title": "ADCC Submission Fighting World Championship 2015", "url": "https://adcombat.com/adcc-events/adcc-2015-results/", "date": "2015"},
+    {"title": "ADCC Submission Fighting World Championship 2013", "url": "https://adcombat.com/adcc-events/adcc-2013-results/", "date": "2013"},
+    {"title": "ADCC Submission Fighting World Championship 2011", "url": "https://adcombat.com/adcc-events/adcc-2011-results/", "date": "2011"},
+    {"title": "ADCC Submission Fighting World Championship 2009", "url": "https://adcombat.com/adcc-events/adcc-2009-results/", "date": "2009"},
+    {"title": "ADCC Submission Fighting World Championship 2007", "url": "https://adcombat.com/adcc-events/adcc-2007-results/", "date": "2007"},
+    {"title": "ADCC Submission Fighting World Championship 2005", "url": "https://adcombat.com/adcc-events/adcc-2005-results/", "date": "2005"},
+    {"title": "ADCC Submission Fighting World Championship 2003", "url": "https://adcombat.com/adcc-events/adcc-2003-results/", "date": "2003"},
+]
+
+MEDAL_TO_PLACE = {"gold": 1, "silver": 2, "bronze": 3}
+
+
+def _parse_table_results(event: dict, soup: BeautifulSoup, location: str) -> list[dict]:
+    """
+    Parse older ADCC Worlds pages that use a table layout:
+      Weight Class | Medal | Place | Name
+    Rows with no Weight Class inherit from the last seen weight class.
+    """
+    div = soup.select_one("div.rw-event-results, div.rw-basic-results")
+    if not div:
+        return []
+    tables = div.find_all("table")
+    if not tables:
+        return []
+
+    rows = []
+    url = event["url"]
+    event_date = event.get("date", "")
+
+    for table in tables:
+        current_division = ""
+        for tr in table.find_all("tr"):
+            cells = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
+            if len(cells) < 3:
+                continue
+            # Header row
+            if cells[0].lower() in ("weight class", ""):
+                if cells[0].lower() == "weight class":
+                    continue  # skip header
+
+            # Weight class cell (may span multiple rows via rowspan — get_text handles it)
+            if len(cells) >= 4:
+                wc = cells[0].strip()
+                if wc and wc.lower() not in ("weight class",):
+                    current_division = wc
+                medal = cells[1].lower()
+                place_str = cells[2]
+                name = cells[3].strip()
+            elif len(cells) == 3:
+                medal = cells[0].lower()
+                place_str = cells[1]
+                name = cells[2].strip()
+            else:
+                continue
+
+            if not name or not current_division:
+                continue
+
+            # Determine placement
+            place = MEDAL_TO_PLACE.get(medal)
+            if place is None:
+                m = re.search(r"(\d+)", place_str)
+                place = int(m.group(1)) if m else None
+            if place is None:
+                continue
+
+            rows.append({
+                "source": SOURCE,
+                "event_title": event["title"],
+                "event_date": event_date,
+                "event_url": url,
+                "location": location,
+                "division": current_division,
+                "placement": place,
+                "athlete_name": name,
+                "academy": "",
+                "country": "",
+            })
+
+    return rows
+
+
 # ── Event results parser ───────────────────────────────────────────────────────
 
 def _parse_athlete_line(line: str) -> tuple[str, str, str]:
@@ -188,6 +274,14 @@ def fetch_event_results(event: dict) -> list[dict]:
         location = el.get_text(separator=" ", strip=True)[:200]
 
     rows = []
+
+    # Check for table-format (older ADCC Worlds 2003–2017)
+    results_div = soup.select_one("div.rw-event-results, div.rw-basic-results")
+    if results_div and results_div.find("table"):
+        rows = _parse_table_results(event, soup, location)
+        if rows:
+            log.info("Event '%s': %d rows (table format)", event["title"], len(rows))
+            return rows
 
     # Primary: <div class="rw-event-results ..."><ul><li><strong>DIVISION</strong><ol>...
     results_divs = soup.select("div.rw-event-results, div.rw-basic-results, #container.rw-event-results")
@@ -342,7 +436,13 @@ def main():
             seen.add(e["url"])
             unique_events.append(e)
 
-    log.info("Total unique events to scrape: %d", len(unique_events))
+    # Add hardcoded Worlds pages (not in paginated list) unless already seen
+    for extra in ADCC_WORLDS_EXTRA:
+        if extra["url"] not in seen:
+            unique_events.append(extra)
+            seen.add(extra["url"])
+
+    log.info("Total unique events to scrape: %d (includes %d extra Worlds)", len(unique_events), len(ADCC_WORLDS_EXTRA))
 
     # Scrape each event
     all_rows: list[dict] = list(existing_rows)
