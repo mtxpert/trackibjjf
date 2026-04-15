@@ -2880,6 +2880,19 @@ async function fetchUserPlan(token) {
   try {
     const r = await _authedFetch('/api/auth/me');
     const d = await r.json();
+    // Server rejected the token (expired due to clock skew) — force refresh and retry
+    if (!d.authenticated && _sb) {
+      console.warn('[auth] fetchUserPlan: server says not authenticated — forcing session refresh');
+      const { data } = await _sb.auth.refreshSession();
+      if (data?.session) {
+        _session = data.session;
+        const r2 = await _authedFetch('/api/auth/me');
+        const d2 = await r2.json();
+        _userPlan  = d2.plan  || 'free';
+        _userEmail = d2.email || '';
+        return;
+      }
+    }
     _userPlan  = d.plan  || 'free';
     _userEmail = d.email || '';
   } catch(e) {}
