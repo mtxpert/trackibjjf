@@ -31,6 +31,22 @@ _jwks_cache: dict = {}
 _jwks_fetched_at: float = 0.0
 _JWKS_TTL = 86400  # 24 hours
 
+def _prewarm_jwks() -> None:
+    """Pre-fetch JWKS at startup in a background thread so the first auth call is fast."""
+    import threading
+    def _fetch():
+        try:
+            r = requests.get(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json", timeout=10)
+            if r.ok:
+                global _jwks_cache, _jwks_fetched_at
+                keys = r.json().get("keys", [])
+                _jwks_cache = {k["kid"]: k for k in keys}
+                _jwks_fetched_at = time.time()
+                log.info("JWKS pre-warmed: %d keys", len(_jwks_cache))
+        except Exception as e:
+            log.warning("JWKS pre-warm failed: %s", e)
+    threading.Thread(target=_fetch, daemon=True).start()
+
 
 def _get_jwks() -> dict:
     """Return cached JWKS keys, refreshing if stale."""

@@ -1697,5 +1697,8 @@ def api_push_unsubscribe():
         return jsonify({"error": "Failed to remove subscription"}), 500
 
 
+from auth import _prewarm_jwks
+_prewarm_jwks()
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5950)))

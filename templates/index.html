@@ -2791,17 +2791,19 @@ async function initAuth() {
     '| expires:', session ? new Date(session.expires_at * 1000).toISOString() : 'n/a');
 
   if (session) {
-    await fetchUserPlan(session.access_token);
+    // Set email immediately from JWT — don't wait for /api/auth/me before showing the user
+    _userEmail = session.user?.email || '';
     updateAuthUI();
-    // Fresh magic-link login → always go to tournament list
+    // Navigate before the async plan fetch so user sees the app immediately
     if (_freshLogin) {
       showScreen('screen-tournament', false);
       history.replaceState({ screen: 'screen-tournament' }, '', '');
     } else if (activeId === 'screen-landing') {
-      // Returning user — skip landing
       showScreen('screen-tournament', false);
       history.replaceState({ screen: 'screen-tournament' }, '', '');
     }
+    // Fetch plan async — updates the plan badge without blocking the UI
+    fetchUserPlan(session.access_token).then(() => updateAuthUI());
     // Otherwise: stay where restoreSession put us (watch/pick/school)
   } else {
     updateAuthUI();
@@ -2834,13 +2836,14 @@ async function initAuth() {
       return;
     }
     if (session) {
-      await fetchUserPlan(session.access_token);
+      // Show user immediately from JWT, then fetch plan async
+      _userEmail = _userEmail || session.user?.email || '';
       updateAuthUI();
-      // Signed in — go to app
       if (document.querySelector('.screen.active')?.id === 'screen-landing') {
         showScreen('screen-tournament', false);
         history.replaceState({ screen: 'screen-tournament' }, '', '');
       }
+      fetchUserPlan(session.access_token).then(() => updateAuthUI());
       // Fire pending checkout from landing page plan click (survives OAuth redirect via sessionStorage)
       const pendingPlan = _pendingCheckoutPlan || sessionStorage.getItem('pendingCheckoutPlan');
       _pendingCheckoutPlan = null;
