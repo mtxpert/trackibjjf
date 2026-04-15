@@ -1336,6 +1336,40 @@ def api_auth_me():
     })
 
 
+@app.route("/api/auth/debug")
+def api_auth_debug():
+    """Auth diagnostic — returns token decode info without failing silently."""
+    from auth import get_user_from_token
+    import time as _time
+    auth_header = request.headers.get("Authorization", "")
+    has_token = auth_header.startswith("Bearer ") and len(auth_header) > 10
+    if not has_token:
+        return jsonify({"ok": False, "reason": "no_token"})
+    token = auth_header.removeprefix("Bearer ").strip()
+    try:
+        from jose import jwt as _jwt
+        header  = _jwt.get_unverified_header(token)
+        payload = _jwt.get_unverified_claims(token)
+        exp     = payload.get("exp", 0)
+        now     = int(_time.time())
+        user    = get_user_from_token(request)
+        return jsonify({
+            "ok":        user is not None,
+            "alg":       header.get("alg"),
+            "kid":       header.get("kid"),
+            "sub":       payload.get("sub", "")[:8] + "…",
+            "email":     payload.get("email", ""),
+            "exp":       exp,
+            "now":       now,
+            "expired":   exp < now,
+            "ttl_sec":   exp - now,
+            "verified":  user is not None,
+            "reason":    "ok" if user else "verify_failed",
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "reason": str(e)})
+
+
 @app.route("/debug/shot", methods=["GET", "POST"])
 def debug_shot():
     """Dev-only screenshot paste page. Resizes to max 800px and saves to /tmp/shot.png."""

@@ -2759,11 +2759,19 @@ async function initAuth() {
     window.history.replaceState({}, '', '/');
   }
 
-  const { data: { session } } = await _sb.auth.getSession();
+  const { data: { session }, error: sessionError } = await _sb.auth.getSession();
   _session = session;
   const activeId = document.querySelector('.screen.active')?.id;
-  console.log('[auth] initAuth getSession: session=%s activeId=%s freshLogin=%s',
-    session ? session.user?.email : 'null', activeId, _freshLogin);
+
+  // Auth debug log — visible in browser console
+  const sbKey = Object.keys(localStorage).find(k => k.includes('supabase') || k.includes('sb-'));
+  console.log('[auth] initAuth — session:', session ? `✅ ${session.user?.email}` : '❌ null',
+    '| error:', sessionError?.message || 'none',
+    '| freshLogin:', _freshLogin,
+    '| activeId:', activeId,
+    '| sbLocalStorageKey:', sbKey || 'NOT FOUND',
+    '| expires:', session ? new Date(session.expires_at * 1000).toISOString() : 'n/a');
+
   if (session) {
     await fetchUserPlan(session.access_token);
     updateAuthUI();
@@ -2789,7 +2797,9 @@ async function initAuth() {
   }
 
   _sb.auth.onAuthStateChange(async (event, session) => {
-    console.log('[auth] onAuthStateChange event=%s user=%s', event, session?.user?.email || 'null');
+    console.log('[auth] onAuthStateChange event=%s user=%s expires=%s',
+      event, session?.user?.email || 'null',
+      session ? new Date(session.expires_at * 1000).toISOString() : 'n/a');
     _session = session;
     if (session) {
       await fetchUserPlan(session.access_token);
