@@ -2721,24 +2721,15 @@ async function initAuth() {
     }
   });
 
-  // Detect OAuth redirect — detectSessionInUrl:true handles the actual exchange automatically.
-  // We just detect whether this is a fresh login to skip the landing screen.
+  // Detect OAuth redirect BEFORE clearing anything — just read the flag
   const hash = window.location.hash;
-  let _freshLogin = false;
-  if (hash && hash.includes('access_token')) {
-    // Don't call setSession() manually — that double-processes the tokens with detectSessionInUrl
-    // and causes a race that fires SIGNED_OUT, logging the user out immediately.
-    window.history.replaceState({}, '', '/');
-    localStorage.removeItem('mattrack_session');
-    _freshLogin = true;
-  }
+  const _isOAuthRedirect = !!(hash && hash.includes('access_token'));
 
   // Handle checkout return
   const sp = new URLSearchParams(window.location.search);
   if (sp.get('checkout') === 'success') {
     showToast('Payment successful — activating your plan…');
     window.history.replaceState({}, '', '/');
-    // Poll until plan upgrades (webhook may take a few seconds to process)
     let attempts = 0;
     const pollPlan = async () => {
       await fetchUserPlan();
@@ -2755,7 +2746,36 @@ async function initAuth() {
     window.history.replaceState({}, '', '/');
   }
 
-  const { data: { session }, error: sessionError } = await _sb.auth.getSession();
+  // getSession() waits for initialize() to complete — including detectSessionInUrl processing
+  // the URL hash. ONLY clear the hash after this resolves so detectSessionInUrl can read it.
+  let { data: { session }, error: sessionError } = await _sb.auth.getSession();
+
+  let _freshLogin = false;
+  if (_isOAuthRedirect) {
+    window.history.replaceState({}, '', '/');
+    localStorage.removeItem('mattrack_session');
+    _freshLogin = true;
+  }
+
+  // If session is null but there's a stored token (expired + clock skew), try explicit refresh
+  if (!session) {
+    const storedRaw = localStorage.getItem('sb-kzqvfuqxtbrhlgphyntb-auth-token');
+    if (storedRaw) {
+      console.warn('[auth] getSession null but token in localStorage — attempting explicit refresh (clock skew?)');
+      try {
+        const parsed = JSON.parse(storedRaw);
+        const { data: rd, error: re } = await _sb.auth.refreshSession(
+          parsed.refresh_token ? { refresh_token: parsed.refresh_token } : undefined
+        );
+        console.log('[auth] explicit refresh result:', rd?.session?.user?.email || 'null',
+          '| error:', re?.message || 'none');
+        if (rd?.session) session = rd.session;
+      } catch(e) {
+        console.error('[auth] explicit refresh threw:', e.message);
+      }
+    }
+  }
+
   _session = session;
   const activeId = document.querySelector('.screen.active')?.id;
 
