@@ -2840,11 +2840,29 @@ async function initAuth() {
   });
 }
 
+async function _authedFetch(url, opts = {}) {
+  // Make an authenticated fetch; if 401, force-refresh the session and retry once.
+  const token = _session?.access_token;
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}),
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}) };
+  let r = await fetch(url, { ...opts, headers });
+  if (r.status === 401 && _sb) {
+    console.warn('[auth] 401 on', url, '— forcing session refresh (clock skew?)');
+    const { data } = await _sb.auth.refreshSession();
+    if (data?.session) {
+      _session = data.session;
+      const newHeaders = { ...headers, 'Authorization': `Bearer ${data.session.access_token}` };
+      r = await fetch(url, { ...opts, headers: newHeaders });
+    }
+  }
+  return r;
+}
+
 async function fetchUserPlan(token) {
   token = token || _session?.access_token;
   if (!token) return;
   try {
-    const r = await fetch('/api/auth/me', { headers: { 'Authorization': `Bearer ${token}` } });
+    const r = await _authedFetch('/api/auth/me');
     const d = await r.json();
     _userPlan  = d.plan  || 'free';
     _userEmail = d.email || '';
