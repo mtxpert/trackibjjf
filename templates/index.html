@@ -2764,12 +2764,14 @@ async function initAuth() {
   const activeId = document.querySelector('.screen.active')?.id;
 
   // Auth debug log — visible in browser console
-  const sbKey = Object.keys(localStorage).find(k => k.includes('supabase') || k.includes('sb-'));
+  const sbKeys = Object.keys(localStorage).filter(k => k.startsWith('sb-'));
+  const expectedKey = `sb-kzqvfuqxtbrhlgphyntb-auth-token`;
   console.log('[auth] initAuth — session:', session ? `✅ ${session.user?.email}` : '❌ null',
     '| error:', sessionError?.message || 'none',
     '| freshLogin:', _freshLogin,
     '| activeId:', activeId,
-    '| sbLocalStorageKey:', sbKey || 'NOT FOUND',
+    '| expectedKey:', localStorage.getItem(expectedKey) ? '✅ FOUND' : '❌ MISSING',
+    '| allSbKeys:', sbKeys.join(',') || 'NONE',
     '| expires:', session ? new Date(session.expires_at * 1000).toISOString() : 'n/a');
 
   if (session) {
@@ -2797,10 +2799,24 @@ async function initAuth() {
   }
 
   _sb.auth.onAuthStateChange(async (event, session) => {
-    console.log('[auth] onAuthStateChange event=%s user=%s expires=%s',
+    const sbKeys = Object.keys(localStorage).filter(k => k.startsWith('sb-'));
+    console.log('[auth] onAuthStateChange event=%s user=%s expires=%s sbKeys=%s',
       event, session?.user?.email || 'null',
-      session ? new Date(session.expires_at * 1000).toISOString() : 'n/a');
+      session ? new Date(session.expires_at * 1000).toISOString() : 'n/a',
+      sbKeys.join(',') || 'NONE');
     _session = session;
+    if (event === 'SIGNED_OUT') {
+      console.warn('[auth] SIGNED_OUT — session cleared. sbKeys before clear:', sbKeys.join(',') || 'NONE');
+      _userPlan = 'free'; _userEmail = '';
+      updateAuthUI();
+      return;
+    }
+    if (event === 'TOKEN_REFRESHED') {
+      console.log('[auth] TOKEN_REFRESHED — new expiry:', session ? new Date(session.expires_at * 1000).toISOString() : 'n/a');
+      _session = session;
+      updateAuthUI();
+      return;
+    }
     if (session) {
       await fetchUserPlan(session.access_token);
       updateAuthUI();
