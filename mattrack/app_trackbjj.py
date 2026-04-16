@@ -176,17 +176,21 @@ def first_name_score(a: str, b: str) -> float:
 @app.route("/api/auth/me")
 def api_auth_me():
     """Return current user plan. Called on page load to restore session."""
-    from auth import get_user_from_token, get_user_plan, is_plan_active
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"plan": "free", "authenticated": False})
-    plan = get_user_plan(user["sub"])
-    return jsonify({
-        "authenticated": True,
-        "email": user.get("email", ""),
-        "plan": plan,
-        "active": is_plan_active(user["sub"]),
-    })
+    try:
+        from auth import get_user_from_token, get_user_plan, is_plan_active
+        user = get_user_from_token(request)
+        if not user:
+            return jsonify({"plan": "free", "authenticated": False})
+        plan = get_user_plan(user["sub"])
+        return jsonify({
+            "authenticated": True,
+            "email": user.get("email", ""),
+            "plan": plan,
+            "active": is_plan_active(user["sub"]),
+        })
+    except Exception as e:
+        log.error("api_auth_me error: %s", e, exc_info=True)
+        return jsonify({"plan": "free", "authenticated": False, "error": str(e)}), 200
 
 
 @app.route("/api/stripe/checkout", methods=["POST"])
