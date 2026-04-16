@@ -649,17 +649,15 @@
     <h1 id="header-title">MatTrack</h1>
     <div class="header-sub" id="header-sub" data-i18n="nav_subtitle">Live Tournament Tracker</div>
   </div>
-  <a class="sibling-link" href="https://www.trackbjj.net" target="_blank" onclick="event.stopPropagation()">↗ TrackBJJ</a>
+  <div class="lang-picker" onclick="event.stopPropagation()">
+    <button class="lang-btn" onclick="toggleLangDropdown()" id="lang-btn">🌐 <span id="lang-current">EN</span></button>
+    <div class="lang-dropdown" id="lang-dropdown"></div>
+  </div>
+  <a class="sibling-link" href="https://www.trackbjj.net" target="_blank" onclick="event.stopPropagation();_openSiblingWithSession('https://www.trackbjj.net',event)">↗ TrackBJJ</a>
   <div id="user-pill" class="user-pill" onclick="event.stopPropagation();_onPillClick()">
     <span id="pill-label">Sign In</span>
     <span class="pill-plan free" id="pill-plan-badge" style="display:none">FREE</span>
   </div>
-</div>
-
-<!-- ── Language picker (fixed bottom-right) ── -->
-<div class="lang-picker" onclick="event.stopPropagation()" style="position:fixed;bottom:20px;right:20px;z-index:100">
-  <button class="lang-btn" onclick="toggleLangDropdown()" id="lang-btn">🌐 <span id="lang-current">EN</span></button>
-  <div class="lang-dropdown" id="lang-dropdown" style="top:auto;bottom:calc(100% + 6px)"></div>
 </div>
 
 <!-- ── Screen 0: Landing ── -->
@@ -2702,6 +2700,18 @@ let _session = null;
 let _userPlan = 'free';
 let _userEmail = '';
 let _pendingCheckoutPlan = null;
+
+function _openSiblingWithSession(baseUrl, e) {
+  if (e) e.preventDefault();
+  if (_session?.access_token && _session?.refresh_token) {
+    const hash = '#access_token=' + encodeURIComponent(_session.access_token)
+      + '&refresh_token=' + encodeURIComponent(_session.refresh_token)
+      + '&token_type=bearer&type=oauth';
+    window.open(baseUrl + '/' + hash, '_blank');
+  } else {
+    window.open(baseUrl, '_blank');
+  }
+}
 
 async function initAuth() {
   if (typeof window.supabase === 'undefined') return;
