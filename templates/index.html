@@ -2713,6 +2713,36 @@ function _openSiblingWithSession(baseUrl, e) {
   }
 }
 
+function _fetchSiblingSession() {
+  const SIBLING = window.location.hostname.includes('trackbjj')
+    ? 'https://www.mattrack.net'
+    : 'https://www.trackbjj.net';
+  return new Promise(function(resolve) {
+    var iframe = document.createElement('iframe');
+    iframe.src = SIBLING + '/auth-relay';
+    iframe.style.cssText = 'position:fixed;width:1px;height:1px;top:-9999px;left:-9999px;border:none;opacity:0;';
+    document.body.appendChild(iframe);
+    var done = false;
+    function finish(val) {
+      if (done) return; done = true;
+      window.removeEventListener('message', handler);
+      clearTimeout(timer);
+      try { document.body.removeChild(iframe); } catch(e) {}
+      resolve(val);
+    }
+    function handler(e) {
+      var allowed = [SIBLING, SIBLING.replace('www.', '')];
+      if (!allowed.includes(e.origin)) return;
+      if (e.data && e.data.type === 'session-response') finish(e.data.session);
+    }
+    var timer = setTimeout(function() { console.warn('[auth] sibling relay timeout'); finish(null); }, 4000);
+    window.addEventListener('message', handler);
+    iframe.onload = function() {
+      iframe.contentWindow.postMessage({type: 'get-session'}, SIBLING);
+    };
+  });
+}
+
 async function initAuth() {
   if (typeof window.supabase === 'undefined') return;
   _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
@@ -2788,6 +2818,21 @@ async function initAuth() {
       } catch(e) {
         console.error('[auth] explicit refresh threw:', e.message);
       }
+    }
+  }
+
+  // If still no session, try to inherit from the sibling domain via hidden iframe relay
+  if (!session && !_isOAuthRedirect) {
+    console.log('[auth] no local session — trying sibling domain relay…');
+    const sib = await _fetchSiblingSession();
+    if (sib?.access_token && sib?.refresh_token) {
+      console.log('[auth] got sibling session for', sib.user?.email || '?');
+      const { data: sd, error: se } = await _sb.auth.setSession({
+        access_token: sib.access_token,
+        refresh_token: sib.refresh_token,
+      });
+      if (sd?.session) { session = sd.session; _freshLogin = true; }
+      else console.warn('[auth] sibling setSession failed:', se?.message);
     }
   }
 

@@ -17,7 +17,7 @@ import datetime
 # (auth.py, payments.py, etc.) are importable regardless of CWD.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, jsonify, render_template, request, g, redirect, url_for, flash
+from flask import Flask, jsonify, render_template, request, g, redirect, url_for, flash, make_response
 from dotenv import load_dotenv
 from supabase import create_client
 from auth import get_user_from_token, get_user_plan, is_plan_active
@@ -761,6 +761,28 @@ def api_stats():
     rows = res.data or []
     sc_athletes = next((r.get("smoothcomp_athletes") for r in rows if r.get("source") == "smoothcomp"), 0)
     return jsonify({"by_source": rows, "smoothcomp_athletes": sc_athletes})
+
+
+@app.route("/auth-relay")
+def auth_relay():
+    """Cross-domain session relay — lets sibling sites inherit the session via iframe postMessage."""
+    html = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head><body>
+<script>
+var TRUSTED=['https://www.mattrack.net','https://mattrack.net','https://www.trackbjj.net','https://trackbjj.net'];
+var SB_KEY='sb-kzqvfuqxtbrhlgphyntb-auth-token';
+window.addEventListener('message',function(e){
+  if(!TRUSTED.includes(e.origin))return;
+  if(e.data&&e.data.type==='get-session'){
+    try{var d=localStorage.getItem(SB_KEY);e.source.postMessage({type:'session-response',session:d?JSON.parse(d):null},e.origin);}
+    catch(err){e.source.postMessage({type:'session-response',session:null},e.origin);}
+  }
+});
+</script></body></html>"""
+    resp = make_response(html)
+    resp.headers["Content-Type"] = "text/html"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 if __name__ == "__main__":

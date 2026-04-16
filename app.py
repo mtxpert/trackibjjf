@@ -7,7 +7,7 @@ Scalable architecture:
   - Server-Sent Events: pushes bracket changes to all connected clients simultaneously
 """
 
-from flask import Flask, render_template, jsonify, request, Response, send_file
+from flask import Flask, render_template, jsonify, request, Response, send_file, make_response
 import os, threading, time, json, queue, re, logging, requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
@@ -1638,6 +1638,28 @@ def serve_sw():
     resp = send_file("static/sw.js", mimetype="application/javascript")
     resp.headers["Service-Worker-Allowed"] = "/"
     resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/auth-relay")
+def auth_relay():
+    """Cross-domain session relay — lets sibling sites inherit the session via iframe postMessage."""
+    html = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head><body>
+<script>
+var TRUSTED=['https://www.mattrack.net','https://mattrack.net','https://www.trackbjj.net','https://trackbjj.net'];
+var SB_KEY='sb-kzqvfuqxtbrhlgphyntb-auth-token';
+window.addEventListener('message',function(e){
+  if(!TRUSTED.includes(e.origin))return;
+  if(e.data&&e.data.type==='get-session'){
+    try{var d=localStorage.getItem(SB_KEY);e.source.postMessage({type:'session-response',session:d?JSON.parse(d):null},e.origin);}
+    catch(err){e.source.postMessage({type:'session-response',session:null},e.origin);}
+  }
+});
+</script></body></html>"""
+    resp = make_response(html)
+    resp.headers["Content-Type"] = "text/html"
+    resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
