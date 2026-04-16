@@ -1,0 +1,96 @@
+{% extends "trackbjj/base.html" %}
+{% block title %}Search — TrackBJJ{% endblock %}
+
+{% block head %}
+<style>
+  h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 1.5rem; color: var(--text); }
+  .search-bar { display: flex; gap: .5rem; margin-bottom: 2rem; max-width: 500px; }
+  .search-bar input {
+    flex: 1; background: var(--card); border: 1px solid var(--border);
+    color: var(--text); padding: .6rem .9rem; border-radius: 6px; font-size: .95rem; outline: none;
+  }
+  .search-bar input:focus { border-color: var(--accent); }
+  .search-bar button {
+    background: var(--accent); color: #000; border: none; padding: .6rem 1.2rem;
+    border-radius: 6px; font-weight: 700; cursor: pointer;
+  }
+
+  .results-list { display: flex; flex-direction: column; gap: .75rem; }
+  .athlete-row {
+    display: flex; align-items: center; gap: 1rem; padding: .9rem 1.1rem;
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    text-decoration: none; color: inherit; transition: border-color .15s;
+  }
+  .athlete-row:hover { border-color: var(--accent); }
+  .athlete-row .name { font-weight: 700; font-size: 1rem; flex: 1; }
+  .athlete-row .team { color: var(--muted); font-size: .85rem; }
+  .athlete-row .meta { font-size: .8rem; color: var(--muted); text-align: right; white-space: nowrap; }
+  .athlete-row .events-badge {
+    background: var(--gray); color: var(--accent); font-size: .75rem; font-weight: 700;
+    padding: .2rem .6rem; border-radius: 4px;
+  }
+  .no-results { color: var(--muted); text-align: center; padding: 3rem 0; }
+  .loading { color: var(--muted); text-align: center; padding: 2rem 0; }
+  .sources { display: flex; gap: .3rem; flex-wrap: wrap; }
+  .src-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="search-bar">
+    <input id="q" type="text" value="{{ q }}" placeholder="Search athletes…" autocomplete="off">
+    <button onclick="doSearch()">Search</button>
+  </div>
+
+  <div id="out">
+    {% if q %}<div class="loading">Searching…</div>{% endif %}
+  </div>
+</div>
+
+<script>
+const SOURCE_COLORS = {
+  smoothcomp: '#7b8cde', ibjjf: '#4caf50', naga: '#e57373',
+  compnet: '#4dd0e1', adcc: '#ffb74d', ajp: '#66bb6a',
+  uaejjf: '#ef9a9a', sjjif: '#ffcc80',
+};
+
+function renderResults(rows) {
+  const out = document.getElementById('out');
+  if (!rows.length) {
+    out.innerHTML = '<div class="no-results">No athletes found.</div>';
+    return;
+  }
+  out.innerHTML = '<div class="results-list">' + rows.map(r => {
+    const srcs = (r.sources || '').split(',').filter(Boolean);
+    const dots = srcs.map(s => `<span class="src-dot" style="background:${SOURCE_COLORS[s]||'#888'}" title="${s}"></span>`).join('');
+    const last = r.last_seen ? r.last_seen.slice(0,10) : '';
+    return `<a class="athlete-row" href="{{ trackbjj_url }}/athlete/${r.athlete_id}">
+      <div class="name">${r.display_name || r.athlete_id}</div>
+      <div class="team">${r.team || ''}</div>
+      <div class="sources">${dots}</div>
+      <div class="meta">
+        <span class="events-badge">${r.event_count} events</span><br>
+        <span style="margin-top:.2rem;display:inline-block">${last}</span>
+      </div>
+    </a>`;
+  }).join('') + '</div>';
+}
+
+function doSearch() {
+  const q = document.getElementById('q').value.trim();
+  if (!q) return;
+  history.replaceState({}, '', '{{ trackbjj_url }}/search?q=' + encodeURIComponent(q));
+  document.getElementById('out').innerHTML = '<div class="loading">Searching…</div>';
+  fetch('{{ trackbjj_url }}/api/search?q=' + encodeURIComponent(q))
+    .then(r => r.json())
+    .then(renderResults)
+    .catch(() => { document.getElementById('out').innerHTML = '<div class="no-results">Error fetching results.</div>'; });
+}
+
+document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+// Auto-run if q param present
+{% if q %}doSearch();{% endif %}
+</script>
+{% endblock %}

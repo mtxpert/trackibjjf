@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: trackbjj
+    runtime: python
+    buildCommand: pip install -r requirements_trackbjj.txt
+    startCommand: gunicorn app_trackbjj:app --workers 2 --bind 0.0.0.0:$PORT --timeout 60
+    envVars:
+      - key: LOCAL_PG_DSN
+        sync: false   # set in dashboard: postgresql://postgres:[password]@db.kzqvfuqxtbrhlgphyntb.supabase.co:5432/postgres
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PORT
+        value: 10000
+    healthCheckPath: /
+    autoDeploy: true

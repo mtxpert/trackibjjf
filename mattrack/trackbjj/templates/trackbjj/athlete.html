@@ -1,0 +1,289 @@
+{% extends "trackbjj/base.html" %}
+{% block title %}{{ display_name }} — TrackBJJ{% endblock %}
+
+{% block head %}
+<style>
+  .profile-header {
+    display: flex; align-items: flex-start; gap: 1.5rem; margin-bottom: 2rem;
+    padding: 1.5rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .avatar {
+    width: 72px; height: 72px; border-radius: 50%; background: var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.8rem; font-weight: 800; color: var(--accent); flex-shrink: 0;
+  }
+  .profile-info h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: .3rem; }
+  .profile-info .team-line { color: var(--muted); font-size: .9rem; margin-bottom: .6rem; }
+  .name-variants { font-size: .75rem; color: var(--muted); }
+
+  .stats-strip { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1.2rem; text-align: center; }
+  .stat-card .num { font-size: 1.5rem; font-weight: 800; }
+  .stat-card .lbl { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+
+  .rankings-strip { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; }
+  .rank-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: .8rem 1rem; text-align: center; min-width: 110px; flex: 1;
+  }
+  .rank-card .rank-num { font-size: 1.6rem; font-weight: 800; color: var(--accent); }
+  .rank-card .rank-num.unranked { font-size: 1.1rem; color: var(--muted); }
+  .rank-card .rank-lbl { font-size: .65rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: .15rem; }
+  .rank-card .rank-sub { font-size: .6rem; color: var(--muted); margin-top: .1rem; }
+  .gold-num { color: var(--gold); }
+  .silver-num { color: var(--silver); }
+  .bronze-num { color: var(--bronze); }
+  .cyan-num { color: var(--accent); }
+  .place-col { font-weight: 700; min-width: 28px; }
+
+  .ibjjf-note {
+    background: rgba(76,175,80,.08); border: 1px solid rgba(76,175,80,.2); border-radius: 6px;
+    padding: .7rem 1rem; font-size: .8rem; color: #4caf50; margin-bottom: 1rem;
+  }
+  .ibjjf-verified {
+    background: rgba(33,150,243,.10); border: 1px solid rgba(33,150,243,.3); border-radius: 6px;
+    padding: .6rem 1rem; font-size: .8rem; color: #64b5f6; margin-bottom: 1rem;
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .verified-badge { color: #4caf50; font-weight: 700; }
+  .uid-badge {
+    font-size: .7rem; color: var(--muted); font-family: monospace;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: .1rem .4rem;
+  }
+  .social-icons { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; flex-wrap: wrap; }
+  .social-icon {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: .75rem; color: var(--muted); text-decoration: none;
+    border: 1px solid var(--border); border-radius: 4px; padding: .2rem .5rem;
+    transition: color .15s, border-color .15s;
+  }
+  .social-icon:hover { color: var(--accent); border-color: var(--accent); }
+  .social-icon svg { flex-shrink: 0; }
+  .ig-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+    margin-bottom: 2rem;
+  }
+  .ig-grid a { display: block; aspect-ratio: 1; overflow: hidden; border-radius: 4px; background: var(--border); }
+  .ig-grid img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity .15s; }
+  .ig-grid a:hover img { opacity: .8; }
+  .section-actions {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem;
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+
+  <div class="profile-header">
+    <div class="avatar">{{ display_name[0].upper() if display_name else '?' }}</div>
+    <div class="profile-info">
+      <h1>{{ display_name }}</h1>
+      <div class="team-line">{{ team }}</div>
+      {%- set weight_display = ibjjf_rank_data.weight_display if ibjjf_rank_data else None -%}
+      {%- set div_belt = (ibjjf_match.belt|title ~ ' Belt') if ibjjf_match and ibjjf_match.belt else (fp.belt|title ~ ' Belt' if fp.belt else None) -%}
+      {%- set div_age = (ibjjf_match.age_division|replace('master','Master ')|title) if ibjjf_match and ibjjf_match.age_division else (fp.age if fp.age else None) -%}
+      {%- set div_gender = ((ibjjf_match.gender or fp.gender or '')|title) -%}
+      {% if div_belt or div_age or weight_display %}
+      <div style="font-size:.82rem;color:var(--muted);margin-bottom:.4rem">
+        {%- if div_belt %}{{ div_belt }}{% endif %}
+        {%- if div_age %} · {{ div_age }}{% endif %}
+        {%- if div_gender %} · {{ div_gender }}{% endif %}
+        {%- if weight_display %} · {{ weight_display }}{% endif %}
+      </div>
+      {% endif %}
+      {% if names|length > 1 %}
+      <div class="name-variants">Also known as: {{ names | join(', ') }}</div>
+      {% endif %}
+      {% if social_links %}
+      <div class="social-icons">
+        {% if social_links.instagram_handle %}
+        <a class="social-icon" href="https://instagram.com/{{ social_links.instagram_handle }}" target="_blank" rel="noopener">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+          @{{ social_links.instagram_handle }}
+        </a>
+        {% endif %}
+        {% if social_links.facebook_url %}
+        <a class="social-icon" href="{{ social_links.facebook_url if social_links.facebook_url.startswith('http') else 'https://facebook.com/' + social_links.facebook_url }}" target="_blank" rel="noopener">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+          Facebook
+        </a>
+        {% endif %}
+        {% if social_links.youtube_url %}
+        <a class="social-icon" href="{{ social_links.youtube_url }}" target="_blank" rel="noopener">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.495 6.205a3.007 3.007 0 0 0-2.088-2.088c-1.87-.501-9.396-.501-9.396-.501s-7.507-.01-9.396.501A3.007 3.007 0 0 0 .527 6.205a31.247 31.247 0 0 0-.522 5.805 31.247 31.247 0 0 0 .522 5.783 3.007 3.007 0 0 0 2.088 2.088c1.868.502 9.396.502 9.396.502s7.506 0 9.396-.502a3.007 3.007 0 0 0 2.088-2.088 31.247 31.247 0 0 0 .5-5.783 31.247 31.247 0 0 0-.5-5.805zM9.609 15.601V8.408l6.264 3.602z"/></svg>
+          YouTube
+        </a>
+        {% endif %}
+        <a class="social-icon" href="{{ url_for('social_links', sc_uid=sc_uid) }}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Edit
+        </a>
+      </div>
+      {% else %}
+      <div style="margin-top:.4rem">
+        <a href="{{ url_for('social_links', sc_uid=sc_uid) }}" style="font-size:.75rem;color:var(--muted);text-decoration:none;border:1px solid var(--border);border-radius:3px;padding:.15rem .5rem">+ Add social links</a>
+      </div>
+      {% endif %}
+
+      <div style="margin-top:.5rem;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+        <span class="uid-badge">SC #{{ sc_uid }}</span>
+        <a href="{{ mattrack_url }}" target="_blank" style="font-size:.75rem;color:var(--accent);text-decoration:none;">↗ MatTrack Live</a>
+        {% if sc_verified %}
+        <span style="font-size:.75rem;color:#4caf50">✓ SC Verified</span>
+        {% else %}
+        <a href="{{ url_for('verify_sc', sc_uid=sc_uid) }}" style="font-size:.75rem;color:var(--muted);text-decoration:none;border:1px solid var(--border);border-radius:3px;padding:.1rem .4rem">Verify SC Profile</a>
+        {% endif %}
+        {% if ibjjf_verified %}
+        <span style="font-size:.75rem;color:#4caf50">✓ IBJJF Verified</span>
+        {% else %}
+        <a href="{{ url_for('claim_profile', sc_uid=sc_uid) }}" style="font-size:.75rem;color:var(--muted);text-decoration:none;border:1px solid var(--border);border-radius:3px;padding:.1rem .4rem">Claim IBJJF Profile</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if instagram_posts %}
+  <div style="margin-bottom:1.5rem">
+    <div class="section-actions">
+      <div class="section-title" style="margin-bottom:0">Instagram</div>
+      <a href="https://instagram.com/{{ social_links.instagram_handle or social_links.instagram_user_id }}" target="_blank" rel="noopener" style="font-size:.75rem;color:var(--accent);text-decoration:none;">View profile ↗</a>
+    </div>
+    <div class="ig-grid" style="margin-top:.6rem">
+      {% for post in instagram_posts %}
+      <a href="{{ post.permalink }}" target="_blank" rel="noopener">
+        <img
+          src="{{ post.thumbnail_url if post.media_type == 'VIDEO' and post.thumbnail_url else post.media_url }}"
+          alt="Instagram post"
+          loading="lazy"
+        >
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% elif social_links and not social_links.instagram_token %}
+  <div style="margin-bottom:1.5rem;padding:.8rem 1rem;background:var(--card);border:1px solid var(--border);border-radius:6px;font-size:.82rem;color:var(--muted);display:flex;align-items:center;justify-content:space-between">
+    <span>Show your Instagram feed on this profile</span>
+    <a href="{{ url_for('instagram_auth_start', sc_uid=sc_uid) }}" style="color:var(--accent);text-decoration:none;font-weight:600">Connect Instagram →</a>
+  </div>
+  {% endif %}
+
+  {% if stats %}
+  <div class="stats-strip">
+    <div class="stat-card"><div class="num cyan-num">{{ stats.events or 0 }}</div><div class="lbl">Events</div></div>
+    <div class="stat-card"><div class="num cyan-num">{{ stats.divisions or 0 }}</div><div class="lbl">Divisions</div></div>
+    <div class="stat-card"><div class="num gold-num">{{ stats.gold or 0 }}</div><div class="lbl">Gold</div></div>
+    <div class="stat-card"><div class="num silver-num">{{ stats.silver or 0 }}</div><div class="lbl">Silver</div></div>
+    <div class="stat-card"><div class="num bronze-num">{{ stats.bronze or 0 }}</div><div class="lbl">Bronze</div></div>
+  </div>
+  {% endif %}
+
+  {% if ibjjf_rank_data and ibjjf_match %}
+  {%- set ogi = ibjjf_rank_data.overall_gi -%}
+  {%- set oni = ibjjf_rank_data.overall_nogi -%}
+  {%- set wgi = ibjjf_rank_data.weight_gi -%}
+  {%- set wni = ibjjf_rank_data.weight_nogi -%}
+  {%- set wlabel = ibjjf_rank_data.weight_display -%}
+  {%- set rank_year = ibjjf_match.ranking_year if ibjjf_match.ranking_year else (now_year if now_year else 2026) -%}
+  <div class="section-title" style="margin-bottom:.4rem">
+    {{ rank_year - 1 }}-{{ rank_year }} IBJJF Rankings
+    <a href="https://ibjjf.com/{{ rank_year }}-athletes-ranking" target="_blank" style="font-size:.7rem;color:var(--accent);font-weight:400;margin-left:.5rem;text-decoration:none">ibjjf.com ↗</a>
+  </div>
+  <div class="rankings-strip">
+    <div class="rank-card">
+      {% if ogi.rank %}<div class="rank-num">#{{ ogi.rank }}</div>{% else %}<div class="rank-num unranked">—</div>{% endif %}
+      <div class="rank-lbl">Gi Overall</div>
+      {% if ogi.points %}<div class="rank-sub">{{ ogi.points|int }} pts</div>{% endif %}
+    </div>
+    <div class="rank-card">
+      {% if oni.rank %}<div class="rank-num">#{{ oni.rank }}</div>{% else %}<div class="rank-num unranked">—</div>{% endif %}
+      <div class="rank-lbl">No-Gi Overall</div>
+      {% if oni.points %}<div class="rank-sub">{{ oni.points|int }} pts</div>{% endif %}
+    </div>
+    <div class="rank-card">
+      {% if wgi.rank %}<div class="rank-num">#{{ wgi.rank }}</div>{% else %}<div class="rank-num unranked">—</div>{% endif %}
+      <div class="rank-lbl">Gi {{ wlabel or 'Weight' }}</div>
+      {% if wgi.points %}<div class="rank-sub">{{ wgi.points|int }} pts</div>{% endif %}
+    </div>
+    <div class="rank-card">
+      {% if wni.rank %}<div class="rank-num">#{{ wni.rank }}</div>{% else %}<div class="rank-num unranked">—</div>{% endif %}
+      <div class="rank-lbl">No-Gi {{ wlabel or 'Weight' }}</div>
+      {% if wni.points %}<div class="rank-sub">{{ wni.points|int }} pts</div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if upcoming_rows %}
+  <div class="section-title">Upcoming Registrations</div>
+  <div class="card" style="padding:0;overflow:hidden;margin-bottom:1.5rem">
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Event</th><th>Division</th><th>Team</th>
+    </tr></thead>
+    <tbody>
+    {% for r in upcoming_rows %}
+    <tr>
+      <td style="white-space:nowrap;color:var(--muted)">{{ r.event_date or '—' }}</td>
+      <td>{{ r.event_title or '—' }}</td>
+      <td style="color:var(--muted);font-size:.8rem">{{ r.division or '—' }}</td>
+      <td style="color:var(--muted);font-size:.8rem">{{ r.team or '' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  <div class="section-title">
+    Competition Results
+    <span style="font-size:.75rem;color:var(--muted);font-weight:400;margin-left:.5rem">
+      {{ sc_rows|length }} Smoothcomp{% if ibjjf_rows %} · {{ ibjjf_rows|length }} IBJJF{% if ibjjf_verified %} ✓{% else %} (fuzzy){% endif %}{% endif %}
+    </span>
+  </div>
+
+  {% if ibjjf_match %}
+  <div class="ibjjf-verified">
+    {% if ibjjf_verified %}<span class="verified-badge">✓ IBJJF ID matched</span>{% else %}<span>IBJJF ranking match</span>{% endif %}
+    {{ ibjjf_match.name }} · {{ ibjjf_match.belt or '' }} · {{ ibjjf_match.ranking_category or '' }}
+    {% if ibjjf_match.age_division %} · {{ ibjjf_match.age_division }}{% endif %}
+    · {{ ibjjf_match.points or 0 }} pts
+    {% if ibjjf_match.slug %}
+    · <a href="https://ibjjf.com/athletes/{{ ibjjf_match.slug }}" target="_blank" style="color:var(--accent)">View IBJJF Profile ↗</a>
+    {% endif %}
+  </div>
+  {% elif ibjjf_rows %}
+  <div class="ibjjf-note">IBJJF results matched by name + age group ({{ fp.age or '?' }}) — not verified.</div>
+  {% endif %}
+
+  {% if all_rows %}
+  <div class="card" style="padding:0;overflow:hidden">
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Event</th><th>Org</th><th>Division</th><th>Place</th><th>Team</th>
+    </tr></thead>
+    <tbody>
+    {% for r in all_rows %}
+    <tr>
+      <td style="white-space:nowrap;color:var(--muted)">{{ r.event_date or '—' }}</td>
+      <td>{{ r.event_title or '—' }}</td>
+      <td>
+        {% if r._source == 'smoothcomp' %}<span class="org-tag tag-sc" style="font-size:.65rem">SC</span>
+        {% elif r._source == 'ibjjf' %}<span class="org-tag tag-ibjjf" style="font-size:.65rem">IBJJF</span>
+        {% else %}<span class="org-tag" style="font-size:.65rem">{{ r._source }}</span>{% endif %}
+      </td>
+      <td style="color:var(--muted);font-size:.8rem">{{ r.division or '—' }}</td>
+      <td class="place-col {% if r.placement == 1 %}place-1{% elif r.placement == 2 %}place-2{% elif r.placement == 3 %}place-3{% endif %}">
+        {% if r.placement == 1 %}🥇{% elif r.placement == 2 %}🥈{% elif r.placement == 3 %}🥉{% else %}{{ r.placement or '—' }}{% endif %}
+      </td>
+      <td style="color:var(--muted);font-size:.8rem">{{ r.team or '' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted)">No results found.</p>
+  {% endif %}
+
+</div>
+{% endblock %}

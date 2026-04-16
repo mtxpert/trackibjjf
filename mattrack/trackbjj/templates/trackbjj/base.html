@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#c0392b">
+  <title>{% block title %}TrackBJJ{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* Exact mattrack tokens — only accent changes: red → cyan */
+    :root {
+      --bg:     #0f0f1a;
+      --card:   #1e1e30;
+      --gray:   #2d2d44;
+      --text:   #f0f0f0;
+      --muted:  #777799;
+      --border: #333355;
+      --accent: #c0392b;   /* matches mattrack red exactly */
+      --gold:   #ffd700;
+      --silver: #c0c0c0;
+      --bronze: #cd7f32;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+    }
+
+    /* Full accent-colored header — mirrors mattrack's red header exactly */
+    header {
+      background: var(--accent);
+      padding: 14px 16px 12px;
+      display: flex; align-items: center; gap: 12px;
+      position: sticky; top: 0; z-index: 50;
+      box-shadow: 0 2px 10px rgba(0,0,0,.5);
+    }
+    header .logo {
+      font-size: 1.1rem; font-weight: 700; color: #fff;
+      text-decoration: none; letter-spacing: .01em; flex: 1;
+    }
+    header .logo span { font-size: .72rem; font-weight: 400; opacity: .85; display: block; margin-top: 1px; }
+    header .sibling {
+      font-size: .75rem; color: rgba(255,255,255,.8); text-decoration: none;
+      border: 1px solid rgba(255,255,255,.35); padding: .2rem .55rem; border-radius: 4px;
+      white-space: nowrap;
+    }
+    header .sibling:hover { color: #fff; border-color: #fff; }
+    header .nav-search {
+      background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.2);
+      color: #fff; padding: .35rem .75rem; border-radius: 8px;
+      font-size: .875rem; outline: none; width: 200px;
+    }
+    header .nav-search::placeholder { color: rgba(255,255,255,.6); }
+    header .nav-search:focus { border-color: rgba(255,255,255,.6); width: 240px; transition: width .2s; }
+
+    /* Layout */
+    .container { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+
+    /* Org tags */
+    .tag {
+      display: inline-block; font-size: .65rem; padding: .15rem .5rem;
+      border-radius: 3px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    }
+    .tag-ibjjf   { background: rgba(76,175,80,.15);   color: #4caf50; }
+    .tag-sc      { background: rgba(123,140,222,.15);  color: #7b8cde; }
+    .tag-naga    { background: rgba(229,115,115,.15);  color: #e57373; }
+    .tag-compnet { background: rgba(77,208,225,.15);   color: #4dd0e1; }
+    .tag-adcc    { background: rgba(255,183,77,.15);   color: #ffb74d; }
+    .tag-ajp     { background: rgba(102,187,106,.15);  color: #66bb6a; }
+    .tag-uaejjf  { background: rgba(239,154,154,.15);  color: #ef9a9a; }
+    .tag-sjjif   { background: rgba(255,204,128,.15);  color: #ffcc80; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+    th {
+      text-align: left; color: var(--muted); font-weight: 600; font-size: .72rem;
+      text-transform: uppercase; letter-spacing: .07em;
+      padding: .5rem .6rem; border-bottom: 1px solid var(--border);
+    }
+    td { padding: .55rem .6rem; border-bottom: 1px solid var(--bg); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--gray); }
+
+    /* Section dividers */
+    .section-title {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
+      color: var(--muted); margin: 2rem 0 .75rem;
+      display: flex; align-items: center; gap: .5rem;
+    }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* Medal */
+    .place-1 { color: var(--gold);   font-weight: 700; }
+    .place-2 { color: var(--silver); font-weight: 700; }
+    .place-3 { color: var(--bronze); font-weight: 700; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+<header>
+  <a class="logo" href="{{ trackbjj_url }}">TrackBJJ<span>BJJ Athlete Repository</span></a>
+  <input class="nav-search" id="nav-search" type="text" placeholder="Search athletes…" autocomplete="off">
+  <a class="sibling" href="{{ mattrack_url }}" target="_blank">↗ MatTrack</a>
+</header>
+{% block body %}{% endblock %}
+<script>
+const navSearch = document.getElementById('nav-search');
+let _t;
+navSearch.addEventListener('input', () => {
+  clearTimeout(_t);
+  const q = navSearch.value.trim();
+  if (q.length < 2) return;
+  _t = setTimeout(() => {
+    window.location.href = '{{ trackbjj_url }}/search?q=' + encodeURIComponent(q);
+  }, 400);
+});
+navSearch.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const q = navSearch.value.trim();
+    if (q) window.location.href = '{{ trackbjj_url }}/search?q=' + encodeURIComponent(q);
+  }
+});
+</script>
+</body>
+</html>

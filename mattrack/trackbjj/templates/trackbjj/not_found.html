@@ -1,0 +1,11 @@
+{% extends "trackbjj/base.html" %}
+{% block title %}Not Found — TrackBJJ{% endblock %}
+
+{% block body %}
+<div class="container" style="text-align:center;padding-top:5rem">
+  <div style="font-size:3rem;margin-bottom:1rem">🥋</div>
+  <h1 style="color:var(--accent);margin-bottom:.5rem">Athlete Not Found</h1>
+  <p style="color:var(--muted);margin-bottom:2rem">No results found for this Smoothcomp ID.</p>
+  <a href="{{ trackbjj_url }}" style="color:var(--accent);text-decoration:none;border:1px solid var(--accent);padding:.5rem 1.2rem;border-radius:6px">← Back to Search</a>
+</div>
+{% endblock %}

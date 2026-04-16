@@ -1,0 +1,80 @@
+{% extends "trackbjj/base.html" %}
+{% block title %}TrackBJJ — BJJ Athlete Repository{% endblock %}
+
+{% block head %}
+<style>
+  .hero { text-align: center; padding: 4rem 1.5rem 2rem; }
+  .hero h1 { font-size: 2.2rem; font-weight: 800; color: var(--accent); margin-bottom: .5rem; }
+  .hero p { color: var(--muted); font-size: 1.05rem; margin-bottom: 2rem; }
+  .search-big { display: flex; gap: .5rem; max-width: 480px; margin: 0 auto; }
+  .search-big input {
+    flex: 1; background: var(--card); border: 1px solid var(--border);
+    color: var(--text); padding: .7rem 1rem; border-radius: 8px; font-size: 1rem; outline: none;
+  }
+  .search-big input:focus { border-color: var(--accent); }
+  .search-big button {
+    background: var(--accent); color: #000; border: none; padding: .7rem 1.4rem;
+    border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 1rem;
+  }
+  .search-big button:hover { opacity: .85; }
+
+  .stats-row { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin: 2.5rem auto; max-width: 700px; }
+  .stat-box { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.5rem; text-align: center; min-width: 130px; }
+  .stat-box .num { font-size: 1.8rem; font-weight: 800; color: var(--accent); }
+  .stat-box .lbl { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-top: .2rem; }
+
+  .orgs { display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; margin: 1.5rem 0 3rem; }
+  .org-tag { font-size: .75rem; padding: .25rem .7rem; border-radius: 4px; font-weight: 600; letter-spacing: .05em; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="hero">
+    <h1>TrackBJJ</h1>
+    <p>The all-time BJJ athlete repository — every result, every org, one profile.</p>
+    <div class="search-big">
+      <input id="hero-search" type="text" placeholder="Search by name…" autocomplete="off">
+      <button id="hero-btn">Search</button>
+    </div>
+  </div>
+
+  <div class="stats-row" id="stats-row">
+    <div class="stat-box"><div class="num" id="s-athletes">—</div><div class="lbl">Athletes</div></div>
+    <div class="stat-box"><div class="num" id="s-results">—</div><div class="lbl">Results</div></div>
+    <div class="stat-box"><div class="num" id="s-events">—</div><div class="lbl">Events</div></div>
+  </div>
+
+  <div class="orgs">
+    <span class="org-tag tag-ibjjf">IBJJF</span>
+    <span class="org-tag tag-sc">Smoothcomp</span>
+    <span class="org-tag tag-naga">NAGA</span>
+    <span class="org-tag tag-compnet">CompNet</span>
+    <span class="org-tag tag-adcc">ADCC</span>
+    <span class="org-tag" style="background:rgba(102,187,106,.15);color:#66bb6a;">AJP</span>
+    <span class="org-tag" style="background:rgba(239,154,154,.15);color:#ef9a9a;">UAEJJF</span>
+    <span class="org-tag" style="background:#2a2020;color:#ffcc80;">SJJIF</span>
+  </div>
+</div>
+
+<script>
+const inp = document.getElementById('hero-search');
+const btn = document.getElementById('hero-btn');
+function go() {
+  const q = inp.value.trim();
+  if (q) window.location.href = '{{ trackbjj_url }}/search?q=' + encodeURIComponent(q);
+}
+btn.addEventListener('click', go);
+inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+
+// Load stats
+fetch('{{ trackbjj_url }}/api/stats').then(r => r.json()).then(d => {
+  const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(0)+'K' : n;
+  document.getElementById('s-athletes').textContent = fmt(d.smoothcomp_athletes || 0);
+  const total = (d.by_source||[]).reduce((s,r) => s + (r.rows||0), 0);
+  document.getElementById('s-results').textContent = fmt(total);
+  // Events: sum distinct from stats not available here, show total rows as placeholder
+  document.getElementById('s-events').textContent = '18K+';
+}).catch(() => {});
+</script>
+{% endblock %}
