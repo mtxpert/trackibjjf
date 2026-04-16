@@ -253,6 +253,18 @@ async function initAuth() {
     }
   }
 
+  // If still no session, try to inherit from the sibling domain via hidden iframe relay
+  if (!session && !isOAuth) {
+    const sib = await _fetchSiblingSession();
+    if (sib?.access_token && sib?.refresh_token) {
+      const { data: sd } = await _sb.auth.setSession({
+        access_token: sib.access_token,
+        refresh_token: sib.refresh_token,
+      });
+      if (sd?.session) session = sd.session;
+    }
+  }
+
   _session = session;
   if (session) {
     _userEmail = session.user?.email || '';
@@ -455,6 +467,36 @@ function _openSiblingWithSession(baseUrl, e) {
   } else {
     window.open(baseUrl, '_blank');
   }
+}
+
+function _fetchSiblingSession() {
+  const SIBLING = window.location.hostname.includes('trackbjj')
+    ? 'https://www.mattrack.net'
+    : 'https://www.trackbjj.net';
+  return new Promise(function(resolve) {
+    var iframe = document.createElement('iframe');
+    iframe.src = SIBLING + '/auth-relay';
+    iframe.style.cssText = 'position:fixed;width:1px;height:1px;top:-9999px;left:-9999px;border:none;opacity:0;';
+    document.body.appendChild(iframe);
+    var done = false;
+    function finish(val) {
+      if (done) return; done = true;
+      window.removeEventListener('message', handler);
+      clearTimeout(timer);
+      try { document.body.removeChild(iframe); } catch(_) {}
+      resolve(val);
+    }
+    function handler(e) {
+      var allowed = [SIBLING, SIBLING.replace('www.', '')];
+      if (!allowed.includes(e.origin)) return;
+      if (e.data && e.data.type === 'session-response') finish(e.data.session);
+    }
+    var timer = setTimeout(function() { finish(null); }, 4000);
+    window.addEventListener('message', handler);
+    iframe.onload = function() {
+      iframe.contentWindow.postMessage({type: 'get-session'}, SIBLING);
+    };
+  });
 }
 
 // ── Language picker ───────────────────────────────────────────────────────────
