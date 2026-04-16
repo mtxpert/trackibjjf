@@ -3,15 +3,15 @@ ibjjf_rankings.py — Fetch IBJJF ranking positions for a specific athlete.
 
 Given a slug and division params, hits the IBJJF ranking pages to find
 the athlete's position. Results are cached in ibjjf_rankings_cache table.
+Uses Supabase client (matching mattrack.net's DB connection approach).
 """
 
 import re
 import time
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import requests
-import psycopg2.extras
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +70,6 @@ def weight_slug_from_division(division: str) -> str | None:
     if not division:
         return None
     d = division.lower()
-    # Sort by length descending so "super heavy" matches before "heavy"
     for key in sorted(WEIGHT_SLUG_MAP, key=len, reverse=True):
         if key in d:
             return WEIGHT_SLUG_MAP[key]
@@ -97,8 +96,7 @@ def fetch_rank(slug: str, belt: str, gender: str, ranking_category: str,
                name_search: str = "", year: int | None = None) -> dict:
     """
     Fetch rank for one (gi/nogi, weight) combination.
-    Uses filters[search] with the athlete's last name for accuracy —
-    the weight-specific page only shows correct weight points when filtered by name.
+    Uses filters[search] with the athlete's last name for accuracy.
     Returns {"rank": int|None, "points": float|None}.
     """
     if year is None:
@@ -114,7 +112,6 @@ def fetch_rank(slug: str, belt: str, gender: str, ranking_category: str,
     if age_division:
         params["filters[age_division]"] = age_division
     if weight:
-        # When using name search, IBJJF uses filters[weight]; without search, filters[weight_division]
         weight_key = "filters[weight]" if name_search else "filters[weight_division]"
         params[weight_key] = weight
     if name_search:
@@ -132,7 +129,6 @@ def fetch_rank(slug: str, belt: str, gender: str, ranking_category: str,
     if rank is not None:
         return {"rank": rank, "points": pts}
 
-    # Fallback: paginate if name search didn't find them (e.g. unusual name)
     for page in range(2, 25):
         p = {**params, "page": page}
         try:
@@ -151,25 +147,25 @@ def fetch_rank(slug: str, belt: str, gender: str, ranking_category: str,
     return {"rank": None, "points": None}
 
 
-def get_rankings(cur, slug: str, belt: str, gender: str,
+def get_rankings(sb, slug: str, belt: str, gender: str,
                  ranking_category: str, age_division: str | None,
                  weight: str = "", year: int | None = None,
                  cache_hours: int = 24) -> dict:
     """
-    Return all 4 ranking dicts, using DB cache (ibjjf_rankings_cache).
+    Return all 4 ranking dicts, using DB cache (ibjjf_rankings_cache via Supabase).
 
     Returns {
         "overall_gi":  {"rank": int|None, "points": float|None},
         "overall_nogi":{"rank": int|None, "points": float|None},
         "weight_gi":   {"rank": int|None, "points": float|None},
         "weight_nogi": {"rank": int|None, "points": float|None},
-        "weight_display": str,  # human-readable weight class name
+        "weight_display": str,
     }
     """
     if not slug:
         return _empty_rankings(weight)
 
-    cutoff = datetime.utcnow() - timedelta(hours=cache_hours)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=cache_hours)
     combos = [
         ("gi",   ""),
         ("nogi", ""),
@@ -182,36 +178,41 @@ def get_rankings(cur, slug: str, belt: str, gender: str,
 
     for gi_label, w in combos:
         key = f"{'overall' if not w else 'weight'}_{gi_label}"
-        cur.execute("""
-            SELECT rank_position, points, cached_at
-            FROM ibjjf_rankings_cache
-            WHERE slug=%s AND gi_nogi=%s AND weight=%s
-        """, (slug, gi_label, w or ""))
-        row = cur.fetchone()
-        if row and row["cached_at"] and row["cached_at"] > cutoff:
-            result[key] = {"rank": row["rank_position"], "points": row["points"]}
-        else:
-            needs_fetch.append((gi_label, w, key))
+        cache_res = (sb.table("ibjjf_rankings_cache")
+                       .select("rank_position,points,cached_at")
+                       .eq("slug", slug)
+                       .eq("gi_nogi", gi_label)
+                       .eq("weight", w or "")
+                       .execute())
+        row = cache_res.data[0] if cache_res.data else None
+        if row and row.get("cached_at"):
+            # Parse cached_at — Supabase returns ISO string
+            cached_str = row["cached_at"]
+            try:
+                cached_at = datetime.fromisoformat(cached_str.replace("Z", "+00:00"))
+                if cached_at.tzinfo is None:
+                    cached_at = cached_at.replace(tzinfo=timezone.utc)
+            except ValueError:
+                cached_at = None
+            if cached_at and cached_at > cutoff:
+                result[key] = {"rank": row["rank_position"], "points": row["points"]}
+                continue
+        needs_fetch.append((gi_label, w, key))
 
-    # Derive last name from slug (e.g. "michael-bambic" → "bambic") for name search
     name_search = slug.split("-")[-1].title() if slug else ""
 
     for gi_label, w, key in needs_fetch:
         data = fetch_rank(slug, belt, gender, ranking_category, age_division,
                           gi_label, w, name_search=name_search, year=year)
         result[key] = data
-        cur.execute("""
-            INSERT INTO ibjjf_rankings_cache (slug, gi_nogi, weight, rank_position, points, cached_at)
-            VALUES (%s, %s, %s, %s, %s, NOW())
-            ON CONFLICT (slug, gi_nogi, weight) DO UPDATE SET
-                rank_position = EXCLUDED.rank_position,
-                points = EXCLUDED.points,
-                cached_at = NOW()
-        """, (slug, gi_label, w or "", data["rank"], data["points"]))
-        try:
-            cur.connection.commit()
-        except Exception:
-            pass
+        sb.table("ibjjf_rankings_cache").upsert({
+            "slug":         slug,
+            "gi_nogi":      gi_label,
+            "weight":       w or "",
+            "rank_position": data["rank"],
+            "points":       data["points"],
+            "cached_at":    datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="slug,gi_nogi,weight").execute()
         time.sleep(0.4)
 
     result["weight_display"] = WEIGHT_DISPLAY.get(weight, weight.replace("-", " ").title()) if weight else None
@@ -226,19 +227,3 @@ def _empty_rankings(weight: str = "") -> dict:
         "weight_nogi":  {"rank": None, "points": None},
         "weight_display": WEIGHT_DISPLAY.get(weight, None),
     }
-
-
-def ensure_cache_table(cur):
-    """Create ibjjf_rankings_cache if it doesn't exist."""
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS ibjjf_rankings_cache (
-            slug      TEXT    NOT NULL,
-            gi_nogi   TEXT    NOT NULL,
-            weight    TEXT    NOT NULL DEFAULT '',
-            rank_position INT,
-            points    FLOAT,
-            cached_at TIMESTAMP DEFAULT NOW(),
-            PRIMARY KEY (slug, gi_nogi, weight)
-        )
-    """)
-    cur.connection.commit()
