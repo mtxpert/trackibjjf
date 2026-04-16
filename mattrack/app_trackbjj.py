@@ -42,13 +42,25 @@ sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
 def _base_url(port):
-    """Return base URL using the same host the browser used."""
+    """Return base URL. Uses HTTPS and no port when behind Render/proxy."""
     host = request.host.split(":")[0]
+    if request.headers.get("X-Forwarded-Proto") == "https":
+        return f"https://{host}"
     return f"http://{host}:{port}"
+
+
+MATTRACK_PROD_URL  = os.environ.get("MATTRACK_URL",  "https://www.mattrack.net")
+TRACKBJJ_PROD_URL  = os.environ.get("TRACKBJJ_URL",  "https://www.trackbjj.net")
 
 
 @app.context_processor
 def inject_urls():
+    # In production (HTTPS), use canonical domain URLs
+    if request.headers.get("X-Forwarded-Proto") == "https":
+        return dict(
+            trackbjj_url=TRACKBJJ_PROD_URL,
+            mattrack_url=MATTRACK_PROD_URL,
+        )
     return dict(
         trackbjj_url=_base_url(TRACKBJJ_PORT),
         mattrack_url=_base_url(MATTRACK_PORT),
