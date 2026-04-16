@@ -1325,26 +1325,14 @@ def api_auth_me():
     if not user:
         logger.info("/api/auth/me → unauthenticated (has_token=%s)", has_token)
         return jsonify({"plan": "free", "authenticated": False})
-    plan_err = None
-    try:
-        from auth import _get_service_client
-        sc = _get_service_client()
-        if sc is None:
-            plan_err = "service_client_none"
-        else:
-            resp = sc.table("users").select("plan,sub_status").eq("id", user["sub"]).single().execute()
-            plan_err = f"data={resp.data}"
-    except Exception as e:
-        plan_err = str(e)
     plan = get_user_plan(user["sub"])
-    logger.info("/api/auth/me → user=%s plan=%s err=%s", user.get("email", user["sub"][:8]), plan, plan_err)
+    logger.info("/api/auth/me → user=%s plan=%s", user.get("email", user["sub"][:8]), plan)
     return jsonify({
         "authenticated": True,
         "user_id": user["sub"],
         "email": user.get("email", ""),
         "plan": plan,
         "active": is_plan_active(user["sub"]),
-        "_debug_plan": plan_err,
     })
 
 

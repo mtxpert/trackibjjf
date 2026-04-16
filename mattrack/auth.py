@@ -136,8 +136,26 @@ def get_user_from_token(request) -> dict | None:
         return None
 
 
+def _query_user_row(user_id: str, fields: str = "plan,sub_status") -> dict:
+    """
+    Fetch one row from public.users via the Supabase REST API directly.
+    Uses requests with a 5-second timeout to avoid hanging the web worker.
+    Falls back to empty dict on any error.
+    """
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/users?select={fields}&id=eq.{user_id}&limit=1"
+        r = requests.get(url, headers={
+            "apikey": SUPABASE_SERVICE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        }, timeout=5)
+        rows = r.json()
+        return rows[0] if rows else {}
+    except Exception as e:
+        log.warning("_query_user_row error for user_id=%s: %s", user_id, e)
+        return {}
+
+
 def get_user_plan(user_id: str) -> str:
-    log.info("get_user_plan looking up user_id=%s", user_id)
     """
     Look up the plan for *user_id* in ``public.users``.
 
@@ -146,23 +164,10 @@ def get_user_plan(user_id: str) -> str:
     unexpected schema, etc.).
     """
     try:
-        client = _get_service_client()
-        if client is None:
-            return "free"
-
-        response = (
-            client.table("users")
-            .select("plan")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        )
-
-        data = response.data
+        data = _query_user_row(user_id, "plan")
         if not data:
             log.warning("get_user_plan: no row found for user_id=%s", user_id)
             return "free"
-
         plan = data.get("plan", "free")
         log.info("get_user_plan: user_id=%s plan=%s", user_id, plan)
         return plan if plan in ("free", "individual", "gym", "affiliate") else "free"
@@ -179,22 +184,9 @@ def is_plan_active(user_id: str) -> bool:
     Returns ``False`` on any error or if the user is on the free tier.
     """
     try:
-        client = _get_service_client()
-        if client is None:
-            return False
-
-        response = (
-            client.table("users")
-            .select("plan, sub_status")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        )
-
-        data = response.data
+        data = _query_user_row(user_id, "plan,sub_status")
         if not data:
             return False
-
         return data.get("plan", "free") != "free" and data.get("sub_status") == "active"
     except Exception:
         return False
