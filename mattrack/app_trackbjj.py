@@ -357,6 +357,40 @@ def athlete_profile(sc_uid):
         except Exception as e:
             log.warning("Failed to fetch IBJJF rankings for sc_uid=%s: %s", sc_uid, e)
 
+    # Match history (adjacent-placement inference)
+    match_history = []
+    try:
+        if ibjjf_match and ibjjf_match.get("ibjjf_id"):
+            mh_res = sb.rpc("get_match_history_ibjjf",
+                            {"p_ibjjf_athlete_id": str(ibjjf_match["ibjjf_id"])}).execute()
+            match_history.extend(mh_res.data or [])
+        sc_mh_res = sb.rpc("get_match_history_sc", {"p_sc_uid": str(sc_uid)}).execute()
+        match_history.extend(sc_mh_res.data or [])
+    except Exception as e:
+        log.warning("Failed to fetch match history for sc_uid=%s: %s", sc_uid, e)
+
+    # Deduplicate by (event_date, division, opponent_name) and sort newest first
+    seen = set()
+    unique_matches = []
+    for m in sorted(match_history, key=lambda x: (x.get("event_date") or ""), reverse=True):
+        key = (m.get("event_date"), m.get("division"), (m.get("opponent_name") or "").lower())
+        if key not in seen:
+            seen.add(key)
+            unique_matches.append(m)
+    match_history = unique_matches
+
+    # Head-to-head aggregates vs repeat opponents
+    h2h: dict[str, dict] = {}
+    for m in match_history:
+        opp = m.get("opponent_name") or "Unknown"
+        if opp not in h2h:
+            h2h[opp] = {"wins": 0, "losses": 0, "opponent_sc_uid": m.get("opponent_sc_uid")}
+        if m["result"] == "Win":
+            h2h[opp]["wins"] += 1
+        else:
+            h2h[opp]["losses"] += 1
+    h2h_repeat = {k: v for k, v in h2h.items() if v["wins"] + v["losses"] > 1}
+
     return render_template("trackbjj/athlete.html",
                            sc_uid=sc_uid,
                            display_name=display_name,
@@ -374,6 +408,8 @@ def athlete_profile(sc_uid):
                            sc_verified=sc_verified,
                            instagram_posts=instagram_posts,
                            ibjjf_rank_data=ibjjf_rank_data,
+                           match_history=match_history,
+                           h2h_repeat=h2h_repeat,
                            now_year=datetime.date.today().year)
 
 
