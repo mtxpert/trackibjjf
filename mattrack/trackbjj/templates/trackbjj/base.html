@@ -49,17 +49,8 @@
       white-space: nowrap;
     }
     header .sibling:hover { color: #fff; border-color: #fff; }
-    header .nav-search {
-      background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.2);
-      color: #fff; padding: .35rem .75rem; border-radius: 8px;
-      font-size: .875rem; outline: none; width: 200px;
-    }
-    header .nav-search::placeholder { color: rgba(255,255,255,.6); }
-    header .nav-search:focus { border-color: rgba(255,255,255,.6); width: 240px; transition: width .2s; }
-
     /* ── User pill (identical to mattrack) ── */
     .user-pill {
-      margin-left: auto;
       display: flex; align-items: center; gap: 6px;
       font-size: .75rem; background: rgba(255,255,255,.18);
       padding: 5px 11px; border-radius: 20px;
@@ -180,7 +171,6 @@
 <header>
   <a class="logo" href="{{ trackbjj_url }}">TrackBJJ<span>BJJ Athlete Repository</span></a>
   <a class="sibling" href="{{ mattrack_url }}" target="_blank">↗ MatTrack</a>
-  <input class="nav-search" id="nav-search" type="text" placeholder="Search athletes…" autocomplete="off">
   <div id="user-pill" class="user-pill" onclick="authPillClick()">
     <span id="pill-label">Sign In</span>
     <span class="pill-plan free" id="pill-plan-badge" style="display:none">FREE</span>
@@ -232,24 +222,6 @@
 {% block body %}{% endblock %}
 
 <script>
-// ── Nav search ──────────────────────────────────────────────────────────────
-const navSearch = document.getElementById('nav-search');
-let _navT;
-navSearch.addEventListener('input', () => {
-  clearTimeout(_navT);
-  const q = navSearch.value.trim();
-  if (q.length < 2) return;
-  _navT = setTimeout(() => {
-    window.location.href = '{{ trackbjj_url }}/search?q=' + encodeURIComponent(q);
-  }, 400);
-});
-navSearch.addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    const q = navSearch.value.trim();
-    if (q) window.location.href = '{{ trackbjj_url }}/search?q=' + encodeURIComponent(q);
-  }
-});
-
 // ── Auth ─────────────────────────────────────────────────────────────────────
 const _SB_URL  = 'https://kzqvfuqxtbrhlgphyntb.supabase.co';
 const _SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6cXZmdXF4dGJyaGxncGh5bnRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwMjkyNjAsImV4cCI6MjA5MTYwNTI2MH0.B5oAm1A5kNY01yU5a6KOUDHPyysrJa9-SaSyLzWv4S4';
