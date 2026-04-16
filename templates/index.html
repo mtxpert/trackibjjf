@@ -599,7 +599,9 @@
     .btn-google:active { opacity:0.85; }
     .btn-modal-close { position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer;line-height:1; }
     .modal-sheet { position:relative; }
-    .user-pill { margin-left:auto;display:flex;align-items:center;gap:6px;font-size:0.75rem;background:rgba(255,255,255,0.18);padding:5px 11px;border-radius:20px;cursor:pointer;white-space:nowrap; }
+    .sibling-link { font-size:.75rem;color:rgba(255,255,255,.8);text-decoration:none;border:1px solid rgba(255,255,255,.35);padding:.2rem .55rem;border-radius:4px;white-space:nowrap; }
+    .sibling-link:hover { color:#fff;border-color:#fff; }
+    .user-pill { display:flex;align-items:center;gap:6px;font-size:0.75rem;background:rgba(255,255,255,0.18);padding:5px 11px;border-radius:20px;cursor:pointer;white-space:nowrap; }
     .pill-plan { font-size:0.65rem;background:var(--green);color:white;padding:1px 6px;border-radius:8px;font-weight:700;text-transform:uppercase; }
     .pill-plan.free { background:var(--muted); }
     .code-input { width:100%;padding:14px;border-radius:12px;background:var(--gray);border:1px solid var(--border);color:var(--text);font-size:1.1rem;letter-spacing:3px;text-transform:uppercase;text-align:center;margin-bottom:12px; }
@@ -614,7 +616,7 @@
     .btn-copy:hover { opacity:1; }
 
     /* ── Language picker ── */
-    .lang-picker { position:relative; margin-left:auto; }
+    .lang-picker { position:relative; }
     .lang-btn {
       background: rgba(255,255,255,0.18); border: none; border-radius: 20px;
       padding: 5px 10px; font-size: 1rem; cursor: pointer; color: white;
@@ -643,18 +645,21 @@
 
 <div class="header" onclick="goHome()" style="cursor:pointer">
   <span style="font-size:1.8rem">🥋</span>
-  <div>
+  <div style="flex:1">
     <h1 id="header-title">MatTrack</h1>
     <div class="header-sub" id="header-sub" data-i18n="nav_subtitle">Live Tournament Tracker</div>
   </div>
+  <a class="sibling-link" href="https://www.trackbjj.net" target="_blank" onclick="event.stopPropagation()">↗ TrackBJJ</a>
   <div id="user-pill" class="user-pill" onclick="event.stopPropagation();_onPillClick()">
     <span id="pill-label">Sign In</span>
     <span class="pill-plan free" id="pill-plan-badge" style="display:none">FREE</span>
   </div>
-  <div class="lang-picker" onclick="event.stopPropagation()">
-    <button class="lang-btn" onclick="toggleLangDropdown()" id="lang-btn">🌐 <span id="lang-current">EN</span></button>
-    <div class="lang-dropdown" id="lang-dropdown"></div>
-  </div>
+</div>
+
+<!-- ── Language picker (fixed bottom-right) ── -->
+<div class="lang-picker" onclick="event.stopPropagation()" style="position:fixed;bottom:20px;right:20px;z-index:100">
+  <button class="lang-btn" onclick="toggleLangDropdown()" id="lang-btn">🌐 <span id="lang-current">EN</span></button>
+  <div class="lang-dropdown" id="lang-dropdown" style="top:auto;bottom:calc(100% + 6px)"></div>
 </div>
 
 <!-- ── Screen 0: Landing ── -->
