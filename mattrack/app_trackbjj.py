@@ -26,7 +26,13 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
+from jinja2 import ChoiceLoader, FileSystemLoader
 app = Flask(__name__, template_folder="trackbjj/templates", static_folder="trackbjj/static")
+# Also search templates/ (repo-relative) so {% include 'shared/header.html' %} works
+app.jinja_loader = ChoiceLoader([
+    app.jinja_loader,
+    FileSystemLoader(os.path.join(os.path.dirname(__file__), "templates")),
+])
 app.secret_key = os.environ.get("SECRET_KEY", "trackbjj-dev-secret")
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
@@ -57,13 +63,23 @@ TRACKBJJ_PROD_URL  = os.environ.get("TRACKBJJ_URL",  "https://www.trackbjj.net")
 def inject_urls():
     # In production (HTTPS), use canonical domain URLs
     if request.headers.get("X-Forwarded-Proto") == "https":
-        return dict(
-            trackbjj_url=TRACKBJJ_PROD_URL,
-            mattrack_url=MATTRACK_PROD_URL,
-        )
+        site_url    = TRACKBJJ_PROD_URL
+        sibling_url = MATTRACK_PROD_URL
+    else:
+        site_url    = _base_url(TRACKBJJ_PORT)
+        sibling_url = _base_url(MATTRACK_PORT)
     return dict(
-        trackbjj_url=_base_url(TRACKBJJ_PORT),
-        mattrack_url=_base_url(MATTRACK_PORT),
+        trackbjj_url=site_url,
+        mattrack_url=sibling_url,
+        # shared/header.html variables
+        site_name="TrackBJJ",
+        site_subtitle="BJJ Athlete Repository",
+        site_url=site_url,
+        site_icon="",
+        sibling_name="MatTrack",
+        sibling_url=sibling_url,
+        header_home_fn="",
+        show_lang=True,
     )
 
 

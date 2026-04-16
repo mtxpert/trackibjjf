@@ -1,0 +1,3591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>MatTrack</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MatTrack">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --red: #c0392b;
+      --bg: #0f0f1a;
+      --card: #1e1e30;
+      --gray: #2d2d44;
+      --text: #f0f0f0;
+      --muted: #777799;
+      --border: #333355;
+      --green: #27ae60;
+      --yellow: #f39c12;
+      --blue: #2980b9;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── Landing screen ── */
+    .landing-hero {
+      text-align: center;
+      padding: 48px 24px 32px;
+    }
+    .landing-logo { font-size: 4rem; margin-bottom: 12px; }
+    .landing-title { font-size: 2rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px; }
+    .landing-sub { font-size: 1rem; color: var(--muted); line-height: 1.5; max-width: 320px; margin: 0 auto 32px; }
+    .landing-cta {
+      display: block; width: 100%; max-width: 320px; margin: 0 auto 12px;
+      padding: 16px; border-radius: 14px; background: var(--red);
+      color: white; border: none; font-size: 1.05rem; font-weight: 700;
+      cursor: pointer; letter-spacing: 0.3px;
+    }
+    .landing-cta-sub {
+      text-align: center; font-size: 0.78rem; color: var(--muted); margin-bottom: 40px;
+    }
+    .landing-section { padding: 0 20px 40px; max-width: 480px; margin: 0 auto; }
+    .landing-section-title {
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.5px;
+      color: var(--muted); margin-bottom: 16px; text-align: center;
+    }
+    .how-steps { display: flex; flex-direction: column; gap: 14px; }
+    .how-step {
+      display: flex; align-items: flex-start; gap: 14px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px;
+    }
+    .how-step-num {
+      width: 32px; height: 32px; border-radius: 50%; background: var(--red);
+      color: white; font-weight: 800; font-size: 0.9rem;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .how-step-text h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 3px; }
+    .how-step-text p { font-size: 0.82rem; color: var(--muted); line-height: 1.4; }
+    .pricing-cards { display: flex; flex-direction: column; gap: 12px; }
+    .pricing-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 18px 20px;
+      position: relative;
+    }
+    .pricing-card.featured { border-color: var(--red); }
+    .pricing-badge {
+      position: absolute; top: -10px; left: 20px;
+      background: var(--red); color: white;
+      font-size: 0.65rem; font-weight: 700; letter-spacing: 0.8px;
+      text-transform: uppercase; padding: 3px 10px; border-radius: 20px;
+    }
+    .pricing-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+    .pricing-name { font-size: 1rem; font-weight: 700; }
+    .pricing-amount { text-align: right; }
+    .pricing-amount strong { font-size: 1.4rem; font-weight: 800; }
+    .pricing-amount span { font-size: 0.78rem; color: var(--muted); }
+    .pricing-features { font-size: 0.82rem; color: var(--muted); line-height: 1.8; }
+    .pricing-free-note { text-align: center; font-size: 0.78rem; color: var(--muted); margin-top: 10px; }
+    .pricing-card[onclick]:active { opacity: 0.8; transform: scale(0.98); }
+    .pricing-card[onclick] { transition: transform 0.1s, opacity 0.1s; }
+    .landing-footer { text-align: center; padding: 24px 20px 40px; font-size: 0.75rem; color: var(--muted); }
+
+    /* ── Header ── */
+    .header {
+      background: var(--red);
+      padding: 14px 16px 12px;
+      display: flex; align-items: center; gap: 10px;
+      position: sticky; top: 0; z-index: 50;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    }
+    .header h1 { font-size: 1.1rem; font-weight: 700; }
+    .header-sub { font-size: 0.72rem; opacity: 0.85; margin-top: 1px; }
+
+    /* ── Screens ── */
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* ── Step 1 & 2 layout ── */
+    .setup-wrap {
+      padding: 14px 16px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    .setup-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .setup-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+    }
+
+    /* ── Find Tournaments button ── */
+    .find-local-btn {
+      width:100%; padding:13px; border-radius:12px; border:none;
+      background:var(--red); color:#fff; font-size:0.95rem; font-weight:700;
+      cursor:pointer; margin-bottom:14px; display:flex; align-items:center;
+      justify-content:center; gap:8px;
+    }
+    .find-local-btn:active { opacity:0.85; }
+
+    /* ── Org grid ── */
+    .org-grid {
+      display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px;
+    }
+    .org-tile {
+      display:flex; flex-direction:column; align-items:center; gap:5px;
+      padding:9px 4px 8px; border-radius:12px;
+      border:1.5px solid var(--border); background:var(--card); color:var(--muted);
+      cursor:pointer; font-size:0.63rem; font-weight:700; letter-spacing:0.3px;
+      text-transform:uppercase; transition:border-color 0.12s, color 0.12s, background 0.12s;
+    }
+    .org-tile:active { background:var(--gray); }
+    .org-tile.active { border-color:var(--red); color:var(--text); background:rgba(192,57,43,0.1); }
+    .org-tile-img {
+      width:36px; height:36px; border-radius:50%; object-fit:cover;
+    }
+    .org-tile-img[src$=".svg"] { object-fit:contain; background:#1a1a1a; padding:3px; }
+    .org-tile-icon {
+      width:36px; height:36px; border-radius:50%; background:var(--gray);
+      display:flex; align-items:center; justify-content:center; font-size:1.2rem;
+    }
+
+    /* Source tabs — kept for session-restore compat but hidden */
+    .source-tabs { display:none; }
+    .source-tab {}
+
+    /* Tournament list */
+    .tourney-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+    .tourney-source-badge {
+      display: inline-block; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.8px;
+      text-transform: uppercase; padding: 2px 7px; border-radius: 6px; margin-right: 6px;
+      background: rgba(192,57,43,0.15); color: var(--red); vertical-align: middle;
+    }
+    .tourney-source-badge.badge-naga {
+      background: rgba(41,128,185,0.15); color: #5dade2;
+    }
+    .tourney-source-badge.badge-compnet {
+      background: rgba(39,174,96,0.15); color: #58d68d;
+    }
+    .tourney-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .tourney-item:active { background: var(--gray); }
+    .tourney-item.selected { border-color: var(--red); background: rgba(192,57,43,0.12); }
+    .tourney-item.past { opacity: 0.75; }
+    .tourney-item.no-brackets { cursor: default; opacity: 0.6; }
+    .tourney-item.no-brackets:active { background: var(--card); }
+    .tourney-no-brackets-badge {
+      display: inline-block; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.4px;
+      text-transform: uppercase; padding: 2px 7px; border-radius: 5px;
+      background: rgba(255,255,255,0.06); color: var(--muted); margin-top: 5px;
+    }
+    .tourney-name { font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
+    .tourney-meta { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
+    .tourney-section-label {
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+      color: var(--muted); padding: 4px 2px 2px; margin-top: 8px;
+    }
+    .tourney-section-label:first-child { margin-top: 0; }
+
+    /* ── Browse mode ── */
+    #browse-container { display:none; }
+    .browse-search {
+      width:100%; padding:10px 14px; background:var(--gray); border:1px solid var(--border);
+      border-radius:10px; color:var(--text); font-size:0.9rem; outline:none; margin-bottom:10px;
+    }
+    .browse-org-grid {
+      display:grid; grid-template-columns:repeat(4,1fr); gap:7px; margin-bottom:12px;
+    }
+    .browse-org-pill {
+      display:flex; flex-direction:column; align-items:center; gap:5px;
+      padding:8px 4px 7px; border-radius:12px;
+      border:1.5px solid var(--border); background:var(--card); color:var(--muted);
+      cursor:pointer; font-size:0.65rem; font-weight:700; letter-spacing:0.3px;
+      text-transform:uppercase; transition:border-color 0.12s, color 0.12s;
+    }
+    .browse-org-pill.active { border-color:var(--red); color:var(--text); background:rgba(192,57,43,0.1); }
+    .browse-org-pill-img {
+      width:34px; height:34px; border-radius:50%; object-fit:cover; flex-shrink:0;
+    }
+    .browse-org-pill-img[src$=".svg"] { object-fit:contain; background:#1a1a1a; padding:3px; }
+    .browse-org-pill-icon {
+      width:34px; height:34px; border-radius:50%; background:var(--gray);
+      display:flex; align-items:center; justify-content:center; font-size:1.1rem;
+    }
+    .browse-date-row {
+      display:flex; gap:7px; overflow-x:auto; padding-bottom:6px; margin-bottom:10px;
+      scrollbar-width:none;
+    }
+    .browse-date-row::-webkit-scrollbar { display:none; }
+    .browse-date-chip {
+      padding:5px 12px; border-radius:20px; border:1.5px solid var(--border);
+      background:var(--card); color:var(--muted); cursor:pointer;
+      font-size:0.72rem; font-weight:600; white-space:nowrap; flex-shrink:0;
+    }
+    .browse-date-chip.active { border-color:var(--red); color:var(--text); background:rgba(192,57,43,0.1); }
+    .browse-card {
+      display:flex; gap:10px; background:var(--card); border:1px solid var(--border);
+      border-radius:12px; padding:10px 12px; margin-bottom:8px;
+      text-decoration:none; color:inherit; cursor:pointer;
+    }
+    .browse-card:active { background:var(--gray); }
+    .browse-thumb {
+      width:44px; height:44px; border-radius:8px; object-fit:cover; flex-shrink:0; background:var(--gray);
+    }
+    .browse-thumb[src$=".svg"] { object-fit:contain; background:#1a1a1a; padding:5px; }
+    .browse-thumb-ph {
+      width:44px; height:44px; border-radius:8px; flex-shrink:0; background:var(--gray);
+      display:flex; align-items:center; justify-content:center; font-size:1.2rem;
+    }
+    .browse-body { flex:1; min-width:0; }
+    .browse-name { font-size:0.88rem; font-weight:600; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .browse-meta { font-size:0.72rem; color:var(--muted); margin-top:3px; }
+    .browse-badge {
+      font-size:0.6rem; font-weight:700; letter-spacing:0.4px; text-transform:uppercase;
+      padding:2px 6px; border-radius:5px; display:inline-block; margin-right:4px;
+    }
+    #browse-list { margin-bottom:20px; }
+
+    /* ── Find Local modal ── */
+    #local-modal { display:none; }
+    #local-modal.open { display:flex; }
+    .local-sheet-title { font-size:1.1rem; font-weight:800; margin-bottom:4px; }
+    .local-sheet-sub { font-size:0.82rem; color:var(--muted); margin-bottom:18px; line-height:1.4; }
+    .local-loc-btn {
+      width:100%; padding:13px; border-radius:12px; border:2px solid var(--border);
+      background:var(--card); color:var(--text); font-size:0.9rem; font-weight:600;
+      cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px;
+    }
+    .local-loc-btn:active { background:var(--gray); }
+    .local-loc-btn.located { border-color:var(--green); color:var(--green); }
+    .local-or { text-align:center; color:var(--muted); font-size:0.78rem; margin:8px 0; }
+    .local-city-input {
+      width:100%; padding:12px 14px; background:var(--gray); border:1.5px solid var(--border);
+      border-radius:10px; color:var(--text); font-size:0.9rem; outline:none; margin-bottom:14px;
+    }
+    .local-city-input:focus { border-color:var(--red); }
+    .local-row { display:flex; gap:8px; margin-bottom:14px; }
+    .local-select {
+      flex:1; padding:10px; background:var(--gray); border:1.5px solid var(--border);
+      border-radius:10px; color:var(--text); font-size:0.85rem; outline:none; cursor:pointer;
+    }
+    .local-search-btn {
+      width:100%; padding:14px; border-radius:12px; border:none;
+      background:var(--red); color:#fff; font-size:0.95rem; font-weight:700; cursor:pointer;
+    }
+    .local-search-btn:active { opacity:0.85; }
+
+    /* School input */
+    .mode-btn {
+      flex: 1; padding: 10px; border-radius: 10px; font-size: 0.9rem; font-weight: 600;
+      border: 2px solid var(--border); background: var(--card); color: var(--muted); cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .mode-btn--active { border-color: var(--red); color: var(--text); background: rgba(192,57,43,0.12); }
+    .school-input-wrap { position: relative; margin-bottom: 10px; }
+    .school-input-wrap input {
+      width: 100%; padding: 14px 16px; border-radius: 12px;
+      border: 2px solid var(--border); background: var(--card);
+      color: var(--text); font-size: 1rem; outline: none;
+    }
+    .school-input-wrap input:focus { border-color: var(--red); }
+
+    /* ── Persistent filter list ── */
+    #item-list {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow-y: auto;
+      max-height: calc(100vh - 250px);
+      background: var(--card);
+    }
+    .list-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 13px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+    .list-item:last-child { border-bottom: none; }
+    .list-item:active, .list-item:hover { background: var(--gray); }
+    .list-item-name { font-size: 0.92rem; font-weight: 600; flex: 1; min-width: 0; }
+    .list-item-name mark { background: none; color: var(--red); font-weight: 800; }
+    .list-item-meta { font-size: 0.75rem; color: var(--muted); flex-shrink: 0; margin-left: 10px; text-align: right; }
+    .list-item--added { opacity: 0.5; }
+    /* Athlete-mode pick rows (same style as screen-pick) */
+    .ath-pick-row {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 13px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color 0.15s, background 0.15s;
+      margin-bottom: 6px;
+    }
+    .ath-pick-row.selected {
+      border-color: var(--red);
+      background: rgba(192,57,43,0.1);
+    }
+    .ath-pick-check {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid var(--muted);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: 0.75rem;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .ath-pick-row.selected .ath-pick-check {
+      background: var(--red); border-color: var(--red); color: white;
+      box-shadow: 0 0 0 3px rgba(192,57,43,0.25);
+    }
+    #ath-watch-top, #ath-watch-bottom {
+      display: none;
+      width: 100%; padding: 13px; border-radius: 12px;
+      background: var(--red); color: white; border: none;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+    }
+    #ath-watch-top { margin-bottom: 10px; }
+    #ath-watch-bottom { margin-top: 10px; }
+
+    .btn-primary {
+      width: 100%; padding: 15px; border-radius: 12px;
+      background: var(--red); color: white; border: none;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+      letter-spacing: 0.3px;
+    }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Progress screen ── */
+    .progress-wrap { padding: 40px 24px; text-align: center; }
+    .progress-wrap h2 { font-size: 1.2rem; margin-bottom: 8px; }
+    .progress-label { font-size: 0.82rem; color: var(--muted); margin-bottom: 20px; min-height: 20px; }
+    .progress-bar { height: 6px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--red); border-radius: 4px; transition: width 0.4s ease; }
+    .progress-count { font-size: 0.78rem; color: var(--muted); margin-top: 10px; }
+    .spinner {
+      width: 40px; height: 40px; border: 3px solid var(--border);
+      border-top-color: var(--red); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Results screen ── */
+    .results-header {
+      background: var(--gray);
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 60px; z-index: 40;
+    }
+    .results-meta {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 10px;
+    }
+    .results-meta span { font-size: 0.85rem; }
+    .results-meta .back-btn {
+      background: none; border: none; color: var(--muted);
+      font-size: 0.82rem; cursor: pointer; padding: 4px 8px;
+      border: 1px solid var(--border); border-radius: 6px;
+    }
+    .search-input {
+      width: 100%; padding: 10px 14px; border-radius: 24px;
+      border: 1px solid var(--border); background: var(--card);
+      color: var(--text); font-size: 0.95rem; outline: none;
+    }
+    .search-input:focus { border-color: var(--red); }
+
+    .athletes-list { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+    /* ── Athlete card ── */
+    .athlete-card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 14px 16px;
+      border-left: 4px solid var(--border);
+    }
+    .athlete-card.done      { opacity: 0.55; border-left-color: var(--green); }
+    .athlete-card.placed    { border-left-color: #f1c40f; }
+    .athlete-card.eliminated-card { opacity: 0.55; border-left-color: #c0392b; }
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+    .athlete-name { font-size: 1rem; font-weight: 700; line-height: 1.2; }
+    .athlete-div {
+      font-size: 0.72rem; color: var(--muted); margin-top: 3px;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .belt-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .belt-white  { background: #ddd; }
+    .belt-blue   { background: #2980b9; }
+    .belt-purple { background: #8e44ad; }
+    .belt-brown  { background: #7b4b28; }
+    .belt-black  { background: #222; border: 1px solid #666; }
+
+    /* ── Fight info boxes ── */
+    .fight-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .info-box {
+      flex: 1; background: var(--gray); border-radius: 8px;
+      padding: 8px 10px; text-align: center;
+    }
+    .info-box.mat-box { flex: 0 0 72px; }
+    .info-box.fight-box { flex: 0 0 72px; background: rgba(192,57,43,0.15); }
+    .info-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 3px; }
+    .info-val { font-size: 1.5rem; font-weight: 800; line-height: 1; }
+    .info-val.tbd { font-size: 0.8rem; color: var(--muted); font-weight: 400; }
+    .info-val.time-val { font-size: 0.95rem; font-weight: 700; }
+    .fight-box .info-val { color: var(--red); }
+
+    /* ── Status row ── */
+    .status-row { display: flex; }
+    .stop-btn {
+      flex: 1; padding: 8px 6px; border-radius: 8px; border: none;
+      font-size: 0.78rem; font-weight: 600; cursor: pointer;
+      background: var(--gray); color: var(--muted);
+    }
+    .stop-btn:hover { background: rgba(192,57,43,0.25); color: #e74c3c; }
+
+    /* ── Medal / result row ── */
+    .result-row {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--gray); border-radius: 8px;
+      padding: 10px 14px; margin-bottom: 12px;
+    }
+    .medal-icon { font-size: 1.8rem; line-height: 1; }
+    .medal-label { font-size: 1rem; font-weight: 700; }
+    .medal-sub   { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+
+    /* ── Empty / error states ── */
+    .state-msg { text-align: center; padding: 50px 20px; color: var(--muted); }
+    .state-msg .icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .state-msg h3 { font-size: 1rem; color: var(--text); margin-bottom: 6px; }
+    .state-msg p { font-size: 0.85rem; }
+
+    /* ── Pick footer ── */
+    #pick-footer {
+      position: sticky;
+      bottom: 0;
+      background: var(--bg);
+      padding: 12px 16px 28px;
+      border-top: 1px solid var(--border);
+    }
+    #watch-btn {
+      width: 100%; padding: 15px; border-radius: 12px;
+      background: var(--red); color: white; border: none;
+      font-size: 1rem; font-weight: 700; cursor: pointer;
+    }
+    #watch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Selectable athlete row (pick screen) ── */
+    .pick-row {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .pick-row.selected {
+      border-color: var(--red);
+      background: rgba(192,57,43,0.1);
+    }
+    .pick-check {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid var(--muted);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: 0.75rem;
+      transition: background 0.15s, border-color 0.15s;
+      background: transparent;
+    }
+    .pick-row.selected .pick-check {
+      background: var(--red); border-color: var(--red); color: white;
+      box-shadow: 0 0 0 3px rgba(192,57,43,0.25);
+    }
+    #pick-top-bar {
+      display: none;
+      padding: 8px 16px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    #pick-top-bar.visible { display: block; }
+    #watch-btn-top {
+      width: 100%; padding: 12px; border-radius: 10px;
+      background: var(--red); color: white; border: none;
+      font-size: 0.95rem; font-weight: 700; cursor: pointer;
+    }
+    .pick-info { flex: 1; min-width: 0; }
+    .pick-name { font-size: 0.95rem; font-weight: 700; }
+    .pick-div  { font-size: 0.75rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pick-status { flex-shrink: 0; text-align: right; font-size: 0.75rem; line-height: 1.3; }
+    .pick-status.ps-fight { color: var(--green); font-weight: 600; }
+    .pick-status.ps-progress { color: var(--yellow); }
+    .pick-status.ps-medal { font-size: 1.1rem; }
+    .pick-status.ps-elim { color: var(--muted); font-size: 0.72rem; }
+
+    /* ── Eliminated badge ── */
+    .elim-badge {
+      display: inline-block;
+      background: rgba(192,57,43,0.2);
+      color: #e74c3c;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      vertical-align: middle;
+      margin-left: 6px;
+    }
+
+    /* ── Athlete name link ── */
+    .athlete-name-link {
+      color: inherit;
+      text-decoration: none;
+      border-bottom: 1px dotted var(--muted);
+    }
+    .athlete-name-link:active { color: var(--red); }
+
+    /* ── Changes banner ── */
+    #changes-banner {
+      margin: 8px 16px 0;
+      background: rgba(39,174,96,0.1);
+      border: 1px solid rgba(39,174,96,0.35);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 0.82rem;
+    }
+    .change-item {
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(39,174,96,0.15);
+      line-height: 1.4;
+    }
+    .change-item:last-child { border-bottom: none; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #333; color: white; padding: 9px 18px; border-radius: 20px;
+      font-size: 0.82rem; z-index: 999; opacity: 0; transition: opacity 0.25s;
+      pointer-events: none; white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── Auth / Paywall modals ── */
+    .modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;display:none;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom); }
+    .modal-overlay.open { display:flex; }
+    .modal-sheet { background:var(--card);border-radius:20px 20px 0 0;padding:28px 20px 40px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto; }
+    .modal-title { font-size:1.2rem;font-weight:800;margin-bottom:6px; }
+    .modal-sub { font-size:0.85rem;color:var(--muted);margin-bottom:20px;line-height:1.5; }
+    .plan-card { background:var(--gray);border-radius:12px;padding:16px;margin-bottom:10px;border:2px solid transparent;cursor:pointer;transition:border-color 0.15s; }
+    .plan-card:hover,.plan-card.featured { border-color:var(--red); }
+    .plan-price { font-size:1.4rem;font-weight:800;display:inline; }
+    .plan-period { font-size:0.8rem;color:var(--muted); }
+    .plan-name { font-size:0.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px; }
+    .plan-features { font-size:0.8rem;color:var(--muted);margin-top:6px;line-height:1.7; }
+    .btn-google { width:100%;padding:14px;border-radius:12px;background:white;color:#222;border:none;font-size:0.95rem;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px; }
+    .btn-google:active { opacity:0.85; }
+    .btn-modal-close { position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer;line-height:1; }
+    .modal-sheet { position:relative; }
+    {# sibling-link, user-pill, pill-plan, lang-picker, modals → shared/header.html #}
+    .code-input { width:100%;padding:14px;border-radius:12px;background:var(--gray);border:1px solid var(--border);color:var(--text);font-size:1.1rem;letter-spacing:3px;text-transform:uppercase;text-align:center;margin-bottom:12px; }
+    .code-input:focus { outline:none;border-color:var(--red); }
+    .code-row { display:flex;align-items:center;gap:10px;background:var(--gray);border-radius:10px;padding:10px 14px; }
+    .code-row .code-val { flex:1;font-family:monospace;font-size:1rem;letter-spacing:2px;font-weight:600; }
+    .code-row .code-status { font-size:0.72rem;padding:2px 8px;border-radius:8px;font-weight:600;white-space:nowrap; }
+    .code-row .code-status.available { background:rgba(39,174,96,0.2);color:#27ae60; }
+    .code-row .code-status.redeemed { background:var(--border);color:var(--muted); }
+    .code-row .code-redeemed-by { font-size:0.72rem;color:var(--muted);flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .btn-copy { background:none;border:none;cursor:pointer;font-size:1rem;opacity:0.6;padding:2px 4px; }
+    .btn-copy:hover { opacity:1; }
+
+  </style>
+</head>
+<body>
+
+{% set include_modals = false %}
+{% set include_js = false %}
+{% include 'shared/header.html' %}
+
+<!-- ── Screen 0: Landing ── -->
+<div class="screen" id="screen-landing">
+
+  <div class="landing-hero">
+    <div class="landing-logo">🥋</div>
+    <h1 class="landing-title">MatTrack</h1>
+    <p class="landing-sub" id="landing-sub">Live bracket tracking for BJJ tournaments. Know the moment your athlete steps on the mat.</p>
+    <button class="landing-cta" id="landing-cta-btn" onclick="startApp()">Start Tracking Free</button>
+    <div class="landing-cta-sub" id="landing-cta-sub">No account required to try · 1 athlete free</div>
+  </div>
+
+  <div class="landing-section">
+    <div class="landing-section-title" id="how-title">How it works</div>
+    <div class="how-steps">
+      <div class="how-step">
+        <div class="how-step-num">1</div>
+        <div class="how-step-text">
+          <h3 id="step1-title">Pick your tournament</h3>
+          <p id="step1-desc">Select from all upcoming and live BJJ competitions.</p>
+        </div>
+      </div>
+      <div class="how-step">
+        <div class="how-step-num">2</div>
+        <div class="how-step-text">
+          <h3 id="step2-title">Search your team or athlete</h3>
+          <p id="step2-desc">Type your school name or search any athlete by name.</p>
+        </div>
+      </div>
+      <div class="how-step">
+        <div class="how-step-num">3</div>
+        <div class="how-step-text">
+          <h3 id="step3-title">Watch live</h3>
+          <p id="step3-desc">Get real-time mat assignments, fight times, and results as they happen.</p>
+        </div>
+      </div>
+      <div class="how-step">
+        <div class="how-step-num">4</div>
+        <div class="how-step-text">
+          <h3 id="step4-title">Get fight alerts</h3>
+          <p id="step4-desc">Enable push notifications and get buzzed the moment your athlete is called to the mat — even with your phone in your pocket.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="landing-section">
+    <div class="landing-section-title" id="plans-title">Plans</div>
+    <div class="pricing-cards">
+
+      <div class="pricing-card">
+        <div class="pricing-card-header">
+          <div class="pricing-name" id="plan-name-free">Free</div>
+          <div class="pricing-amount"><strong>$0</strong></div>
+        </div>
+        <div class="pricing-features">✓ Track 1 athlete<br>✓ All tournaments<br>✓ Live updates</div>
+      </div>
+
+      <div class="pricing-card featured" onclick="landingCheckout('individual')" style="cursor:pointer">
+        <div class="pricing-badge" id="plan-badge-popular">Most Popular</div>
+        <div class="pricing-card-header">
+          <div class="pricing-name" id="plan-name-individual">Individual Coach</div>
+          <div class="pricing-amount"><strong>$2.99</strong><span>/mo</span></div>
+        </div>
+        <div class="pricing-features">✓ Unlimited athletes<br>✓ All tournaments<br>✓ Live bracket updates</div>
+      </div>
+
+      <div class="pricing-card" onclick="landingCheckout('gym')" style="cursor:pointer">
+        <div class="pricing-card-header">
+          <div class="pricing-name" id="plan-name-gym">Gym Pack</div>
+          <div class="pricing-amount"><strong>$19.99</strong><span>/mo</span></div>
+        </div>
+        <div class="pricing-features">✓ 10 coach accounts<br>✓ Unlimited athletes each<br>✓ Access codes for your team</div>
+      </div>
+
+      <div class="pricing-card" onclick="landingCheckout('affiliate')" style="cursor:pointer">
+        <div class="pricing-card-header">
+          <div class="pricing-name" id="plan-name-affiliate">Affiliate Pack</div>
+          <div class="pricing-amount"><strong>$49.99</strong><span>/mo</span></div>
+        </div>
+        <div class="pricing-features">✓ 30 coach accounts<br>✓ Unlimited athletes each<br>✓ Branded for your school</div>
+      </div>
+
+    </div>
+    <div class="pricing-free-note" id="pricing-free-note">All plans include a free trial · Cancel anytime</div>
+    <div style="text-align:center;margin-top:16px">
+      <button class="btn btn-secondary" onclick="showModal('modal-redeem')" id="landing-redeem-link" style="font-size:0.9rem;padding:10px 24px">Have a gym code? Redeem it here</button>
+    </div>
+  </div>
+
+  <div class="landing-footer">
+    © 2026 Olympic Network Services LLC · mattrack.net
+  </div>
+
+</div>
+
+<!-- ── Screen 1: Pick Tournament ── -->
+<div class="screen active" id="screen-tournament">
+  <div class="setup-wrap">
+    <div class="setup-title" data-i18n="select_tournament">Select Tournament</div>
+
+    <!-- Find Local Tournaments button -->
+    <button class="find-local-btn" onclick="openLocalModal()">
+      📍 Find Tournaments Near Me
+    </button>
+
+    <!-- Org grid -->
+    <div class="org-grid" id="org-grid"></div>
+
+    <!-- Upcoming / Past toggle (shown for bracket-tracking orgs) -->
+    <div id="tourney-era-toggle" style="display:none;gap:6px;margin-bottom:10px">
+      <button id="era-upcoming" onclick="setTourneyEra('upcoming')"
+        style="flex:1;padding:9px;border-radius:10px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:var(--red);color:white">
+        Upcoming
+      </button>
+      <button id="era-past" onclick="setTourneyEra('past')"
+        style="flex:1;padding:9px;border-radius:10px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:var(--gray);color:var(--text)">
+        Past Results
+      </button>
+    </div>
+
+    <!-- Bracket-tracking tournament list (IBJJF / NAGA / CompNet) -->
+    <div id="tourney-loading" class="state-msg" style="display:none">
+      <div class="spinner"></div>
+      <span>Loading tournaments…</span>
+    </div>
+    <div id="tourney-list" class="tourney-list" style="display:none"></div>
+
+    <!-- Browse list (all other orgs + independent) -->
+    <div id="browse-container" style="display:none">
+      <input class="browse-search" id="browse-search" type="search"
+        placeholder="Search tournaments, cities…" oninput="onBrowseSearch()">
+      <div class="browse-date-row">
+        <button class="browse-date-chip active" data-days="30" onclick="setBrowseDate(30,this)">Next 30 days</button>
+        <button class="browse-date-chip" data-days="90" onclick="setBrowseDate(90,this)">3 months</button>
+        <button class="browse-date-chip" data-days="365" onclick="setBrowseDate(365,this)">This year</button>
+        <button class="browse-date-chip" data-days="0" onclick="setBrowseDate(0,this)">All upcoming</button>
+      </div>
+      <div id="browse-list"></div>
+    </div>
+
+    <!-- Hidden source-tab stubs for session-restore compat -->
+    <div class="source-tabs">
+      <button class="source-tab" id="src-ibjjf"></button>
+      <button class="source-tab" id="src-naga"></button>
+      <button class="source-tab" id="src-compnet"></button>
+      <button class="source-tab" id="src-browse"></button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Find Local Modal ── -->
+<div class="modal-overlay" id="local-modal" onclick="if(event.target===this)closeLocalModal()">
+  <div class="modal-sheet">
+    <button class="btn-modal-close" onclick="closeLocalModal()">✕</button>
+    <div class="local-sheet-title">📍 Find Tournaments Near You</div>
+    <div class="local-sheet-sub">Use your location or enter a city to find upcoming events nearby.</div>
+
+    <button class="local-loc-btn" id="local-gps-btn" onclick="useMyLocation()">
+      <span>📡</span> Use My Location
+    </button>
+    <div class="local-or">— or enter city —</div>
+    <input class="local-city-input" id="local-city-input" type="text"
+           placeholder="e.g. Atlanta, GA" autocomplete="off"
+           onkeydown="if(event.key==='Enter')runLocalSearch()">
+
+    <div class="local-row">
+      <select class="local-select" id="local-dist">
+        <option value="25">Within 25 mi</option>
+        <option value="50" selected>Within 50 mi</option>
+        <option value="100">Within 100 mi</option>
+        <option value="250">Within 250 mi</option>
+        <option value="500">Within 500 mi</option>
+      </select>
+      <select class="local-select" id="local-days">
+        <option value="30" selected>Next 30 days</option>
+        <option value="60">Next 60 days</option>
+        <option value="90">Next 3 months</option>
+        <option value="180">Next 6 months</option>
+        <option value="0">All upcoming</option>
+      </select>
+    </div>
+
+    <div id="local-status" style="font-size:0.8rem;color:var(--muted);margin-bottom:10px;min-height:18px"></div>
+    <button class="local-search-btn" onclick="runLocalSearch()">Search</button>
+  </div>
+</div>
+
+<!-- ── Screen 2: Enter School ── -->
+<div class="screen" id="screen-school">
+  <div class="setup-wrap">
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button id="mode-team" class="mode-btn mode-btn--active" onclick="setSearchMode('team')" data-i18n="mode_team">Team</button>
+      <button id="mode-athlete" class="mode-btn" onclick="setSearchMode('athlete')" data-i18n="mode_athlete">Athlete</button>
+    </div>
+    <div style="font-size:0.75rem;color:var(--muted);margin-bottom:8px" id="school-tourney-name"></div>
+    <div class="school-input-wrap" style="display:flex;gap:8px">
+      <input type="text" id="school-input" value=""
+        placeholder="Filter teams…"
+        autocomplete="off" spellcheck="false"
+        oninput="onSchoolInput()"
+        onkeydown="if(event.key==='Enter'&&_isNagaMode())nagaSearch()">
+      <button id="naga-search-btn" onclick="nagaSearch()"
+        style="display:none;padding:10px 16px;background:var(--red);color:white;border:none;border-radius:10px;font-weight:700;cursor:pointer;white-space:nowrap">
+        Search
+      </button>
+    </div>
+    <div id="cache-status" style="margin:0 0 8px;font-size:0.78rem;color:var(--muted);min-height:18px"></div>
+    <button id="ath-watch-top" onclick="startAthleteQueueSearch()"></button>
+    <div id="school-select-all-bar" style="display:none;margin-bottom:8px">
+      <button id="school-select-all-btn" onclick="schoolSelectAll()"
+        style="width:100%;padding:10px;background:var(--gray);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:0.85rem;font-weight:600;cursor:pointer">
+        Select All
+      </button>
+    </div>
+    <div id="item-list"></div>
+    <button id="ath-watch-bottom" onclick="startAthleteQueueSearch()"></button>
+    <div style="margin-top: 12px; text-align: center;">
+      <button onclick="showScreen('screen-tournament')" style="background:none;border:none;color:var(--muted);font-size:0.82rem;cursor:pointer">
+        ← Change Tournament
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Screen 3: Progress ── -->
+<div class="screen" id="screen-progress">
+  <div class="progress-wrap">
+    <div class="spinner"></div>
+    <h2>Searching brackets...</h2>
+    <div class="progress-label" id="progress-cat">Loading divisions...</div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+    <div class="progress-count" id="progress-count"></div>
+  </div>
+</div>
+
+<!-- ── Screen 4: Pick who to watch ── -->
+<div class="screen" id="screen-pick">
+  <div class="results-header">
+    <div class="results-meta">
+      <span id="pick-count">Tap athletes to watch</span>
+      <div style="display:flex;gap:6px">
+        <button class="back-btn" onclick="showScreen('screen-school')">← Back</button>
+      </div>
+    </div>
+    <input class="search-input" type="text" id="pick-search"
+      placeholder="Filter by name..." oninput="filterPick()"
+      autocomplete="off">
+  </div>
+  <!-- Select All bar — always visible, red; switches to Watch once athletes selected -->
+  <div style="padding:8px 16px;background:var(--bg);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5">
+    <button id="select-all-btn" onclick="toggleSelectAll()"
+      style="width:100%;padding:14px;border-radius:12px;background:var(--red);color:white;border:none;font-size:1rem;font-weight:700;cursor:pointer">
+      Select All
+    </button>
+  </div>
+  <div id="pick-top-bar">
+    <button id="watch-btn-top" onclick="goWatch()">Watch Selected →</button>
+  </div>
+  <div id="pick-list" class="athletes-list"></div>
+  <div id="pick-footer">
+    <button id="watch-btn" onclick="goWatch()">Watch Selected →</button>
+  </div>
+</div>
+
+<!-- ── Screen 5: Watch view ── -->
+<div class="screen" id="screen-watch">
+  <div class="results-header">
+    <div class="results-meta">
+      <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">
+        <span id="watch-tourney-name" style="font-size:0.82rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></span>
+        <span id="watch-context" style="font-size:0.72rem;color:var(--muted)"></span>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <span id="refresh-countdown" style="font-size:0.72rem;color:var(--muted)"></span>
+        <button id="refresh-btn" onclick="manualRefresh()" class="back-btn">⟳ Refresh</button>
+        <button class="back-btn" onclick="showScreen('screen-pick')">← Edit</button>
+      </div>
+    </div>
+    <input class="search-input" type="text" id="watch-search"
+      placeholder="Search athletes..." oninput="renderWatch()"
+      autocomplete="off">
+  </div>
+  <!-- Copy + filter bar — shown when results are final -->
+  <div id="share-results-bar" style="display:none;padding:10px 16px 4px">
+    <button id="share-results-btn" onclick="shareResults()"
+      style="width:100%;padding:14px;background:var(--green);color:white;border:none;border-radius:12px;font-size:0.95rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px">
+      📋 Copy Results for Social Media
+    </button>
+    <div style="display:flex;gap:8px">
+      <button id="watch-filter-all" onclick="setWatchFilter('all')"
+        style="flex:1;padding:9px;border-radius:10px;border:none;font-size:0.82rem;font-weight:600;cursor:pointer;background:var(--red);color:white">
+        All Athletes
+      </button>
+      <button id="watch-filter-placing" onclick="setWatchFilter('placing')"
+        style="flex:1;padding:9px;border-radius:10px;border:none;font-size:0.82rem;font-weight:600;cursor:pointer;background:var(--gray);color:var(--text)">
+        Placing Only
+      </button>
+    </div>
+  </div>
+  <div id="changes-banner" style="display:none"></div>
+  <div id="watch-list" class="athletes-list"></div>
+</div>
+
+  <!-- ── Paywall modal ── -->
+  <div class="modal-overlay" id="modal-paywall">
+    <div class="modal-sheet">
+      <button class="btn-modal-close" onclick="closeModal('modal-paywall')">✕</button>
+      <div class="modal-title">Upgrade MatTrack</div>
+      <div class="modal-sub">Free plan: track 1 athlete per session.<br>Upgrade to watch your whole team.</div>
+
+      <div class="plan-card featured" onclick="startCheckout('individual')">
+        <div class="plan-name">Individual Coach</div>
+        <span class="plan-price">$2.99</span><span class="plan-period">/month</span>
+        <div class="plan-features">✓ Unlimited athletes<br>✓ All tournaments<br>✓ Live bracket updates</div>
+      </div>
+
+      <div class="plan-card" onclick="startCheckout('gym')">
+        <div class="plan-name">Gym Pack</div>
+        <span class="plan-price">$19.99</span><span class="plan-period">/month</span>
+        <div class="plan-features">✓ 10 coach accounts<br>✓ Unlimited athletes each<br>✓ Manage your team's access</div>
+      </div>
+
+      <div class="plan-card" onclick="startCheckout('affiliate')">
+        <div class="plan-name">Affiliate Pack</div>
+        <span class="plan-price">$49.99</span><span class="plan-period">/month</span>
+        <div class="plan-features">✓ 30 coach accounts<br>✓ Branded school page<br>✓ Share with parents</div>
+      </div>
+
+      <div id="paywall-auth-section">
+        <button class="btn-google" onclick="signInWithGoogle()">
+          <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+          Sign in with Google to upgrade
+        </button>
+        <div style="text-align:center;margin-top:8px">
+          <a href="#" onclick="showModal('modal-redeem');closeModal('modal-paywall');return false" style="color:var(--muted);font-size:0.82rem">Have a gym code? Redeem it here</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Code redemption modal ── -->
+  <div class="modal-overlay" id="modal-redeem">
+    <div class="modal-sheet">
+      <button class="btn-modal-close" onclick="closeModal('modal-redeem')">✕</button>
+      <div class="modal-title">Redeem Gym Code</div>
+      <div class="modal-sub">Enter the access code from your gym or coach.</div>
+      <input class="code-input" id="redeem-code-input" type="text" maxlength="12" placeholder="TRACK-XXXX"
+             oninput="this.value=this.value.toUpperCase()">
+      <button class="btn btn-primary" style="width:100%" onclick="redeemCode()">Redeem Code</button>
+      <div id="redeem-error" style="color:#e74c3c;font-size:0.82rem;margin-top:8px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- ── Login modal ── -->
+  <div class="modal-overlay" id="modal-login">
+    <div class="modal-sheet">
+      <button class="btn-modal-close" onclick="closeModal('modal-login')">✕</button>
+      <div class="modal-title">Sign In to MatTrack</div>
+      <div style="color:var(--muted);font-size:0.85rem;margin-bottom:20px;text-align:center">Track unlimited athletes, save your setup</div>
+      <button class="btn-google" onclick="signInWithGoogle()">
+        <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+        Continue with Google
+      </button>
+      <div style="display:flex;align-items:center;gap:10px;margin:14px 0">
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span style="color:var(--muted);font-size:0.78rem">or</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+      <input id="login-email-input" type="email" placeholder="your@email.com"
+        style="width:100%;padding:12px 14px;border-radius:12px;background:var(--gray);border:1px solid var(--border);color:var(--text);font-size:0.95rem;box-sizing:border-box;margin-bottom:10px"
+        onkeydown="if(event.key==='Enter')sendMagicLink()">
+      <button class="btn btn-primary" style="width:100%" onclick="sendMagicLink()">Send Magic Link</button>
+      <div id="login-email-status" style="text-align:center;font-size:0.82rem;margin-top:10px;min-height:18px"></div>
+      <div style="text-align:center;margin-top:8px;color:var(--muted);font-size:0.78rem">Free account · 1 athlete included</div>
+    </div>
+  </div>
+
+  <!-- ── Account modal ── -->
+  <div class="modal-overlay" id="modal-account">
+    <div class="modal-sheet">
+      <button class="btn-modal-close" onclick="closeModal('modal-account')">✕</button>
+      <div class="modal-title" id="account-email" style="font-size:0.95rem;font-weight:600;margin-bottom:4px"></div>
+      <div id="account-plan-label" style="color:var(--muted);font-size:0.82rem;margin-bottom:20px"></div>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:10px" id="account-upgrade-btn" onclick="showModal('modal-paywall');closeModal('modal-account')">Upgrade Plan</button>
+      <button class="btn" style="width:100%;margin-bottom:10px;background:var(--gray)" id="account-codes-btn" onclick="openCodesModal()">Manage Team Codes</button>
+      <button class="btn" style="width:100%;margin-bottom:10px;background:var(--gray)" id="account-billing-btn" onclick="openBillingPortal()">Manage Billing</button>
+      <button class="btn" id="account-notif-btn" style="width:100%;margin-bottom:10px;background:var(--gray)" onclick="toggleNotifications()">🔔 Enable Fight Alerts</button>
+      <button class="btn" style="width:100%;margin-bottom:10px;background:var(--gray)" onclick="showModal('modal-help');closeModal('modal-account')">❓ Help</button>
+      <button class="btn" style="width:100%;background:var(--gray);color:#e74c3c" onclick="signOut()">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- ── Help modal ── -->
+  <div class="modal-overlay" id="modal-help">
+    <div class="modal-sheet" style="max-height:80vh;overflow-y:auto">
+      <button class="btn-modal-close" onclick="closeModal('modal-help')">✕</button>
+      <div class="modal-title">Help</div>
+      <div style="font-size:0.9rem;line-height:1.6;color:var(--text)">
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">How to track athletes</h3>
+        <p style="color:var(--muted)">Pick a tournament → search your school or athlete name → select athletes to watch → tap <strong>Watch</strong>. Updates happen automatically every ~30 seconds.</p>
+
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">Fight alerts (push notifications)</h3>
+        <p style="color:var(--muted)">While watching athletes, tap <strong>Enable Alerts</strong> to get push notifications when a fight is scheduled or completed — even with the app closed. On iPhone, first tap the share button and <strong>Add to Home Screen</strong>, then enable alerts.</p>
+
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">Install as an app</h3>
+        <p style="color:var(--muted)"><strong>Android/Chrome:</strong> Tap the menu (⋮) → <em>Add to Home Screen</em> or <em>Install App</em>.<br><strong>iPhone/Safari:</strong> Tap the share button (□↑) → <em>Add to Home Screen</em>.</p>
+
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">Gym codes</h3>
+        <p style="color:var(--muted)">Gym Pack and Affiliate Pack subscribers get access codes to share with coaches. Each code unlocks the Individual plan for one person. Manage your codes via <strong>Account → Manage Team Codes</strong>.</p>
+
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">Free vs paid</h3>
+        <p style="color:var(--muted)">Free accounts can track 1 athlete. Individual Coach ($2.99/mo) removes that limit. Gym and Affiliate packs cover whole teams.</p>
+
+        <h3 style="font-size:0.95rem;margin:16px 0 6px">Contact</h3>
+        <p style="color:var(--muted)">Questions or issues? Email <a href="mailto:info@mattrack.net" style="color:var(--accent)">info@mattrack.net</a></p>
+      </div>
+    </div>
+  </div>
+
+<!-- Manage Team Codes Modal -->
+<div class="modal-overlay" id="modal-codes">
+  <div class="modal-sheet">
+    <button class="btn-modal-close" onclick="closeModal('modal-codes')">✕</button>
+    <div class="modal-title">Team Access Codes</div>
+    <div id="codes-school" style="color:var(--muted);font-size:0.82rem;margin-bottom:16px"></div>
+    <div id="codes-loading" style="text-align:center;color:var(--muted);font-size:0.85rem;padding:20px 0">Loading codes…</div>
+    <div id="codes-empty" style="display:none;text-align:center;color:var(--muted);font-size:0.85rem;padding:20px 0">No codes found. Contact support if you believe this is an error.</div>
+    <div id="codes-list" style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ─── Security helpers ──────────────────────────────────────────────────────
+const _ESC = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+function esc(str) { return String(str || '').replace(/[&<>"']/g, c => _ESC[c]); }
+
+// ─── State ─────────────────────────────────────────────────────────────────
+let allTournaments = [];
+let _tournamentSource = null;   // null | 'ibjjf' | 'naga' | 'compnet' | 'browse'
+let selectedTournament = null;
+
+// ── Browse state ──
+let _browseEvents = [];
+let _browseFetched = false;
+let _browseOrg = 'all';
+let _browseDays = 30;
+let _browseQ = '';
+
+const _BROWSE_ORGS = [
+  // Row 1 — marquee orgs
+  { key:'ibjjf',        name:'IBJJF',        icon:'🏆', color:'#e74c3c', bg:'rgba(231,76,60,0.15)',   logo:'/static/org-logos/ibjjf.svg' },
+  { key:'adcc',         name:'ADCC',         icon:'🏅', color:'#f0b429', bg:'rgba(240,180,41,0.15)',  logo:'/static/org-logos/adcc.jpg' },
+  { key:'naga',         name:'NAGA',         icon:'🏆', color:'#5dade2', bg:'rgba(93,173,226,0.15)',  logo:'/static/org-logos/naga.jpg' },
+  { key:'compnet',      name:'CompNet',      icon:'🌿', color:'#58d68d', bg:'rgba(88,214,141,0.15)',  logo:'/static/org-logos/compnet.jpg' },
+  // Row 2
+  { key:'gi',           name:'Grappling Ind',icon:'🔥', color:'#e67e22', bg:'rgba(230,126,34,0.15)',  logo:'/static/org-logos/gi.jpg' },
+  { key:'tco',          name:'Tap Cancer',   icon:'💜', color:'#a569bd', bg:'rgba(165,105,189,0.15)', logo:'/static/org-logos/tco.jpg' },
+  { key:'pbjjf',        name:'PBJJF',        icon:'🎖', color:'#c0392b', bg:'rgba(192,57,43,0.15)',   logo:'/static/org-logos/pbjjf.jpg' },
+  { key:'newbreed',     name:'New Breed',    icon:'⚡', color:'#1abc9c', bg:'rgba(26,188,156,0.15)',  logo:'/static/org-logos/newbreed.jpg' },
+  // Row 3
+  { key:'fuji',         name:'Fuji BJJ',     icon:'🔵', color:'#3498db', bg:'rgba(52,152,219,0.15)',  logo:'/static/org-logos/fuji.jpg' },
+  { key:'goodfight',    name:'Good Fight',   icon:'✊', color:'#2ecc71', bg:'rgba(46,204,113,0.15)',  logo:'/static/org-logos/goodfight.jpg' },
+  { key:'united',       name:'United',       icon:'🤝', color:'#9b59b6', bg:'rgba(155,89,182,0.15)',  logo:'/static/org-logos/united.jpg' },
+  { key:'nfc',          name:'NFC',          icon:'🎯', color:'#e74c3c', bg:'rgba(231,76,60,0.15)',   logo:'/static/org-logos/nfc.jpg' },
+  // Row 4
+  { key:'subchallenge', name:'Sub Challenge',icon:'🎯', color:'#e74c3c', bg:'rgba(231,76,60,0.15)',   logo:'/static/org-logos/subchallenge.jpg' },
+  { key:'grapplingx',   name:'Grappling X',  icon:'❌', color:'#f39c12', bg:'rgba(243,156,18,0.15)',  logo:'/static/org-logos/grapplingx.jpg' },
+  { key:'rollalot',     name:'Roll-a-Lot',   icon:'🎲', color:'#16a085', bg:'rgba(22,160,133,0.15)',  logo:'/static/org-logos/rollalot.jpg' },
+  { key:'other',        name:'Browse All',   icon:'📋', color:'#888',    bg:'rgba(136,136,136,0.1)',  logo:null },
+];
+const _BROWSE_ORG_MAP = Object.fromEntries(_BROWSE_ORGS.map(o => [o.key, o]));
+const _BROWSE_LOGOS = Object.fromEntries(_BROWSE_ORGS.filter(o=>o.logo).map(o=>[o.key,o.logo]));
+let currentJobId = null;
+let pollTimer = null;
+let allAthletes = [];      // full search results
+let selectedKeys = new Set(); // keys of athletes user wants to watch
+let _pickStatusCache = {}; // name_lower -> {placement, eliminated, fight_time, ...} for pick screens
+let watchedTournamentId = '';
+let refreshTimer = null;
+let refreshSecondsLeft = 0;
+let refreshing = false;
+let sseConnection = null;  // EventSource for bracket push updates
+let _watchFilter = 'all';  // 'all' | 'placing'
+let _pickRefreshing = false;
+
+// ─── Search mode + suggestion caches ─────────────────────────────────────────
+let _searchMode       = 'team';   // 'team' | 'athlete'
+let _teamSuggestions  = [];       // [{name, count}]
+let _athleteSugg      = [];       // [{name, team}]
+
+function setSearchMode(mode) {
+  _searchMode   = mode;
+  _athleteQueue = [];
+  _updateAthWatchBtns();
+  document.getElementById('mode-team').classList.toggle('mode-btn--active', mode === 'team');
+  document.getElementById('mode-athlete').classList.toggle('mode-btn--active', mode === 'athlete');
+  const inp = document.getElementById('school-input');
+  inp.placeholder = mode === 'team' ? 'Filter teams…' : 'Filter athletes…';
+  inp.value = '';
+  const saBar = document.getElementById('school-select-all-bar');
+  if (saBar) saBar.style.display = mode === 'athlete' ? '' : 'none';
+  renderItemList('');
+}
+
+function schoolSelectAll() {
+  // Add all currently visible athletes to the queue
+  const q = document.getElementById('school-input')?.value.trim() || '';
+  const vl = q.toLowerCase();
+  let athletes = _athleteSugg.slice();
+  if (vl) athletes = athletes.filter(a => a.name.toLowerCase().includes(vl));
+  let added = 0;
+  for (const a of athletes) {
+    const key = a.name.toLowerCase();
+    if (!_athleteQueue.find(x => x.name.toLowerCase() === key)) {
+      if (!checkAthleteLimit(_athleteQueue.length, true)) break;
+      _athleteQueue.push(a);
+      added++;
+    }
+  }
+  renderItemList(q);
+  _updateAthWatchBtns();
+  if (added) showToast(`${added} athlete${added>1?'s':''} selected`);
+}
+
+function timeSince(isoStr) {
+  if (!isoStr) return '?';
+  const mins = Math.round((Date.now() - new Date(isoStr)) / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.round(mins/60)}h ago`;
+}
+
+// ─── Screens ───────────────────────────────────────────────────────────────
+function showScreen(id, pushState = true) {
+  const prev = document.querySelector('.screen.active')?.id || 'none';
+  console.log('[nav] showScreen %s → %s (push=%s)', prev, id, pushState);
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+  if (id !== 'screen-watch') {
+    stopRefreshTimer();
+    disconnectSSE();
+  }
+  if (id === 'screen-pick') {
+    _pickRefreshing = false;  // allow re-fetch each time pick screen is entered
+    refreshPickStatuses();
+  }
+  if (pushState) {
+    history.pushState({ screen: id }, '', '');
+  }
+}
+
+function goHome() {
+  localStorage.removeItem('mattrack_session');
+  selectedTournament = null;
+  watchedTournamentId = '';
+  allAthletes = [];
+  selectedKeys = new Set();
+  _tournamentSource = null;
+  document.getElementById('src-ibjjf').classList.remove('source-tab--active');
+  document.getElementById('src-naga').classList.remove('source-tab--active');
+  document.getElementById('src-compnet').classList.remove('source-tab--active');
+  document.getElementById('src-browse').classList.remove('source-tab--active');
+  document.getElementById('browse-container').style.display = 'none';
+  document.getElementById('header-sub').textContent = 'Live Tournament Tracker';
+  showScreen('screen-tournament', false);
+  history.pushState({ screen: 'screen-tournament' }, '', '');
+  loadTournaments();
+}
+
+window.addEventListener('popstate', (e) => {
+  const screen = e.state?.screen;
+  if (!screen || screen === 'screen-tournament' || screen === 'screen-landing') {
+    // Clear session so goHome doesn't re-restore
+    localStorage.removeItem('mattrack_session');
+    selectedTournament = null; watchedTournamentId = ''; allAthletes = []; selectedKeys = new Set();
+    document.getElementById('header-sub').textContent = 'Live Tournament Tracker';
+    showScreen('screen-tournament', false);
+    if (!allTournaments.length) loadTournaments();
+    else renderTournaments();
+  } else if (screen === 'screen-school' && selectedTournament) {
+    showScreen('screen-school', false);
+  } else if (screen === 'screen-pick' && allAthletes.length) {
+    showScreen('screen-pick', false);
+    renderPick();
+  } else if (screen === 'screen-watch' && selectedKeys.size) {
+    showScreen('screen-watch', false);
+    renderWatch();
+    connectSSE(watchedTournamentId);
+    startRefreshTimer();
+    manualRefresh();
+  } else {
+    goHome();
+  }
+});
+
+// ─── Session persistence ───────────────────────────────────────────────────
+function saveSession() {
+  try {
+    const screen = document.querySelector('.screen.active')?.id || '';
+    console.log('[session] saveSession screen=%s tourney=%s athletes=%d', screen, selectedTournament?.name, allAthletes.length);
+    localStorage.setItem('mattrack_session', JSON.stringify({
+      tournament:   selectedTournament,
+      tournamentId: watchedTournamentId,
+      athletes:     allAthletes,
+      selected:     [...selectedKeys],
+      screen:       document.querySelector('.screen.active')?.id || 'screen-tournament',
+      source:       _tournamentSource,
+    }));
+  } catch(e) {}
+}
+
+function restoreSession() {
+  try {
+    const raw = localStorage.getItem('mattrack_session');
+    if (!raw) { console.log('[session] restoreSession: no saved session'); return false; }
+    const s = JSON.parse(raw);
+    if (!s.tournament) { console.log('[session] restoreSession: session missing tournament'); return false; }
+    console.log('[session] restoreSession: found screen=%s tourney=%s athletes=%d selected=%d',
+      s.screen, s.tournament?.name, (s.athletes||[]).length, (s.selected||[]).length);
+    selectedTournament   = s.tournament;
+    watchedTournamentId  = s.tournamentId || '';
+    allAthletes          = s.athletes || [];
+    selectedKeys         = new Set(s.selected || []);
+    if (s.source) {
+      _tournamentSource = s.source;
+      document.getElementById('src-ibjjf').classList.toggle('source-tab--active',   s.source === 'ibjjf');
+      document.getElementById('src-naga').classList.toggle('source-tab--active',    s.source === 'naga');
+      document.getElementById('src-compnet').classList.toggle('source-tab--active', s.source === 'compnet');
+      document.getElementById('src-browse').classList.toggle('source-tab--active',  s.source === 'browse');
+    }
+    const screen         = s.screen || 'screen-tournament';
+    if (screen === 'screen-watch' && selectedKeys.size) {
+      showScreen('screen-watch', false);
+      const names = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+      const team  = names[0]?.team || '';
+      const n     = selectedKeys.size;
+      const tourneyEl = document.getElementById('watch-tourney-name');
+      const ctxEl     = document.getElementById('watch-context');
+      if (tourneyEl) tourneyEl.textContent = selectedTournament?.name || '';
+      if (ctxEl) ctxEl.textContent = [team, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
+      renderWatch();
+      connectSSE(watchedTournamentId);
+      startRefreshTimer();
+      manualRefresh();
+    } else if (screen === 'screen-pick' && allAthletes.length) {
+      showScreen('screen-pick', false);
+      filterPick();
+      _loadPickStatuses();
+    } else if (screen === 'screen-school') {
+      document.getElementById('school-tourney-name').textContent = selectedTournament.name;
+      document.getElementById('school-input').value = '';
+      setSearchMode('team');
+      showScreen('screen-school', false);
+      if (_isNagaMode()) {
+        _setupNagaSchoolScreen();
+      } else {
+        loadTeamSuggestions(selectedTournament.id);
+        _loadPickStatuses();
+      }
+    } else {
+      return false;
+    }
+    return true;
+  } catch(e) { return false; }
+}
+
+// ─── Init ──────────────────────────────────────────────────────────────────
+function startApp() {
+  showScreen('screen-tournament');
+  if (!allTournaments.length) loadTournaments();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  buildOrgGrid();   // render org grid immediately
+  // Always show landing until auth check completes — initAuth will skip it if logged in
+  showScreen('screen-landing', false);
+  history.replaceState({ screen: 'screen-landing' }, '', '');
+  loadTournaments(); // preload in background
+});
+
+async function loadTournaments() {
+  if (restoreSession()) return;   // resume where we left off
+  try {
+    const r = await fetch('/api/tournaments');
+    allTournaments = await r.json();
+    renderTournaments();
+  } catch(e) {
+    document.getElementById('tourney-loading').innerHTML =
+      '<div class="icon">⚠️</div><h3>Could not load tournaments</h3><p>Check your connection and reload.</p>';
+  }
+}
+
+let _tourneyEra = 'upcoming'; // 'upcoming' | 'past'
+
+function setTournamentSource(src) {
+  _tournamentSource = src;
+  _tourneyEra = 'upcoming';
+  document.getElementById('src-ibjjf').classList.toggle('source-tab--active',   src === 'ibjjf');
+  document.getElementById('src-naga').classList.toggle('source-tab--active',    src === 'naga');
+  document.getElementById('src-compnet').classList.toggle('source-tab--active', src === 'compnet');
+  document.getElementById('src-browse').classList.toggle('source-tab--active',  src === 'browse');
+
+  const isBrowse = src === 'browse';
+  const toggle   = document.getElementById('tourney-era-toggle');
+  const browseEl = document.getElementById('browse-container');
+  const loading  = document.getElementById('tourney-loading');
+  const list     = document.getElementById('tourney-list');
+
+  if (isBrowse) {
+    if (toggle) toggle.style.display = 'none';
+    browseEl.style.display = 'block';
+    loading.style.display  = 'none';
+    list.style.display     = 'none';
+    if (!_browseFetched) loadBrowseEvents();
+    else renderBrowse();
+  } else {
+    browseEl.style.display = 'none';
+    if (toggle) toggle.style.display = 'flex';
+    _updateEraToggleUI();
+    if (!allTournaments.length) loadTournaments();
+    else renderTournaments();
+  }
+}
+
+// ─── Browse functions ────────────────────────────────────────────────────────
+function buildOrgGrid() {
+  document.getElementById('org-grid').innerHTML = _BROWSE_ORGS.map(o => {
+    const imgHtml = o.logo
+      ? `<img class="org-tile-img" src="${o.logo}" onerror="this.outerHTML='<div class=\\'org-tile-icon\\'>${o.icon}</div>'">`
+      : `<div class="org-tile-icon">${o.icon}</div>`;
+    return `<button class="org-tile${o.key===_browseOrg?' active':''}"
+      onclick="selectOrgTile('${o.key}')">${imgHtml}<span>${o.name}</span></button>`;
+  }).join('');
+}
+
+function selectOrgTile(key) {
+  _browseOrg = key;
+  document.querySelectorAll('.org-tile').forEach(b =>
+    b.classList.toggle('active', b.getAttribute('onclick') === `selectOrgTile('${key}')`));
+
+  // Always show browse container for all org tiles
+  _tournamentSource = 'browse';
+  document.getElementById('tourney-era-toggle').style.display = 'none';
+  document.getElementById('tourney-loading').style.display = 'none';
+  document.getElementById('tourney-list').style.display = 'none';
+  document.getElementById('browse-container').style.display = 'block';
+  if (!_browseFetched) loadBrowseEvents();
+  else renderBrowse();
+}
+
+function setBrowseOrg(key) {
+  _browseOrg = key;
+  document.querySelectorAll('.browse-org-pill').forEach(b =>
+    b.classList.toggle('active', b.getAttribute('onclick') === `setBrowseOrg('${key}')`));
+  renderBrowse();
+}
+
+function setBrowseDate(days, btn) {
+  _browseDays = days;
+  document.querySelectorAll('.browse-date-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderBrowse();
+}
+
+function onBrowseSearch() {
+  _browseQ = document.getElementById('browse-search').value.trim().toLowerCase();
+  renderBrowse();
+}
+
+async function loadBrowseEvents() {
+  const list = document.getElementById('browse-list');
+  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading events…</div>';
+  try {
+    const r = await fetch('/api/browser-events');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    _browseEvents = await r.json();
+    _browseFetched = true;
+    renderBrowse();
+  } catch(e) {
+    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Failed to load (${e.message})</div>`;
+  }
+}
+
+function _browseLocalDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function renderBrowse() {
+  const list = document.getElementById('browse-list');
+  const todayStr = _browseLocalDate(new Date());
+  const cutoff   = _browseDays > 0 ? (() => { const d=new Date(); d.setDate(d.getDate()+_browseDays); return _browseLocalDate(d); })() : '9999-99-99';
+
+  let events = _browseEvents.filter(e => {
+    if (!e.start || e.start < todayStr) return false;     // skip past & already-started
+    if (e.start > cutoff) return false;                   // outside date window
+    if (_browseOrg !== 'all' && _browseOrg !== 'other' && e.org !== _browseOrg) return false;
+    if (_browseQ && !(e.name||'').toLowerCase().includes(_browseQ) &&
+                    !(e.city||'').toLowerCase().includes(_browseQ)) return false;
+    return true;
+  }).sort((a,b) => a.start.localeCompare(b.start)).slice(0, 80);
+
+  if (!events.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No events found</div>';
+    return;
+  }
+
+  list.innerHTML = events.map(e => {
+    const org  = _BROWSE_ORG_MAP[e.org] || { name:e.org||'Other', color:'#888', bg:'rgba(136,136,136,0.1)', icon:'📋' };
+    const logo = _BROWSE_LOGOS[e.org];
+    const thumb = logo
+      ? `<img class="browse-thumb" src="${logo}" onerror="this.outerHTML='<div class=\\'browse-thumb-ph\\'>${org.icon}</div>'">`
+      : `<div class="browse-thumb-ph">${org.icon}</div>`;
+    const date = _fmtTourneyDate(e.start, e.end);
+    const loc  = e.city ? (e.country_code==='US' ? e.city : `${e.city}, ${e.country}`) : e.country || '';
+    const meta = [date, loc].filter(Boolean).join(' · ');
+    const href = e.url || '#';
+    const esc2 = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return `<a class="browse-card" href="${href}" target="_blank" rel="noopener">
+      ${thumb}
+      <div class="browse-body">
+        <div class="browse-name">${esc2(e.name)}</div>
+        <div class="browse-meta">
+          <span class="browse-badge" style="background:${org.bg};color:${org.color}">${org.name}</span>
+          ${esc2(meta)}
+        </div>
+      </div>
+    </a>`;
+  }).join('');
+}
+
+// ─── Find Local Modal ────────────────────────────────────────────────────────
+let _localLat = null, _localLng = null, _localLabel = '';
+
+function openLocalModal() {
+  document.getElementById('local-modal').classList.add('open');
+  _localLat = null; _localLng = null;
+  document.getElementById('local-gps-btn').className = 'local-loc-btn';
+  document.getElementById('local-gps-btn').innerHTML = '<span>📡</span> Use My Location';
+  document.getElementById('local-city-input').value = '';
+  document.getElementById('local-status').textContent = '';
+}
+
+function closeLocalModal() {
+  document.getElementById('local-modal').classList.remove('open');
+}
+
+function useMyLocation() {
+  const btn = document.getElementById('local-gps-btn');
+  const status = document.getElementById('local-status');
+  btn.innerHTML = '<span>⏳</span> Getting location…';
+  status.textContent = '';
+  navigator.geolocation.getCurrentPosition(pos => {
+    _localLat = pos.coords.latitude;
+    _localLng = pos.coords.longitude;
+    _localLabel = 'your location';
+    btn.className = 'local-loc-btn located';
+    btn.innerHTML = '<span>✅</span> Location found';
+    status.textContent = `${_localLat.toFixed(3)}, ${_localLng.toFixed(3)}`;
+  }, err => {
+    btn.innerHTML = '<span>📡</span> Use My Location';
+    status.textContent = 'Location denied — enter a city below.';
+  });
+}
+
+async function runLocalSearch() {
+  const status = document.getElementById('local-status');
+  const cityVal = document.getElementById('local-city-input').value.trim();
+  const distMi  = parseInt(document.getElementById('local-dist').value);
+  const days    = parseInt(document.getElementById('local-days').value);
+
+  let lat = _localLat, lng = _localLng, label = _localLabel;
+
+  if (lat === null && cityVal) {
+    status.textContent = 'Geocoding…';
+    try {
+      const r = await fetch(`/api/geocode?q=${encodeURIComponent(cityVal)}`);
+      const d = await r.json();
+      if (d.lat) { lat = d.lat; lng = d.lng; label = cityVal; }
+      else { status.textContent = `Could not find "${cityVal}" — try "City, State"`; return; }
+    } catch { status.textContent = 'Geocode failed. Try again.'; return; }
+  }
+
+  if (lat === null) { status.textContent = 'Enter a city or use your location first.'; return; }
+
+  closeLocalModal();
+
+  // Ensure browse events are loaded
+  if (!_browseFetched) {
+    await loadBrowseEvents();
+  }
+
+  // Filter by distance + date and show in browse section
+  const todayStr = _browseLocalDate(new Date());
+  const cutoff   = days > 0 ? (() => { const d=new Date(); d.setDate(d.getDate()+days); return _browseLocalDate(d); })() : '9999-99-99';
+
+  function haversineMi(lat1,lng1,lat2,lng2) {
+    if (lat2==null||lng2==null) return null;
+    const R=3959, r=d=>d*Math.PI/180;
+    const dLat=r(lat2-lat1), dLng=r(lng2-lng1);
+    const a=Math.sin(dLat/2)**2+Math.cos(r(lat1))*Math.cos(r(lat2))*Math.sin(dLng/2)**2;
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  }
+
+  const results = _browseEvents
+    .filter(e => {
+      if (!e.start || e.start < todayStr || e.start > cutoff) return false;
+      const mi = haversineMi(lat, lng, e.lat, e.lng);
+      if (mi === null || mi > distMi) return false;
+      e._distMi = mi;
+      return true;
+    })
+    .sort((a,b) => a._distMi - b._distMi);
+
+  // Show results in browse section, clear org selection
+  _browseOrg = 'all';
+  document.querySelectorAll('.org-tile').forEach(b => b.classList.remove('active'));
+  document.getElementById('tourney-era-toggle').style.display = 'none';
+  document.getElementById('tourney-loading').style.display = 'none';
+  document.getElementById('tourney-list').style.display = 'none';
+  document.getElementById('browse-container').style.display = 'block';
+
+  const list = document.getElementById('browse-list');
+  if (!results.length) {
+    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No events within ${distMi} mi of ${label}</div>`;
+    return;
+  }
+
+  const esc2 = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  list.innerHTML = `<div style="font-size:0.75rem;color:var(--muted);margin-bottom:8px">📍 ${results.length} events within ${distMi} mi of ${esc2(label)}</div>` +
+    results.map(e => {
+      const org  = _BROWSE_ORG_MAP[e.org] || { name:e.org||'Other', color:'#888', bg:'rgba(136,136,136,0.1)', icon:'📋' };
+      const logo = _BROWSE_LOGOS[e.org];
+      const thumb = logo
+        ? `<img class="browse-thumb" src="${logo}" onerror="this.outerHTML='<div class=\\'browse-thumb-ph\\'>${org.icon}</div>'">`
+        : `<div class="browse-thumb-ph">${org.icon}</div>`;
+      const date = _fmtTourneyDate(e.start, e.end);
+      const loc  = e.city ? (e.country_code==='US' ? e.city : `${e.city}, ${e.country}`) : '';
+      const dist = e._distMi != null ? `${Math.round(e._distMi)} mi` : '';
+      const meta = [date, loc, dist].filter(Boolean).join(' · ');
+      return `<a class="browse-card" href="${e.url||'#'}" target="_blank" rel="noopener">
+        ${thumb}
+        <div class="browse-body">
+          <div class="browse-name">${esc2(e.name)}</div>
+          <div class="browse-meta">
+            <span class="browse-badge" style="background:${org.bg};color:${org.color}">${org.name}</span>
+            ${esc2(meta)}
+          </div>
+        </div>
+      </a>`;
+    }).join('');
+}
+
+function setTourneyEra(era) {
+  _tourneyEra = era;
+  _updateEraToggleUI();
+  renderTournaments();
+}
+
+function _updateEraToggleUI() {
+  const up   = document.getElementById('era-upcoming');
+  const past = document.getElementById('era-past');
+  if (!up || !past) return;
+  up.style.background   = _tourneyEra === 'upcoming' ? 'var(--red)' : 'var(--gray)';
+  up.style.color        = _tourneyEra === 'upcoming' ? 'white'      : 'var(--text)';
+  past.style.background = _tourneyEra === 'past'     ? 'var(--red)' : 'var(--gray)';
+  past.style.color      = _tourneyEra === 'past'     ? 'white'      : 'var(--text)';
+}
+
+function _fmtTourneyDate(start, end) {
+  if (!start) return '';
+  try {
+    const s = new Date(start + 'T12:00:00');
+    const opts = { month: 'short', day: 'numeric' };
+    if (!end || end === start) return s.toLocaleDateString('en-US', opts);
+    const e = new Date(end + 'T12:00:00');
+    if (s.getMonth() === e.getMonth())
+      return `${s.toLocaleDateString('en-US', opts)}–${e.getDate()}`;
+    return `${s.toLocaleDateString('en-US', opts)} – ${e.toLocaleDateString('en-US', opts)}`;
+  } catch { return start; }
+}
+
+function renderTournaments() {
+  const loading = document.getElementById('tourney-loading');
+  const list    = document.getElementById('tourney-list');
+
+  if (!_tournamentSource) {
+    loading.innerHTML = '<div class="icon">👆</div><h3>Choose a source above</h3><p>Select IBJJF, NAGA, or CompNet to see upcoming events.</p>';
+    loading.style.display = 'flex';
+    list.style.display = 'none';
+    return;
+  }
+
+  const filtered = allTournaments.filter(t => (t.source || 'ibjjf') === _tournamentSource);
+
+  if (!allTournaments.length) {
+    loading.innerHTML = '<div class="icon">📅</div><h3>No active tournaments found</h3><p>Check back on tournament day.</p>';
+    loading.style.display = 'flex';
+    list.style.display = 'none';
+    return;
+  }
+
+  if (!filtered.length) {
+    const srcIcon = _tournamentSource === 'naga' ? '🏆' : _tournamentSource === 'compnet' ? '🌐' : '🥋';
+    loading.innerHTML = `<div class="icon">${srcIcon}</div><h3>No upcoming ${_tournamentSource.toUpperCase()} events</h3><p>Check back soon.</p>`;
+    loading.style.display = 'flex';
+    list.style.display = 'none';
+    return;
+  }
+
+  loading.style.display = 'none';
+  list.style.display = 'flex';
+
+  const showing = filtered
+    .filter(t => _tourneyEra === 'past' ? t.is_past : !t.is_past)
+    .sort((a, b) => _tourneyEra === 'past'
+      ? (b.start || '').localeCompare(a.start || '')  // most recent first
+      : (a.start || '').localeCompare(b.start || '')); // soonest first
+
+  if (!showing.length) {
+    const srcLabel = _tournamentSource.toUpperCase();
+    loading.innerHTML = `<div class="icon">📅</div><h3>No ${_tourneyEra === 'past' ? 'past' : 'upcoming'} ${srcLabel} events</h3>`;
+    loading.style.display = 'flex';
+    list.style.display = 'none';
+    return;
+  }
+
+  list.innerHTML = showing.map(t => {
+    const datePart    = _fmtTourneyDate(t.start, t.end);
+    const locPart     = t.location || '';
+    const meta        = [datePart, locPart].filter(Boolean).join(' · ');
+    const noBrackets  = t.has_brackets === false;
+    const clickAttr   = noBrackets ? '' : `onclick="selectTournament('${esc(t.id)}', this)"`;
+    const cls         = ['tourney-item', noBrackets ? 'no-brackets' : ''].filter(Boolean).join(' ');
+    return `<div class="${cls}" id="t-${esc(t.id)}" ${clickAttr}>
+      <div class="tourney-name">${esc(t.name)}</div>
+      ${meta ? `<div class="tourney-meta">${esc(meta)}</div>` : ''}
+      ${noBrackets ? '<span class="tourney-no-brackets-badge">Brackets not yet available</span>' : ''}
+    </div>`;
+  }).join('');
+}
+
+function selectTournament(id, el) {
+  document.querySelectorAll('.tourney-item').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedTournament = allTournaments.find(t => t.id === id);
+  document.getElementById('school-tourney-name').textContent = selectedTournament.name;
+  document.getElementById('school-input').value = '';
+  _teamSuggestions = [];
+  _athleteSugg = [];
+  setSearchMode('team');
+  _pickStatusCache = {};
+  _teardownNagaSchoolScreen();
+  showScreen('screen-school');
+  if (_isNagaMode()) {
+    _setupNagaSchoolScreen();
+  } else {
+    loadTeamSuggestions(id);
+    _loadPickStatuses();
+  }
+  saveSession();
+}
+
+function _isNagaMode() {
+  return selectedTournament?.source === 'naga' || selectedTournament?.source === 'compnet';
+}
+
+let _nagaClubs = [];   // club names for current NAGA event
+
+async function _setupNagaSchoolScreen() {
+  const el    = document.getElementById('cache-status');
+  const list  = document.getElementById('item-list');
+  const input = document.getElementById('school-input');
+  if (input) input.placeholder = 'Filter schools…';
+  if (el)    el.textContent = 'Loading schools…';
+  if (list)  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading…</div>';
+  document.getElementById('mode-team').style.display    = 'none';
+  document.getElementById('mode-athlete').style.display = 'none';
+  document.getElementById('naga-search-btn').style.display = 'none';
+
+  try {
+    const r = await fetch(`/api/naga-clubs/${selectedTournament.id}?name=${encodeURIComponent(selectedTournament.name || '')}`);
+    _nagaClubs = await r.json();
+  } catch(e) {
+    _nagaClubs = [];
+  }
+
+  // Bail if user has already navigated away (e.g. already searched and went to pick screen)
+  if (!document.getElementById('screen-school').classList.contains('active')) return;
+  if (input) input.value = '';
+
+  if (_nagaClubs.length) {
+    if (el) el.textContent = '';
+    document.getElementById('naga-search-btn').style.display = 'none';
+  } else {
+    if (el) el.textContent = 'Type your school name and tap Search';
+    document.getElementById('naga-search-btn').style.display = 'block';
+  }
+  _renderNagaClubList('');
+}
+
+function _renderNagaClubList(filter) {
+  const list = document.getElementById('item-list');
+  if (!_nagaClubs.length) { list.innerHTML = ''; return; }
+  const q = filter.toLowerCase().trim();
+  let filtered = q ? _nagaClubs.filter(n => n.toLowerCase().includes(q)) : _nagaClubs;
+  // Sort: starts-with first
+  if (q) filtered.sort((a,b) => {
+    const aS = a.toLowerCase().startsWith(q) ? 0 : 1;
+    const bS = b.toLowerCase().startsWith(q) ? 0 : 1;
+    return aS - bS;
+  });
+  if (!filtered.length) { list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No matches</div>'; return; }
+  list.innerHTML = filtered.map(name => `
+    <div class="list-item" data-name="${name.replace(/"/g,'&quot;')}" onclick="_selectNagaClub(this)">
+      <span class="list-item-name">${_highlight(name, filter)}</span>
+    </div>`).join('');
+}
+
+function _selectNagaClub(el) {
+  const name = el.getAttribute('data-name');
+  document.getElementById('school-input').value = name;
+  nagaSearch();
+}
+
+function _teardownNagaSchoolScreen() {
+  _nagaClubs = [];
+  document.getElementById('mode-team').style.display    = '';
+  document.getElementById('mode-athlete').style.display = '';
+  document.getElementById('naga-search-btn').style.display = 'none';
+  document.getElementById('school-input').placeholder = 'Filter teams…';
+}
+
+async function nagaSearch() {
+  const school = document.getElementById('school-input').value.trim();
+  if (!school) { showToast('Enter your academy name'); return; }
+  if (!selectedTournament) return;
+
+  const el = document.getElementById('cache-status');
+  if (el) el.textContent = 'Searching…';
+  const srcLabel = (selectedTournament?.source || 'naga').toUpperCase();
+  document.getElementById('item-list').innerHTML =
+    `<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Searching ${srcLabel}…</div>`;
+
+  try {
+    const r = await fetch('/api/search', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        tournament_id:   selectedTournament.id,
+        tournament_name: selectedTournament.name,
+        school_name:     school,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) {
+      if (el) el.textContent = 'Academy not found — check spelling';
+      document.getElementById('item-list').innerHTML =
+        '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No athletes found.<br>Try a shorter name, e.g. "Gracie Barra"</div>';
+      return;
+    }
+    const jr  = await fetch(`/api/search/${data.job_id}`);
+    const job = await jr.json();
+    allAthletes  = job.athletes || [];
+    selectedKeys = new Set();
+    if (el) el.textContent = `${allAthletes.length} division entries for ${school}`;
+    showPick();
+  } catch(e) {
+    if (el) el.textContent = 'Search failed — check connection';
+  }
+}
+
+function _renderNagaAthleteList(athletes, school) {
+  const list = document.getElementById('item-list');
+  if (!athletes.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted)">No athletes found</div>';
+    return;
+  }
+
+  // Group by athlete name
+  const byName = {};
+  for (const a of athletes) {
+    if (!byName[a.name]) byName[a.name] = [];
+    byName[a.name].push(a);
+  }
+
+  list.innerHTML = `
+    <div style="margin-bottom:10px;font-size:0.82rem;color:var(--muted)">${Object.keys(byName).length} athletes · tap Watch to track all</div>
+    ${Object.entries(byName).map(([name, entries]) => `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 16px;margin-bottom:8px">
+        <div style="font-size:0.95rem;font-weight:700;margin-bottom:6px">${esc(name)}</div>
+        ${entries.map(e => `
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:3px;display:flex;justify-content:space-between">
+            <span>${esc(e.division)}</span>
+            <span style="color:var(--green);font-weight:600">${e.mat_name ? esc(e.mat_name) + ' · ' : ''}${e.estimated_start ? new Date(e.estimated_start).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}) : ''}</span>
+          </div>`).join('')}
+      </div>`).join('')}
+    <button onclick="goWatch()" style="width:100%;margin-top:8px;padding:14px;background:var(--red);color:white;border:none;border-radius:12px;font-size:1rem;font-weight:700;cursor:pointer">
+      Watch All Athletes
+    </button>`;
+}
+
+async function loadTeamSuggestions(tournamentId) {
+  const el = document.getElementById('cache-status');
+  _teamSuggestions = [];
+  _athleteSugg     = [];
+  if (el) el.textContent = 'Loading…';
+  const list = document.getElementById('item-list');
+  if (list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading…</div>';
+  try {
+    const r    = await fetch(`/api/teams/${tournamentId}`);
+    const data = await r.json();
+    if (data.teams) {
+      _teamSuggestions = data.teams;
+      _athleteSugg     = data.athletes || [];
+      if (el) el.textContent = `${data.athlete_count} athletes · ${_teamSuggestions.length} teams`;
+      renderItemList('');
+    } else {
+      if (el) el.textContent = 'Building roster… try again shortly';
+      if (list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Building roster…</div>';
+      setTimeout(() => loadTeamSuggestions(tournamentId), 4000);
+    }
+  } catch(e) {
+    if (el) el.textContent = '';
+  }
+}
+
+// ─── School filter list ────────────────────────────────────────────────────
+
+function onSchoolInput() {
+  const val = document.getElementById('school-input').value.trim();
+  if (_isNagaMode()) { _renderNagaClubList(val); return; }
+  renderItemList(val);
+}
+
+function _highlight(text, query) {
+  if (!query) return esc(text);
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx < 0) return esc(text);
+  return esc(text.slice(0,idx)) + '<mark>' + esc(text.slice(idx, idx+query.length)) + '</mark>' + esc(text.slice(idx+query.length));
+}
+
+function renderItemList(query) {
+  const list = document.getElementById('item-list');
+  if (!list) return;
+  const vl = query.toLowerCase().trim();
+
+  if (_searchMode === 'team') {
+    let teams = vl
+      ? _teamSuggestions.filter(t => t.name.toLowerCase().includes(vl))
+      : [..._teamSuggestions];
+
+    if (!teams.length && !_teamSuggestions.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading…</div>';
+      return;
+    }
+    if (!teams.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No matches</div>';
+      return;
+    }
+
+    // Sort: starts-with first, then alpha
+    teams.sort((a, b) => {
+      const aS = a.name.toLowerCase().startsWith(vl) ? 0 : 1;
+      const bS = b.name.toLowerCase().startsWith(vl) ? 0 : 1;
+      if (aS !== bS) return aS - bS;
+      return a.name.localeCompare(b.name);
+    });
+
+    list.innerHTML = teams.map(t => `
+      <div class="list-item" data-name="${t.name.replace(/"/g,'&quot;')}" onclick="selectSchool(this)">
+        <span class="list-item-name">${_highlight(t.name, query)}</span>
+        <span class="list-item-meta">${t.count} athlete${t.count>1?'s':''}</span>
+      </div>`).join('');
+
+  } else {
+    // Athlete mode
+    let athletes = vl
+      ? _athleteSugg.filter(a =>
+          a.name.toLowerCase().includes(vl) || (a.team||'').toLowerCase().includes(vl))
+      : [..._athleteSugg];
+
+    if (!athletes.length && !_athleteSugg.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading…</div>';
+      return;
+    }
+    if (!athletes.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No matches</div>';
+      return;
+    }
+
+    // Deduplicate by name — keep first occurrence (preserves team)
+    const seen = new Set();
+    athletes = athletes.filter(a => {
+      const k = a.name.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+
+    // Sort: starts-with first, then alpha
+    athletes.sort((a, b) => {
+      const aS = a.name.toLowerCase().startsWith(vl) ? 0 : 1;
+      const bS = b.name.toLowerCase().startsWith(vl) ? 0 : 1;
+      if (aS !== bS) return aS - bS;
+      return a.name.localeCompare(b.name);
+    });
+
+    list.innerHTML = athletes.map(a => {
+      // Check for live status: prefer allAthletes (watch session), fall back to _pickStatusCache
+      const known = (allAthletes||[]).find(x => x.name.toLowerCase() === a.name.toLowerCase())
+                 || _pickStatusCache[a.name.toLowerCase()];
+      let metaHtml;
+      if (known) {
+        const medal = known.placement ? PICK_MEDAL[String(known.placement)] : null;
+        if (medal) {
+          metaHtml = `<span class="list-item-meta">${medal} ${known.placement === '1' ? '1st' : known.placement === '2' ? '2nd' : known.placement === '3' ? '3rd' : known.placement+'th'}</span>`;
+        } else if (known.eliminated) {
+          metaHtml = `<span class="list-item-meta" style="color:#c0392b">Eliminated</span>`;
+        } else if (known.fight_time) {
+          const timeStr = known.fight_time_utc
+            ? new Date(known.fight_time_utc).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})
+            : (known.fight_time.match(/at\s+(.+)$/i)||[])[1] || known.fight_time;
+          const matStr = known.mat_name ? `Mat ${known.mat_name}` : '';
+          metaHtml = `<span class="list-item-meta" style="color:var(--green)">${[matStr, timeStr].filter(Boolean).join(' · ')}</span>`;
+        } else {
+          metaHtml = `<span class="list-item-meta">${a.team || ''}</span>`;
+        }
+      } else {
+        metaHtml = `<span class="list-item-meta">${a.team || ''}</span>`;
+      }
+      const inQueue = _athleteQueue.some(q => q.name.toLowerCase() === a.name.toLowerCase());
+      return `<div class="ath-pick-row${inQueue?' selected':''}" data-name="${a.name.replace(/"/g,'&quot;')}" onclick="selectSchool(this)">
+        <div class="ath-pick-check">${inQueue?'✓':''}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:0.93rem;font-weight:700">${_highlight(a.name, query)}</div>
+          <div style="font-size:0.75rem;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.team||'')}</div>
+        </div>
+        ${metaHtml}
+      </div>`;
+    }).join('');
+    _updateAthWatchBtns();
+  }
+}
+
+function hideSuggestions() { /* no-op — kept for compatibility */ }
+
+function selectSchool(el) {
+  const name = el.dataset.name;
+  if (_searchMode === 'athlete') {
+    addAthleteToList(name);
+  } else {
+    document.getElementById('school-input').value = name;
+    startSearch();
+  }
+}
+
+// ─── Athlete-mode list (build up before watching) ─────────────────────────
+let _athleteQueue = [];   // [{name, team}] accumulated in athlete mode
+
+function addAthleteToList(name) {
+  const idx = _athleteQueue.findIndex(a => a.name.toLowerCase() === name.toLowerCase());
+  if (idx !== -1) {
+    // Deselect
+    _athleteQueue.splice(idx, 1);
+  } else {
+    if (!checkAthleteLimit(_athleteQueue.length)) return;
+    const meta = Object.assign({}, _athleteSugg.find(a => a.name.toLowerCase() === name.toLowerCase()) || {name, team:''});
+    _athleteQueue.push(meta);
+  }
+  renderItemList(document.getElementById('school-input').value.trim());
+  _updateAthWatchBtns();
+}
+
+function _updateAthWatchBtns() {
+  const n = _athleteQueue.length;
+  const label = n ? `Watch ${n} Athlete${n>1?'s':''} →` : '';
+  ['ath-watch-top','ath-watch-bottom'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.textContent = label;
+    btn.style.display = n ? 'block' : 'none';
+  });
+}
+
+async function startAthleteQueueSearch() {
+  if (!_athleteQueue.length || !selectedTournament) return;
+  // Merge results for all athletes in the queue
+  const results = [];
+  const seen    = new Set();
+  for (const a of _athleteQueue) {
+    try {
+      const r    = await fetch('/api/search', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({tournament_id: selectedTournament.id, school_name: a.name}),
+      });
+      const data = await r.json();
+      if (data.job_id) {
+        const jr  = await fetch(`/api/search/${data.job_id}`);
+        const job = await jr.json();
+        for (const athlete of (job.athletes || [])) {
+          const k = athlete.name.toLowerCase();
+          if (!seen.has(k)) { seen.add(k); results.push(athlete); }
+        }
+      }
+    } catch(e) {}
+  }
+  allAthletes  = results;
+  selectedKeys = new Set(_athleteQueue.map(a => a.name.toLowerCase()));
+  _athleteQueue = [];
+  _updateAthWatchBtns();
+  goWatch();
+}
+
+// ─── Search ────────────────────────────────────────────────────────────────
+async function startSearch() {
+  const school = document.getElementById('school-input').value.trim();
+  if (!school) { showToast('Enter a school name'); return; }
+  if (!selectedTournament) { showScreen('screen-tournament'); return; }
+
+  document.getElementById('header-sub').textContent =
+    school + ' · ' + selectedTournament.name.split(' ').slice(0,3).join(' ') + '...';
+
+  // Server-side search — no local caching
+  try {
+    const r   = await fetch('/api/search', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        tournament_id:   selectedTournament.id,
+        tournament_name: selectedTournament.name || '',
+        school_name:     school,
+      }),
+    });
+    const data = await r.json();
+    if (r.status === 503) {
+      showToast('Roster building… retrying shortly');
+      setTimeout(() => startSearch(), 3000);
+      return;
+    }
+    if (data.job_id) {
+      const jr = await fetch(`/api/search/${data.job_id}`);
+      const job = await jr.json();
+      allAthletes  = job.athletes || [];
+      selectedKeys = new Set();
+      showPick();
+      return;
+    }
+  } catch(e) {
+    showToast('Search failed — try again');
+  }
+}
+
+
+// ─── Pick screen ───────────────────────────────────────────────────────────
+
+async function _loadPickStatuses() {
+  if (!selectedTournament) return;
+  try {
+    const name = encodeURIComponent(selectedTournament.name || '');
+    const r = await fetch(`/api/pick-statuses/${selectedTournament.id}?name=${name}`);
+    if (!r.ok) return;
+    const data = await r.json();
+    _pickStatusCache = data.statuses || {};
+    // Merge into allAthletes so _pickStatusBadge can use it
+    allAthletes = allAthletes.map(a => {
+      const s = _pickStatusCache[a.name.toLowerCase()];
+      return s ? {...a, ...s} : a;
+    });
+    filterPick();
+  } catch(e) {}
+}
+
+function showPick() {
+  showScreen('screen-pick');
+  filterPick();
+  _loadPickStatuses();
+  saveSession();
+}
+
+const PICK_MEDAL = {'1':'🥇','2':'🥈','3':'🥉'};
+
+function _pickStatusSort(a) {
+  // Returns sort key: lower = higher priority
+  if (a.fight_time) return 0;                          // upcoming fight
+  if (!a.placement && !a.eliminated && a.category_id && typeof a.eliminated !== 'undefined') return 1; // in progress
+  if (a.placement && PICK_MEDAL[String(a.placement)]) return 2; // placed
+  if (a.eliminated) return 3;                          // eliminated
+  return 4;                                            // no data
+}
+
+function _pickStatusBadge(a) {
+  const medal = a.placement ? PICK_MEDAL[String(a.placement)] : null;
+  if (medal) return `<div class="pick-status ps-medal">${medal}</div>`;
+  if (a.eliminated) return `<div class="pick-status ps-elim">❌ Eliminated</div>`;
+  if (a.fight_time) {
+    // Determine if fight is in the past — use UTC if available, else parse raw string
+    let pastCutoff = false;
+    if (a.fight_time_utc) {
+      pastCutoff = new Date(a.fight_time_utc) < new Date(Date.now() - 30 * 60 * 1000);
+    } else {
+      // Parse "Sun 04/12 at 03:42 PM" — assume current year, treat as local time
+      const m = a.fight_time.match(/(\d{2})\/(\d{2})\s+at\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+      if (m) {
+        const [, mo, dy, hr, mn, ap] = m;
+        let h = parseInt(hr);
+        if (ap.toUpperCase() === 'PM' && h !== 12) h += 12;
+        if (ap.toUpperCase() === 'AM' && h === 12) h = 0;
+        const ft = new Date(new Date().getFullYear(), parseInt(mo)-1, parseInt(dy), h, parseInt(mn));
+        pastCutoff = ft < new Date(Date.now() - 30 * 60 * 1000);
+      }
+    }
+    if (!pastCutoff) {
+      const timeStr = a.fight_time_utc
+        ? new Date(a.fight_time_utc).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})
+        : (a.fight_time.match(/at\s+(.+)$/i)||[])[1] || a.fight_time;
+      const matStr = a.mat ? `Mat ${a.mat}` : '';
+      return `<div class="pick-status ps-fight">${matStr ? matStr + '<br>' : ''}${timeStr}</div>`;
+    }
+  }
+  // Has been checked but no fight time and not eliminated = in progress
+  if (typeof a.eliminated !== 'undefined') return `<div class="pick-status ps-progress">In Progress</div>`;
+  return '';
+}
+
+function filterPick() {
+  const q = (document.getElementById('pick-search').value || '').toLowerCase().trim();
+  let list = allAthletes.slice();
+
+  // Sort: upcoming fights → in progress → placed → eliminated → no data
+  // Secondary: within upcoming fights, sort by fight_time alphabetically (times are formatted consistently)
+  list.sort((a, b) => {
+    const sa = _pickStatusSort(a), sb = _pickStatusSort(b);
+    if (sa !== sb) return sa - sb;
+    if (sa === 0) return (a.fight_time || '').localeCompare(b.fight_time || '');
+    return a.name.localeCompare(b.name);
+  });
+
+  if (q) list = list.filter(a => a.name.toLowerCase().includes(q) || (a.division||'').toLowerCase().includes(q));
+
+  document.getElementById('pick-count').textContent =
+    selectedKeys.size ? `${selectedKeys.size} selected` : `${allAthletes.length} athletes — tap to select`;
+
+  const label = selectedKeys.size ? `Watch ${selectedKeys.size} Athlete${selectedKeys.size>1?'s':''} →` : 'Select athletes to watch';
+  const btn = document.getElementById('watch-btn');
+  btn.disabled = selectedKeys.size === 0;
+  btn.textContent = label;
+  const topBar = document.getElementById('pick-top-bar');
+  const btnTop = document.getElementById('watch-btn-top');
+  if (topBar && btnTop) {
+    btnTop.textContent = label;
+    btnTop.disabled = selectedKeys.size === 0;
+    topBar.classList.toggle('visible', selectedKeys.size > 0);
+  }
+
+  // Update select-all button
+  const saBtn = document.getElementById('select-all-btn');
+  if (saBtn) {
+    const visibleKeys = list.map(a => a.name.toLowerCase());
+    const allSel = visibleKeys.length > 0 && visibleKeys.every(k => selectedKeys.has(k));
+    if (selectedKeys.size > 0 && !allSel) {
+      saBtn.textContent = `Watch ${selectedKeys.size} Athlete${selectedKeys.size>1?'s':''} →`;
+      saBtn.onclick = goWatch;
+    } else {
+      saBtn.textContent = allSel ? 'Deselect All' : 'Select All';
+      saBtn.onclick = toggleSelectAll;
+    }
+  }
+
+  const container = document.getElementById('pick-list');
+  if (!list.length) {
+    container.innerHTML = '<div class="state-msg"><div class="icon">🔍</div><h3>No matches</h3></div>';
+    return;
+  }
+  container.innerHTML = list.map(a => {
+    const key = a.name.toLowerCase();
+    const sel = selectedKeys.has(key);
+    const badge = _pickStatusBadge(a);
+    return `
+      <div class="pick-row ${sel ? 'selected' : ''}" data-key="${key.replace(/"/g,'&quot;')}" onclick="togglePick('${key.replace(/'/g,"\\'")}')">
+        <div class="pick-check">${sel ? '✓' : ''}</div>
+        <div class="pick-info">
+          <div class="pick-name">${esc(a.name)}</div>
+          <div class="pick-div">${esc(a.division || a.team || '')}</div>
+        </div>
+        ${badge}
+      </div>`;
+  }).join('');
+}
+
+async function refreshPickStatuses() {
+  if (_pickRefreshing || !selectedTournament) return;
+  _pickRefreshing = true;
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (_session?.access_token) headers['Authorization'] = `Bearer ${_session.access_token}`;
+    const r = await fetch('/api/refresh', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        tournament_id:   selectedTournament.id,
+        tournament_name: selectedTournament.name,
+        athletes:        allAthletes
+      })
+    });
+    const data = await r.json();
+    if (data.updated) {
+      const updMap = {};
+      data.updated.forEach(a => {
+        const key = a.name.toLowerCase() + '::' + (a.category_id || '');
+        updMap[key] = a;
+      });
+      allAthletes = allAthletes.map(a => {
+        const key = a.name.toLowerCase() + '::' + (a.category_id || '');
+        return updMap[key] ? {...a, ...updMap[key]} : a;
+      });
+      filterPick();
+    }
+    // If any athletes still lack placement/eliminated data, the brackets are still
+    // loading in the background — retry after 15s to pick up live results.
+    const stillPending = allAthletes.some(a => !a.placement && typeof a.eliminated === 'undefined');
+    if (stillPending && document.getElementById('screen-pick').classList.contains('active')) {
+      setTimeout(refreshPickStatuses, 15000);
+    }
+  } catch(e) {}
+  finally { _pickRefreshing = false; }
+}
+
+function togglePick(key) {
+  if (selectedKeys.has(key)) selectedKeys.delete(key);
+  else {
+    if (!checkAthleteLimit(selectedKeys.size)) return;
+    selectedKeys.add(key);
+  }
+  filterPick();
+}
+
+function toggleSelectAll() {
+  const visibleKeys = [...document.querySelectorAll('#pick-list [data-key]')].map(el => el.dataset.key);
+  const allSelected = visibleKeys.every(k => selectedKeys.has(k));
+  if (allSelected) {
+    visibleKeys.forEach(k => selectedKeys.delete(k));
+  } else {
+    for (const k of visibleKeys) {
+      if (!checkAthleteLimit(selectedKeys.size, true)) break;
+      selectedKeys.add(k);
+    }
+  }
+  filterPick();
+}
+
+function goWatch() {
+  if (!selectedKeys.size) return;
+  watchedTournamentId = selectedTournament ? selectedTournament.id : '';
+  document.getElementById('changes-banner').style.display = 'none';
+  _watchFilter = 'all';
+
+  // Context header
+  const tourneyEl = document.getElementById('watch-tourney-name');
+  const ctxEl     = document.getElementById('watch-context');
+  if (tourneyEl) tourneyEl.textContent = selectedTournament?.name || '';
+  if (ctxEl) {
+    const team = allAthletes.find(a => selectedKeys.has(a.name.toLowerCase()))?.team || '';
+    const n    = selectedKeys.size;
+    ctxEl.textContent = [team, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
+  }
+
+  showScreen('screen-watch');
+  renderWatch();
+  connectSSE(watchedTournamentId);
+  startRefreshTimer();
+  manualRefresh();   // immediately fetch placement + bracket state on entry
+  saveSession();
+  // Sync push subscription with currently watched categories
+  _syncPushCategories();
+  // Prompt for notifications if not yet subscribed (after short delay)
+  if ('PushManager' in window && !_pushSubscription && Notification.permission === 'default') {
+    setTimeout(_promptForAlerts, 3000);
+  }
+}
+
+function _promptForAlerts() {
+  // Only prompt if still on watch screen
+  const ws = document.getElementById('screen-watch');
+  if (!ws || ws.style.display === 'none') return;
+  showToast('💡 Tip: Enable fight alerts in Account → Enable Fight Alerts');
+}
+
+// ─── Server-Sent Events ────────────────────────────────────────────────────
+function connectSSE(tournamentId) {
+  if (sseConnection) { sseConnection.close(); sseConnection = null; }
+  if (!tournamentId) return;
+
+  sseConnection = new EventSource(`/api/events/${tournamentId}`);
+
+  sseConnection.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'bracket_update') {
+      if (data.changes && data.changes.length) {
+        showChangesBanner(data.changes);
+      }
+      // Pull fresh data from shared cache (no new Playwright needed)
+      manualRefresh();
+    }
+  };
+
+  sseConnection.onerror = () => {
+    // SSE dropped — keep polling timer as safety net
+    if (sseConnection) { sseConnection.close(); sseConnection = null; }
+  };
+}
+
+function disconnectSSE() {
+  if (sseConnection) { sseConnection.close(); sseConnection = null; }
+}
+
+function setWatchFilter(f) {
+  _watchFilter = f;
+  document.getElementById('watch-filter-all').style.background    = f === 'all'     ? 'var(--red)'  : 'var(--gray)';
+  document.getElementById('watch-filter-all').style.color         = f === 'all'     ? 'white'       : 'var(--text)';
+  document.getElementById('watch-filter-placing').style.background = f === 'placing' ? 'var(--red)'  : 'var(--gray)';
+  document.getElementById('watch-filter-placing').style.color      = f === 'placing' ? 'white'       : 'var(--text)';
+  renderWatch();
+}
+
+// ─── Watch screen ──────────────────────────────────────────────────────────
+function renderWatch() {
+  const q = (document.getElementById('watch-search')?.value || '').toLowerCase().trim();
+  let list = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+  if (_watchFilter === 'placing') list = list.filter(a => a.placement || a.eliminated);
+  if (q) list = list.filter(a => a.name.toLowerCase().includes(q));
+
+  // Sort: placed/eliminated at bottom, then by fight time
+  list.sort((a, b) => {
+    const aDone = !!(a.placement || a.eliminated);
+    const bDone = !!(b.placement || b.eliminated);
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    return (a.fight_time || 'z').localeCompare(b.fight_time || 'z');
+  });
+
+  // Update context line with live count
+  const ctxEl = document.getElementById('watch-context');
+  if (ctxEl) {
+    const team = allAthletes.find(a => selectedKeys.has(a.name.toLowerCase()))?.team || '';
+    const n    = selectedKeys.size;
+    ctxEl.textContent = [team, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
+  }
+
+  const container = document.getElementById('watch-list');
+  container.innerHTML = list.map(a => watchCard(a)).join('');
+}
+
+function beltClass(division) {
+  const d = (division || '').toUpperCase();
+  if (d.includes('BLACK'))  return 'belt-black';
+  if (d.includes('BROWN'))  return 'belt-brown';
+  if (d.includes('PURPLE')) return 'belt-purple';
+  if (d.includes('BLUE'))   return 'belt-blue';
+  return 'belt-white';
+}
+
+const MEDAL = { '1': { icon: '🥇', label: 'Gold',   cls: 'placed' },
+                '2': { icon: '🥈', label: 'Silver', cls: 'placed' },
+                '3': { icon: '🥉', label: 'Bronze', cls: 'placed' },
+                '5': { icon: '🏅', label: '5th Place', cls: 'placed' } };
+
+function watchCard(a) {
+  const key       = a.name.toLowerCase();
+  const placement = a.placement ? String(a.placement) : null;
+  const eliminated = !!a.eliminated && !placement;
+  const medal      = placement ? MEDAL[placement] : null;
+  const finished   = !!(medal || eliminated);
+
+  // Build bracket URL
+  const bracketUrl = a.bracket_url ||
+    (a.category_id && watchedTournamentId
+      ? `https://www.bjjcompsystem.com/tournaments/${watchedTournamentId}/categories/${a.category_id}`
+      : '');
+
+  const nameHtml = bracketUrl
+    ? `<a href="${esc(bracketUrl)}" target="_blank" rel="noopener" class="athlete-name-link">${esc(a.name)}</a>`
+    : esc(a.name);
+
+  // Card class
+  let cardCls = '';
+  if (medal)     cardCls = 'placed';
+  else if (eliminated) cardCls = 'eliminated-card';
+
+  // Middle section: result row (finished) or fight info boxes (active)
+  let middleHtml;
+  if (medal) {
+    middleHtml = `
+      <div class="result-row">
+        <div class="medal-icon">${medal.icon}</div>
+        <div>
+          <div class="medal-label">${medal.label}</div>
+          <div class="medal-sub">Bracket Completed</div>
+        </div>
+      </div>`;
+  } else if (eliminated) {
+    middleHtml = `
+      <div class="result-row" style="background:rgba(192,57,43,0.12)">
+        <div class="medal-icon">❌</div>
+        <div>
+          <div class="medal-label" style="color:#e74c3c">Eliminated</div>
+          <div class="medal-sub">Bracket Completed</div>
+        </div>
+      </div>`;
+  } else {
+    const matVal   = a.mat       ? `<div class="info-val">${a.mat}</div>`        : `<div class="info-val tbd">TBD</div>`;
+    const fightVal = a.fight_num ? `<div class="info-val">#${a.fight_num}</div>` : `<div class="info-val tbd">—</div>`;
+    let timeVal;
+    if (a.fight_time) {
+      const localTime = a.fight_time_utc
+        ? new Date(a.fight_time_utc).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})
+        : null;
+      const rawMatch = a.fight_time.match(/at\s+(.+)$/i);
+      const rawTime  = rawMatch ? rawMatch[1] : a.fight_time;
+      timeVal = localTime && localTime !== rawTime
+        ? `<div class="info-val time-val">${localTime}<div style="font-size:0.68rem;font-weight:400;color:var(--muted);margin-top:1px">${rawTime} tourney</div></div>`
+        : `<div class="info-val time-val">${rawTime}</div>`;
+    } else {
+      timeVal = `<div class="info-val tbd">TBD</div>`;
+    }
+    middleHtml = `
+      <div class="fight-row">
+        <div class="info-box mat-box"><div class="info-label">Mat</div>${matVal}</div>
+        <div class="info-box fight-box"><div class="info-label">Fight</div>${fightVal}</div>
+        <div class="info-box" style="flex:2"><div class="info-label">Est. Time</div>${timeVal}</div>
+      </div>`;
+  }
+
+  const safeKey = key.replace(/'/g, "\\'");
+  return `
+    <div class="athlete-card ${cardCls}">
+      <div class="card-top">
+        <div>
+          <div class="athlete-name">${nameHtml}</div>
+          <div class="athlete-div">
+            <span class="belt-dot ${beltClass(a.division)}"></span>
+            ${a.division || a.team || ''}
+          </div>
+        </div>
+      </div>
+      ${middleHtml}
+      <div class="status-row">
+        <button class="stop-btn" onclick="removeAthlete('${safeKey}')">Stop Watching</button>
+      </div>
+    </div>`;
+}
+
+function removeAthlete(key) {
+  selectedKeys.delete(key);
+  renderWatch();
+}
+
+// ─── Auto-refresh ──────────────────────────────────────────────────────────
+function startRefreshTimer() {
+  stopRefreshTimer();
+  refreshSecondsLeft = 300;
+  updateCountdown();
+  refreshTimer = setInterval(() => {
+    refreshSecondsLeft--;
+    updateCountdown();
+    if (refreshSecondsLeft <= 0) manualRefresh();
+  }, 1000);
+}
+
+function stopRefreshTimer() {
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+  refreshSecondsLeft = 0;
+  const el = document.getElementById('refresh-countdown');
+  if (el) el.textContent = '';
+}
+
+function updateCountdown() {
+  const el = document.getElementById('refresh-countdown');
+  if (!el) return;
+  const m = Math.floor(refreshSecondsLeft / 60);
+  const s = refreshSecondsLeft % 60;
+  el.textContent = `Auto ${m}:${s.toString().padStart(2,'0')}`;
+}
+
+async function manualRefresh() {
+  if (refreshing || !watchedTournamentId) return;
+  refreshing = true;
+  const btn = document.getElementById('refresh-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ …'; }
+
+  const watched = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (_session?.access_token) headers['Authorization'] = `Bearer ${_session.access_token}`;
+    const r = await fetch('/api/refresh', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        tournament_id:   watchedTournamentId,
+        tournament_name: selectedTournament?.name || '',
+        athletes:        watched
+      })
+    });
+    const data = await r.json();
+
+    if (data.updated) {
+      const updMap = {};
+      // Key by name+category_id so multi-division athletes (NAGA) each get their own result
+      data.updated.forEach(a => {
+        const key = a.name.toLowerCase() + '::' + (a.category_id || '');
+        updMap[key] = a;
+      });
+      allAthletes = allAthletes.map(a => {
+        const key = a.name.toLowerCase() + '::' + (a.category_id || '');
+        return updMap[key] || a;
+      });
+    }
+
+    if (data.changes && data.changes.length) {
+      showChangesBanner(data.changes);
+    }
+
+    renderWatch();
+
+    const watchedNow = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+    const allDone = watchedNow.length > 0 && watchedNow.every(a => a.placement || a.eliminated);
+    if (allDone) {
+      showToast('Results final');
+      _setFinalResultsMode();
+    } else {
+      showToast('Updated');
+    }
+  } catch(e) {
+    showToast('Refresh failed');
+  } finally {
+    refreshing = false;
+    if (btn) { btn.disabled = false; btn.textContent = '⟳ Refresh'; }
+    const watched2 = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+    const allDone2 = watched2.length > 0 && watched2.every(a => a.placement || a.eliminated);
+    if (allDone2) {
+      _setFinalResultsMode();
+    } else {
+      startRefreshTimer();
+    }
+  }
+}
+
+function _setFinalResultsMode() {
+  stopRefreshTimer();
+  const cd  = document.getElementById('refresh-countdown');
+  const btn = document.getElementById('refresh-btn');
+  const bar = document.getElementById('share-results-bar');
+  if (cd)  cd.textContent  = 'Results final';
+  if (btn) { btn.textContent = '⟳ Reload'; btn.disabled = false; }
+  if (bar) bar.style.display = '';
+}
+
+function shareResults() {
+  const watched = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+  const placementLabel = { '1': '🥇 Gold', '2': '🥈 Silver', '3': '🥉 Bronze' };
+  const tourney = selectedTournament?.name || '';
+  const date    = selectedTournament?.start
+    ? ` — ${_fmtTourneyDate(selectedTournament.start, selectedTournament.end)}`
+    : '';
+
+  const team = watched.map(a => a.team).find(t => t) || '';
+  const lines = team ? [`${team}\n`, `🏆 ${tourney}${date}\n`] : [`🏆 ${tourney}${date}\n`];
+  const placed = watched.filter(a => a.placement);
+  const elim   = watched.filter(a => a.eliminated && !a.placement);
+
+  placed.sort((a,b) => (a.placement||'9').localeCompare(b.placement||'9'));
+  for (const a of placed) {
+    const medal = placementLabel[a.placement] || `#${a.placement}`;
+    const div   = a.division ? ` | ${a.division}` : '';
+    lines.push(`${medal}  ${a.name}${div}`);
+  }
+  if (elim.length) {
+    lines.push('');
+    lines.push('🥋 Competed and represented with heart:');
+    for (const a of elim) {
+      const div = a.division ? ` | ${a.division}` : '';
+      lines.push(`   ${a.name}${div}`);
+    }
+  }
+  lines.push('\nTracked with MatTrack · mattrack.net');
+
+  const text = lines.join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Results copied!');
+  }).catch(() => {
+    // Fallback: show in a modal-like alert
+    prompt('Copy results:', text);
+  });
+}
+
+function showChangesBanner(changes) {
+  const el = document.getElementById('changes-banner');
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="font-weight:700;margin-bottom:6px;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--green)">Updates</div>
+    ${changes.map(c => `<div class="change-item">${esc(c)}</div>`).join('')}
+    <div style="text-align:right;margin-top:6px">
+      <button onclick="document.getElementById('changes-banner').style.display='none'"
+        style="background:none;border:none;color:var(--muted);font-size:0.78rem;cursor:pointer">Dismiss</button>
+    </div>`;
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+function startOver() {
+  allAthletes = [];
+  selectedKeys = new Set();
+  currentJobId = null;
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  stopRefreshTimer();
+  disconnectSSE();
+  showScreen('screen-tournament');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AUTH & PAYMENTS
+// ═══════════════════════════════════════════════════════════════
+
+const SUPABASE_URL  = 'https://kzqvfuqxtbrhlgphyntb.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6cXZmdXF4dGJyaGxncGh5bnRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwMjkyNjAsImV4cCI6MjA5MTYwNTI2MH0.B5oAm1A5kNY01yU5a6KOUDHPyysrJa9-SaSyLzWv4S4';
+
+let _sb      = null;
+let _session = null;
+let _userPlan = 'free';
+let _userEmail = '';
+let _pendingCheckoutPlan = null;
+
+async function initAuth() {
+  if (typeof window.supabase === 'undefined') return;
+  _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+    auth: {
+      persistSession:     true,
+      autoRefreshToken:   true,
+      detectSessionInUrl: true,
+    }
+  });
+
+  // Re-check session when tab becomes visible (handles backgrounded token expiry)
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && _sb) {
+      const { data: { session } } = await _sb.auth.getSession();
+      if (session) {
+        _session = session;
+        await fetchUserPlan(session.access_token);
+        updateAuthUI();
+      }
+      // Don't log out here — let onAuthStateChange handle genuine sign-outs
+    }
+  });
+
+  // Detect OAuth redirect BEFORE clearing anything — just read the flag
+  const hash = window.location.hash;
+  const _isOAuthRedirect = !!(hash && hash.includes('access_token'));
+
+  // Handle checkout return
+  const sp = new URLSearchParams(window.location.search);
+  if (sp.get('checkout') === 'success') {
+    showToast('Payment successful — activating your plan…');
+    window.history.replaceState({}, '', '/');
+    let attempts = 0;
+    const pollPlan = async () => {
+      await fetchUserPlan();
+      if (_userPlan === 'free' && attempts++ < 8) {
+        setTimeout(pollPlan, 1500);
+      } else {
+        updateAuthUI();
+        if (_userPlan !== 'free') showToast('Plan activated — welcome!');
+      }
+    };
+    setTimeout(pollPlan, 1500);
+  } else if (sp.get('checkout') === 'cancel') {
+    sessionStorage.removeItem('pendingCheckoutPlan');
+    window.history.replaceState({}, '', '/');
+  }
+
+  // getSession() waits for initialize() to complete — including detectSessionInUrl processing
+  // the URL hash. ONLY clear the hash after this resolves so detectSessionInUrl can read it.
+  let { data: { session }, error: sessionError } = await _sb.auth.getSession();
+
+  let _freshLogin = false;
+  if (_isOAuthRedirect) {
+    window.history.replaceState({}, '', '/');
+    localStorage.removeItem('mattrack_session');
+    _freshLogin = true;
+  }
+
+  // If session is null but there's a stored token (expired + clock skew), try explicit refresh
+  if (!session) {
+    const storedRaw = localStorage.getItem('sb-kzqvfuqxtbrhlgphyntb-auth-token');
+    if (storedRaw) {
+      console.warn('[auth] getSession null but token in localStorage — attempting explicit refresh (clock skew?)');
+      try {
+        const parsed = JSON.parse(storedRaw);
+        const { data: rd, error: re } = await _sb.auth.refreshSession(
+          parsed.refresh_token ? { refresh_token: parsed.refresh_token } : undefined
+        );
+        console.log('[auth] explicit refresh result:', rd?.session?.user?.email || 'null',
+          '| error:', re?.message || 'none');
+        if (rd?.session) session = rd.session;
+      } catch(e) {
+        console.error('[auth] explicit refresh threw:', e.message);
+      }
+    }
+  }
+
+  _session = session;
+  const activeId = document.querySelector('.screen.active')?.id;
+
+  // Auth debug log — visible in browser console
+  const sbKeys = Object.keys(localStorage).filter(k => k.startsWith('sb-'));
+  const expectedKey = `sb-kzqvfuqxtbrhlgphyntb-auth-token`;
+  console.log('[auth] initAuth — session:', session ? `✅ ${session.user?.email}` : '❌ null',
+    '| error:', sessionError?.message || 'none',
+    '| freshLogin:', _freshLogin,
+    '| activeId:', activeId,
+    '| expectedKey:', localStorage.getItem(expectedKey) ? '✅ FOUND' : '❌ MISSING',
+    '| allSbKeys:', sbKeys.join(',') || 'NONE',
+    '| expires:', session ? new Date(session.expires_at * 1000).toISOString() : 'n/a');
+
+  if (session) {
+    // Set email immediately from JWT — don't wait for /api/auth/me before showing the user
+    _userEmail = session.user?.email || '';
+    updateAuthUI();
+    // Navigate before the async plan fetch so user sees the app immediately
+    if (_freshLogin) {
+      showScreen('screen-tournament', false);
+      history.replaceState({ screen: 'screen-tournament' }, '', '');
+    } else if (activeId === 'screen-landing') {
+      showScreen('screen-tournament', false);
+      history.replaceState({ screen: 'screen-tournament' }, '', '');
+    }
+    // Fetch plan async — updates the plan badge without blocking the UI
+    fetchUserPlan(session.access_token).then(() => updateAuthUI());
+    // Otherwise: stay where restoreSession put us (watch/pick/school)
+  } else {
+    updateAuthUI();
+    // Not logged in — if restoreSession left us somewhere deep, return to landing
+    console.log('[auth] initAuth: no session, activeId=%s', activeId);
+    if (activeId && activeId !== 'screen-landing' && activeId !== 'screen-tournament') {
+      localStorage.removeItem('mattrack_session');
+      showScreen('screen-landing', false);
+      history.replaceState({ screen: 'screen-landing' }, '', '');
+    }
+  }
+
+  _sb.auth.onAuthStateChange(async (event, session) => {
+    const sbKeys = Object.keys(localStorage).filter(k => k.startsWith('sb-'));
+    console.log('[auth] onAuthStateChange event=%s user=%s expires=%s sbKeys=%s',
+      event, session?.user?.email || 'null',
+      session ? new Date(session.expires_at * 1000).toISOString() : 'n/a',
+      sbKeys.join(',') || 'NONE');
+    _session = session;
+    if (event === 'SIGNED_OUT') {
+      console.warn('[auth] SIGNED_OUT — session cleared. sbKeys before clear:', sbKeys.join(',') || 'NONE');
+      _userPlan = 'free'; _userEmail = '';
+      updateAuthUI();
+      return;
+    }
+    if (event === 'TOKEN_REFRESHED') {
+      console.log('[auth] TOKEN_REFRESHED — new expiry:', session ? new Date(session.expires_at * 1000).toISOString() : 'n/a');
+      _session = session;
+      updateAuthUI();
+      return;
+    }
+    if (session) {
+      // Show user immediately from JWT, then fetch plan async
+      _userEmail = _userEmail || session.user?.email || '';
+      updateAuthUI();
+      if (document.querySelector('.screen.active')?.id === 'screen-landing') {
+        showScreen('screen-tournament', false);
+        history.replaceState({ screen: 'screen-tournament' }, '', '');
+      }
+      fetchUserPlan(session.access_token).then(() => updateAuthUI());
+      // Fire pending checkout from landing page plan click (survives OAuth redirect via sessionStorage)
+      const pendingPlan = _pendingCheckoutPlan || sessionStorage.getItem('pendingCheckoutPlan');
+      _pendingCheckoutPlan = null;
+      sessionStorage.removeItem('pendingCheckoutPlan');
+      // Only fire pending checkout if user doesn't already have an active plan
+      if (pendingPlan && _userPlan === 'free') {
+        startCheckout(pendingPlan);
+      }
+    } else {
+      _userPlan = 'free'; _userEmail = '';
+      updateAuthUI();
+    }
+  });
+}
+
+async function _authedFetch(url, opts = {}) {
+  // Make an authenticated fetch; if 401, force-refresh the session and retry once.
+  const token = _session?.access_token;
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}),
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}) };
+  let r = await fetch(url, { ...opts, headers });
+  if (r.status === 401 && _sb) {
+    console.warn('[auth] 401 on', url, '— forcing session refresh (clock skew?)');
+    const { data } = await _sb.auth.refreshSession();
+    if (data?.session) {
+      _session = data.session;
+      const newHeaders = { ...headers, 'Authorization': `Bearer ${data.session.access_token}` };
+      r = await fetch(url, { ...opts, headers: newHeaders });
+    }
+  }
+  return r;
+}
+
+async function fetchUserPlan(token) {
+  token = token || _session?.access_token;
+  if (!token) return;
+  try {
+    const r = await _authedFetch('/api/auth/me');
+    const d = await r.json();
+    // Server rejected the token (expired due to clock skew) — force refresh and retry
+    if (!d.authenticated && _sb) {
+      console.warn('[auth] fetchUserPlan: server says not authenticated — forcing session refresh');
+      const { data } = await _sb.auth.refreshSession();
+      if (data?.session) {
+        _session = data.session;
+        const r2 = await _authedFetch('/api/auth/me');
+        const d2 = await r2.json();
+        _userPlan  = d2.plan  || 'free';
+        _userEmail = d2.email || '';
+        return;
+      }
+    }
+    _userPlan  = d.plan  || 'free';
+    _userEmail = d.email || '';
+  } catch(e) {}
+}
+
+function updateAuthUI() {
+  const pill = document.getElementById('user-pill');
+  const pillLabel = document.getElementById('pill-label');
+  const pillBadge = document.getElementById('pill-plan-badge');
+  if (!pill) return;
+
+  if (_session) {
+    const name = _userEmail.split('@')[0] || 'Account';
+    pillLabel.textContent = name;
+    const paid = _userPlan !== 'free';
+    pillBadge.style.display = '';
+    pillBadge.textContent = _userPlan.toUpperCase();
+    pillBadge.className   = 'pill-plan' + (paid ? '' : ' free');
+    console.log('[auth] updateAuthUI: logged in email=%s plan=%s', _userEmail, _userPlan);
+
+    // Update account modal
+    const em = document.getElementById('account-email');
+    const pl = document.getElementById('account-plan-label');
+    const ub = document.getElementById('account-upgrade-btn');
+    const bb = document.getElementById('account-billing-btn');
+    if (em) em.textContent = _userEmail;
+    if (pl) pl.textContent = paid ? `Plan: ${_userPlan} (active)` : 'Plan: Free (1 athlete)';
+    if (ub) ub.style.display = paid ? 'none' : 'block';
+    if (bb) bb.style.display = paid ? 'block' : 'none';
+    const cb = document.getElementById('account-codes-btn');
+    if (cb) cb.style.display = (_userPlan === 'gym' || _userPlan === 'affiliate') ? 'block' : 'none';
+
+    // Hide sign-in button in paywall if already signed in
+    const pas = document.getElementById('paywall-auth-section');
+    if (pas) pas.innerHTML = paid
+      ? '<p style="text-align:center;color:var(--muted);font-size:0.82rem">Select a plan above to upgrade</p>'
+      : '<button class="btn btn-primary" style="width:100%" onclick="startCheckout(\'individual\')">Upgrade for $2.99/mo</button><div style="text-align:center;margin-top:8px"><a href="#" onclick="showModal(\'modal-redeem\');closeModal(\'modal-paywall\');return false" style="color:var(--muted);font-size:0.82rem">Have a gym code? Redeem it here</a></div>';
+  } else {
+    pillLabel.textContent = 'Sign In';
+    pillBadge.style.display = 'none';
+    console.log('[auth] updateAuthUI: not logged in');
+  }
+}
+
+// Canonical name used by shared/header.html
+function authPillClick() { _onPillClick(); }
+
+// Cross-site session handoff — used by shared/header.html sibling link
+function _openSiblingWithSession(baseUrl, e) {
+  if (e) e.preventDefault();
+  if (_session?.access_token && _session?.refresh_token) {
+    const hash = '#access_token=' + encodeURIComponent(_session.access_token)
+      + '&refresh_token=' + encodeURIComponent(_session.refresh_token)
+      + '&token_type=bearer&type=oauth';
+    window.open(baseUrl + '/' + hash, '_blank');
+  } else {
+    window.open(baseUrl, '_blank');
+  }
+}
+
+function _onPillClick() {
+  if (_session) {
+    console.log('[auth] pill click → account modal');
+    showModal('modal-account');
+  } else {
+    console.log('[auth] pill click → login modal');
+    showModal('modal-login');
+  }
+}
+
+async function openCodesModal() {
+  closeModal('modal-account');
+  showModal('modal-codes');
+  const loading = document.getElementById('codes-loading');
+  const empty   = document.getElementById('codes-empty');
+  const list    = document.getElementById('codes-list');
+  const school  = document.getElementById('codes-school');
+  loading.style.display = 'block';
+  empty.style.display   = 'none';
+  list.innerHTML        = '';
+  school.textContent    = '';
+  try {
+    const r = await fetch('/api/gym/codes', {
+      headers: { 'Authorization': `Bearer ${_session?.access_token}` }
+    });
+    const packs = await r.json();
+    loading.style.display = 'none';
+    if (!packs.length) { empty.style.display = 'block'; return; }
+    for (const pack of packs) {
+      school.textContent = pack.school_name || '';
+      const used  = (pack.codes || []).filter(c => c.redeemed_by).length;
+      const total = (pack.codes || []).length;
+      const summary = document.createElement('div');
+      summary.style.cssText = 'font-size:0.78rem;color:var(--muted);margin-bottom:8px';
+      summary.textContent = `${used} of ${total} codes used`;
+      list.appendChild(summary);
+      for (const c of (pack.codes || [])) {
+        const redeemed = !!c.redeemed_by;
+        const row = document.createElement('div');
+        row.className = 'code-row';
+        row.innerHTML = `
+          <span class="code-val">${esc(c.code)}</span>
+          <span class="code-status ${redeemed ? 'redeemed' : 'available'}">${redeemed ? 'Used' : 'Available'}</span>
+          ${redeemed
+            ? `<span class="code-redeemed-by">${esc(c.redeemed_by)}</span>`
+            : `<button class="btn-copy" title="Copy code" onclick="copyCode('${esc(c.code)}',this)">📋</button>`
+          }
+        `;
+        list.appendChild(row);
+      }
+    }
+  } catch(e) {
+    loading.style.display = 'none';
+    empty.style.display = 'block';
+    empty.textContent = 'Failed to load codes. Try again.';
+  }
+}
+
+function copyCode(code, btn) {
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = '✓';
+    setTimeout(() => btn.textContent = '📋', 1500);
+  });
+}
+
+async function signInWithGoogle() {
+  if (!_sb) return;
+  const base = window.location.origin;
+  console.log('[auth] signInWithGoogle redirectTo=%s', base);
+  await _sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: base }
+  });
+}
+
+async function sendMagicLink() {
+  if (!_sb) return;
+  const email = document.getElementById('login-email-input')?.value?.trim();
+  const status = document.getElementById('login-email-status');
+  if (!email) { if (status) status.textContent = 'Enter your email first'; return; }
+  const base = window.location.origin;
+  console.log('[auth] sendMagicLink email=%s redirectTo=%s', email, base);
+  if (status) status.textContent = 'Sending…';
+  const { error } = await _sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: base }
+  });
+  if (error) {
+    if (status) status.textContent = error.message;
+  } else {
+    if (status) status.textContent = '✓ Check your email for the login link';
+    document.getElementById('login-email-input').value = '';
+  }
+}
+
+async function signOut() {
+  if (!_sb) return;
+  await _sb.auth.signOut();
+  window.location.href = '/';
+}
+
+// ── PWA: Service Worker + Push Notifications ─────────────────────────────────
+
+let _swReg = null;
+let _pushSubscription = null;
+
+// Register service worker on load
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js', { scope: '/' })
+    .then(reg => {
+      _swReg = reg;
+      // Check existing push subscription
+      return reg.pushManager.getSubscription();
+    })
+    .then(sub => {
+      _pushSubscription = sub;
+      _updateNotifBtn();
+    })
+    .catch(e => console.warn('SW registration failed:', e));
+}
+
+function _updateNotifBtn() {
+  const btn = document.getElementById('account-notif-btn');
+  if (!btn) return;
+  if (!('PushManager' in window)) { btn.style.display = 'none'; return; }
+  if (_pushSubscription) {
+    btn.textContent = '🔕 Disable Fight Alerts';
+    btn.style.background = 'rgba(99,102,241,0.15)';
+    btn.style.color = '#6366f1';
+  } else {
+    btn.textContent = '🔔 Enable Fight Alerts';
+    btn.style.background = '';
+    btn.style.color = '';
+  }
+}
+
+async function toggleNotifications() {
+  if (!_swReg) { showToast('Browser not supported'); return; }
+  if (_pushSubscription) {
+    // Unsubscribe
+    await _pushSubscription.unsubscribe();
+    await fetch('/api/push/unsubscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: _pushSubscription.endpoint })
+    }).catch(() => {});
+    _pushSubscription = null;
+    _updateNotifBtn();
+    showToast('Fight alerts disabled');
+    return;
+  }
+  // Subscribe
+  try {
+    const keyRes = await fetch('/api/push/vapid-key');
+    const { publicKey } = await keyRes.json();
+    if (!publicKey) { showToast('Push not configured'); return; }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') { showToast('Notifications blocked — check browser settings'); return; }
+    const sub = await _swReg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: _urlBase64ToUint8Array(publicKey)
+    });
+    _pushSubscription = sub;
+    // Save to server with current watching categories
+    const keys = sub.getKey ? { p256dh: _arrayBufferToBase64(sub.getKey('p256dh')), auth: _arrayBufferToBase64(sub.getKey('auth')) } : {};
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: sub.endpoint, ...keys, category_ids: _watchingCategoryIds() })
+    });
+    _updateNotifBtn();
+    showToast('Fight alerts enabled! You\'ll be notified when athletes are called to the mat.');
+  } catch(e) {
+    showToast('Could not enable alerts: ' + e.message);
+  }
+}
+
+// Update the push subscription with currently watched categories
+async function _syncPushCategories() {
+  if (!_pushSubscription) return;
+  const keys = _pushSubscription.getKey ? {
+    p256dh: _arrayBufferToBase64(_pushSubscription.getKey('p256dh')),
+    auth:   _arrayBufferToBase64(_pushSubscription.getKey('auth'))
+  } : {};
+  await fetch('/api/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint: _pushSubscription.endpoint, ...keys, category_ids: _watchingCategoryIds() })
+  }).catch(() => {});
+}
+
+function _watchingCategoryIds() {
+  // Extract category IDs from athletes currently being watched
+  if (typeof allAthletes === 'undefined' || typeof selectedKeys === 'undefined') return [];
+  const ids = new Set();
+  for (const a of allAthletes) {
+    if (selectedKeys.has(a.name.toLowerCase()) && a.category_id) {
+      ids.add(String(a.category_id));
+    }
+  }
+  return [...ids];
+}
+
+function _urlBase64ToUint8Array(b64) {
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+function _arrayBufferToBase64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+
+function landingCheckout(plan) {
+  // From landing page — sign in first if needed, then checkout
+  if (!_session) {
+    // Persist intent in sessionStorage so it survives the OAuth redirect
+    sessionStorage.setItem('pendingCheckoutPlan', plan);
+    signInWithGoogle();
+  } else {
+    startCheckout(plan);
+  }
+}
+
+async function startCheckout(plan) {
+  if (!_session) { signInWithGoogle(); return; }
+  try {
+    showToast('Opening checkout…');
+    const r = await fetch('/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization': `Bearer ${_session.access_token}` },
+      body: JSON.stringify({ plan })
+    });
+    const d = await r.json();
+    if (d.url) window.location.href = d.url;
+    else showToast('Error: ' + (d.error || 'unknown'));
+  } catch(e) { showToast('Checkout failed'); }
+}
+
+async function openBillingPortal() {
+  if (!_session) return;
+  closeModal('modal-account');
+  try {
+    const r = await fetch('/api/billing/portal', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${_session.access_token}` }
+    });
+    const d = await r.json();
+    if (d.url) window.location.href = d.url;
+    else showToast('No billing account found');
+  } catch(e) { showToast('Error opening billing portal'); }
+}
+
+async function redeemCode() {
+  if (!_session) { signInWithGoogle(); return; }
+  const code = (document.getElementById('redeem-code-input')?.value || '').trim().toUpperCase();
+  if (!code) return;
+  const errEl = document.getElementById('redeem-error');
+  try {
+    const r = await fetch('/api/gym/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization': `Bearer ${_session.access_token}` },
+      body: JSON.stringify({ code })
+    });
+    const d = await r.json();
+    if (d.success) {
+      _userPlan = 'individual';
+      updateAuthUI();
+      closeModal('modal-redeem');
+      showToast('Code redeemed — unlimited athletes unlocked!');
+    } else {
+      const msg = (d.error || '').toLowerCase().includes('already')
+        ? 'This code has already been used. Ask your gym for a new one.'
+        : 'Code not found. Check the code and try again.';
+      if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+    }
+  } catch(e) {
+    if (errEl) { errEl.textContent = 'Error redeeming code'; errEl.style.display = 'block'; }
+  }
+}
+
+function checkAthleteLimit(currentCount, silent = false) {
+  if (_userPlan !== 'free') return true;
+  if (currentCount >= 1) { if (!silent) showModal('modal-paywall'); return false; }
+  return true;
+}
+
+function showModal(id) {
+  document.getElementById(id)?.classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id)?.classList.remove('open');
+}
+
+// Call initAuth on load
+document.addEventListener('DOMContentLoaded', () => { initAuth(); });
+
+// ─── Internationalization ──────────────────────────────────────────────────
+const LANGUAGES = [
+  { code:'en', flag:'🇺🇸', name:'English' },
+  { code:'es', flag:'🇪🇸', name:'Español' },
+  { code:'pt', flag:'🇧🇷', name:'Português' },
+  { code:'fr', flag:'🇫🇷', name:'Français' },
+  { code:'de', flag:'🇩🇪', name:'Deutsch' },
+  { code:'it', flag:'🇮🇹', name:'Italiano' },
+  { code:'nl', flag:'🇳🇱', name:'Nederlands' },
+  { code:'pl', flag:'🇵🇱', name:'Polski' },
+  { code:'ru', flag:'🇷🇺', name:'Русский' },
+  { code:'ar', flag:'🇸🇦', name:'العربية' },
+  { code:'ja', flag:'🇯🇵', name:'日本語' },
+  { code:'ko', flag:'🇰🇷', name:'한국어' },
+  { code:'zh', flag:'🇨🇳', name:'中文' },
+];
+
+const TRANSLATIONS = {
+  en: {
+    nav_subtitle:'Live Tournament Tracker', select_tournament:'Select Tournament',
+    loading_tournaments:'Loading tournaments...', mode_team:'Team', mode_athlete:'Athlete',
+    filter_teams:'Filter teams…', filter_athletes:'Filter athletes…',
+    change_tournament:'← Change Tournament', tap_to_select:'Tap athletes to watch',
+    filter_name:'Filter by name...', select_all:'Select All', deselect_all:'Deselect All',
+    back:'← Back', search:'Search...', refresh:'⟳ Refresh', edit:'← Edit',
+    watch_n:'Watch {n} Athlete →', watch_n_pl:'Watch {n} Athletes →',
+    select_to_watch:'Select athletes to watch',
+    n_selected:'{n} selected', n_athletes:'{n} athletes — tap to select',
+    building_roster:'Building roster… try again shortly',
+    eliminated:'Eliminated', searching:'Searching brackets...',
+    landing_tagline:'Live bracket tracking for BJJ tournaments. Know the moment your athlete steps on the mat.',
+    landing_cta:'Start Tracking Free', landing_cta_sub:'No account required to try · 1 athlete free',
+    how_title:'How it works',
+    step1_title:'Pick your tournament', step1_desc:'Select from all upcoming and live BJJ competitions.',
+    step2_title:'Search your team or athlete', step2_desc:'Type your school name or search any athlete by name.',
+    step3_title:'Watch live', step3_desc:'Get real-time mat assignments, fight times, and results as they happen.',
+    step4_title:'Get fight alerts', step4_desc:'Enable push notifications and get buzzed the moment your athlete is called to the mat — even with your phone in your pocket.',
+    plans_title:'Plans', free_plan:'Free', free_tagline:'No account required to try',
+    plan_individual:'Individual Coach', plan_gym:'Gym Pack', plan_affiliate:'Affiliate Pack',
+    most_popular:'Most Popular', cancel_anytime:'All plans include a free trial · Cancel anytime',
+  },
+  es: {
+    nav_subtitle:'Seguimiento en Vivo', select_tournament:'Seleccionar Torneo',
+    loading_tournaments:'Cargando torneos...', mode_team:'Equipo', mode_athlete:'Atleta',
+    filter_teams:'Buscar equipo…', filter_athletes:'Buscar atleta…',
+    change_tournament:'← Cambiar Torneo', tap_to_select:'Toca los atletas para seguir',
+    filter_name:'Filtrar por nombre...', select_all:'Seleccionar Todo', deselect_all:'Deseleccionar Todo',
+    back:'← Atrás', search:'Buscar...', refresh:'⟳ Actualizar', edit:'← Editar',
+    watch_n:'Ver {n} Atleta →', watch_n_pl:'Ver {n} Atletas →',
+    select_to_watch:'Selecciona atletas para seguir',
+    n_selected:'{n} seleccionados', n_athletes:'{n} atletas — toca para seleccionar',
+    building_roster:'Construyendo lista… intenta de nuevo',
+    eliminated:'Eliminado', searching:'Buscando brackets...',
+    landing_tagline:'Seguimiento en vivo de brackets en torneos de BJJ. Sabe cuándo tu atleta sale al tatami.',
+    landing_cta:'Empezar Gratis', landing_cta_sub:'Sin cuenta requerida · 1 atleta gratis',
+    how_title:'Cómo funciona',
+    step1_title:'Elige tu torneo', step1_desc:'Selecciona entre todas las competencias de BJJ.',
+    step2_title:'Busca tu equipo o atleta', step2_desc:'Escribe el nombre de tu escuela o busca un atleta.',
+    step3_title:'Mira en vivo', step3_desc:'Obtén asignaciones de mat, tiempos de lucha y resultados en tiempo real.',
+    plans_title:'Planes', free_plan:'Gratis', free_tagline:'Sin cuenta requerida',
+    plan_individual:'Entrenador Individual', plan_gym:'Pack Gym', plan_affiliate:'Pack Afiliado',
+    most_popular:'Más Popular', cancel_anytime:'Prueba gratuita · Cancela cuando quieras',
+  },
+  pt: {
+    nav_subtitle:'Acompanhamento ao Vivo', select_tournament:'Selecionar Torneio',
+    loading_tournaments:'Carregando torneios...', mode_team:'Equipe', mode_athlete:'Atleta',
+    filter_teams:'Filtrar equipes…', filter_athletes:'Filtrar atletas…',
+    change_tournament:'← Mudar Torneio', tap_to_select:'Toque nos atletas para acompanhar',
+    filter_name:'Filtrar por nome...', select_all:'Selecionar Todos', deselect_all:'Desselecionar Todos',
+    back:'← Voltar', search:'Buscar...', refresh:'⟳ Atualizar', edit:'← Editar',
+    watch_n:'Acompanhar {n} Atleta →', watch_n_pl:'Acompanhar {n} Atletas →',
+    select_to_watch:'Selecione atletas para acompanhar',
+    n_selected:'{n} selecionados', n_athletes:'{n} atletas — toque para selecionar',
+    building_roster:'Construindo lista… tente novamente',
+    eliminated:'Eliminado', searching:'Buscando chaves...',
+    landing_tagline:'Acompanhamento ao vivo de chaves em torneios de BJJ. Saiba quando seu atleta entra no tatame.',
+    landing_cta:'Começar Grátis', landing_cta_sub:'Sem conta necessária · 1 atleta grátis',
+    how_title:'Como funciona',
+    step1_title:'Escolha o torneio', step1_desc:'Selecione entre todas as competições de BJJ.',
+    step2_title:'Busque sua equipe ou atleta', step2_desc:'Digite o nome da sua escola ou busque um atleta.',
+    step3_title:'Acompanhe ao vivo', step3_desc:'Receba atribuições de tatame, horários e resultados em tempo real.',
+    plans_title:'Planos', free_plan:'Grátis', free_tagline:'Sem conta necessária',
+    plan_individual:'Treinador Individual', plan_gym:'Pack Academia', plan_affiliate:'Pack Afiliado',
+    most_popular:'Mais Popular', cancel_anytime:'Teste grátis · Cancele quando quiser',
+  },
+  fr: {
+    nav_subtitle:'Suivi en Direct', select_tournament:'Sélectionner le Tournoi',
+    loading_tournaments:'Chargement...', mode_team:'Équipe', mode_athlete:'Athlète',
+    filter_teams:'Filtrer les équipes…', filter_athletes:'Filtrer les athlètes…',
+    change_tournament:'← Changer de Tournoi', tap_to_select:'Appuyez pour suivre',
+    filter_name:'Filtrer par nom...', select_all:'Tout sélectionner', deselect_all:'Tout désélectionner',
+    back:'← Retour', search:'Rechercher...', refresh:'⟳ Actualiser', edit:'← Modifier',
+    watch_n:'Suivre {n} Athlète →', watch_n_pl:'Suivre {n} Athlètes →',
+    select_to_watch:'Sélectionnez des athlètes',
+    n_selected:'{n} sélectionnés', n_athletes:'{n} athlètes — appuyez pour sélectionner',
+    building_roster:'Construction en cours…', eliminated:'Éliminé', searching:'Recherche...',
+    landing_tagline:'Suivi en direct des tableaux aux tournois de BJJ.',
+    landing_cta:'Commencer Gratuitement', landing_cta_sub:'Sans compte · 1 athlète gratuit',
+    how_title:'Comment ça marche',
+    step1_title:'Choisissez votre tournoi', step1_desc:'Sélectionnez parmi toutes les compétitions BJJ.',
+    step2_title:'Recherchez votre équipe', step2_desc:'Tapez le nom de votre école ou cherchez un athlète.',
+    step3_title:'Suivez en direct', step3_desc:'Obtenez les tatamis, horaires et résultats en temps réel.',
+    plans_title:'Formules', free_plan:'Gratuit', free_tagline:'Sans compte requis',
+    plan_individual:'Coach Individuel', plan_gym:'Pack Salle', plan_affiliate:'Pack Affilié',
+    most_popular:'Le Plus Populaire', cancel_anytime:'Essai gratuit · Annulez à tout moment',
+  },
+  de: {
+    nav_subtitle:'Live-Turnierverfolgung', select_tournament:'Turnier auswählen',
+    loading_tournaments:'Lade Turniere...', mode_team:'Team', mode_athlete:'Athlet',
+    filter_teams:'Teams filtern…', filter_athletes:'Athleten filtern…',
+    change_tournament:'← Turnier wechseln', tap_to_select:'Athleten antippen',
+    filter_name:'Nach Name filtern...', select_all:'Alle auswählen', deselect_all:'Alle abwählen',
+    back:'← Zurück', search:'Suchen...', refresh:'⟳ Aktualisieren', edit:'← Bearbeiten',
+    watch_n:'{n} Athlet beobachten →', watch_n_pl:'{n} Athleten beobachten →',
+    select_to_watch:'Athleten auswählen',
+    n_selected:'{n} ausgewählt', n_athletes:'{n} Athleten — antippen',
+    building_roster:'Liste wird erstellt…', eliminated:'Ausgeschieden', searching:'Suche läuft...',
+    landing_tagline:'Live-Verfolgung von BJJ-Turnier-Brackets.',
+    landing_cta:'Kostenlos starten', landing_cta_sub:'Kein Account nötig · 1 Athlet kostenlos',
+    how_title:'So funktioniert es',
+    step1_title:'Turnier wählen', step1_desc:'Wähle aus allen BJJ-Wettbewerben.',
+    step2_title:'Team suchen', step2_desc:'Tippe deinen Schulnamen oder suche einen Athleten.',
+    step3_title:'Live verfolgen', step3_desc:'Erhalte Matten, Zeiten und Ergebnisse in Echtzeit.',
+    plans_title:'Pläne', free_plan:'Kostenlos', free_tagline:'Kein Account erforderlich',
+    plan_individual:'Einzeltrainer', plan_gym:'Gym-Paket', plan_affiliate:'Affiliate-Paket',
+    most_popular:'Beliebteste', cancel_anytime:'Kostenlose Testphase · Jederzeit kündigen',
+  },
+  it: {
+    nav_subtitle:'Monitoraggio Live', select_tournament:'Seleziona Torneo',
+    loading_tournaments:'Caricamento...', mode_team:'Squadra', mode_athlete:'Atleta',
+    filter_teams:'Filtra squadre…', filter_athletes:'Filtra atleti…',
+    change_tournament:'← Cambia Torneo', tap_to_select:'Tocca per seguire',
+    filter_name:'Filtra per nome...', select_all:'Seleziona tutto', deselect_all:'Deseleziona tutto',
+    back:'← Indietro', search:'Cerca...', refresh:'⟳ Aggiorna', edit:'← Modifica',
+    watch_n:'Segui {n} Atleta →', watch_n_pl:'Segui {n} Atleti →',
+    select_to_watch:'Seleziona atleti da seguire',
+    n_selected:'{n} selezionati', n_athletes:'{n} atleti — tocca per selezionare',
+    building_roster:'Caricamento lista…', eliminated:'Eliminato', searching:'Ricerca...',
+    landing_tagline:'Monitoraggio live dei bracket nei tornei di BJJ.',
+    landing_cta:'Inizia Gratis', landing_cta_sub:'Senza account · 1 atleta gratis',
+    how_title:'Come funziona',
+    step1_title:'Scegli il torneo', step1_desc:'Seleziona tra tutte le competizioni BJJ.',
+    step2_title:'Cerca la tua squadra', step2_desc:'Digita il nome della tua scuola o cerca un atleta.',
+    step3_title:'Segui in diretta', step3_desc:'Ricevi tatami, orari e risultati in tempo reale.',
+    plans_title:'Piani', free_plan:'Gratuito', free_tagline:'Nessun account richiesto',
+    plan_individual:'Coach Individuale', plan_gym:'Pack Palestra', plan_affiliate:'Pack Affiliato',
+    most_popular:'Più Popolare', cancel_anytime:'Prova gratuita · Disdici quando vuoi',
+  },
+  nl: {
+    nav_subtitle:'Live Toernooi Tracker', select_tournament:'Selecteer Toernooi',
+    loading_tournaments:'Toernooien laden...', mode_team:'Team', mode_athlete:'Atleet',
+    filter_teams:'Teams filteren…', filter_athletes:'Atleten filteren…',
+    change_tournament:'← Toernooi wijzigen', tap_to_select:'Tik om te volgen',
+    filter_name:'Filteren op naam...', select_all:'Alles selecteren', deselect_all:'Alles deselecteren',
+    back:'← Terug', search:'Zoeken...', refresh:'⟳ Vernieuwen', edit:'← Bewerken',
+    watch_n:'{n} Atleet volgen →', watch_n_pl:'{n} Atleten volgen →',
+    select_to_watch:'Selecteer atleten om te volgen',
+    n_selected:'{n} geselecteerd', n_athletes:'{n} atleten — tik om te selecteren',
+    building_roster:'Lijst samenstellen…', eliminated:'Uitgeschakeld', searching:'Zoeken...',
+    landing_tagline:'Live bracket-tracking voor BJJ-toernooien.',
+    landing_cta:'Gratis beginnen', landing_cta_sub:'Geen account nodig · 1 atleet gratis',
+    how_title:'Hoe het werkt',
+    step1_title:'Kies je toernooi', step1_desc:'Selecteer uit alle BJJ-competities.',
+    step2_title:'Zoek je team', step2_desc:'Typ je schoolnaam of zoek een atleet.',
+    step3_title:'Volg live', step3_desc:'Ontvang mat-nummers, tijden en resultaten in realtime.',
+    plans_title:'Abonnementen', free_plan:'Gratis', free_tagline:'Geen account vereist',
+    plan_individual:'Individuele Coach', plan_gym:'Gym Pack', plan_affiliate:'Affiliate Pack',
+    most_popular:'Meest Populair', cancel_anytime:'Gratis proefperiode · Altijd opzegbaar',
+  },
+  pl: {
+    nav_subtitle:'Śledzenie Na Żywo', select_tournament:'Wybierz Turniej',
+    loading_tournaments:'Ładowanie turniejów...', mode_team:'Drużyna', mode_athlete:'Zawodnik',
+    filter_teams:'Filtruj drużyny…', filter_athletes:'Filtruj zawodników…',
+    change_tournament:'← Zmień Turniej', tap_to_select:'Dotknij zawodnika',
+    filter_name:'Filtruj po nazwie...', select_all:'Zaznacz wszystkich', deselect_all:'Odznacz wszystkich',
+    back:'← Wstecz', search:'Szukaj...', refresh:'⟳ Odśwież', edit:'← Edytuj',
+    watch_n:'Śledź {n} Zawodnika →', watch_n_pl:'Śledź {n} Zawodników →',
+    select_to_watch:'Wybierz zawodników do śledzenia',
+    n_selected:'{n} zaznaczonych', n_athletes:'{n} zawodników — dotknij aby wybrać',
+    building_roster:'Budowanie listy…', eliminated:'Wyeliminowany', searching:'Szukam...',
+    landing_tagline:'Śledzenie bracket na żywo na turniejach BJJ.',
+    landing_cta:'Zacznij Za Darmo', landing_cta_sub:'Bez konta · 1 zawodnik za darmo',
+    how_title:'Jak to działa',
+    step1_title:'Wybierz turniej', step1_desc:'Wybierz spośród wszystkich zawodów BJJ.',
+    step2_title:'Znajdź drużynę', step2_desc:'Wpisz nazwę szkoły lub wyszukaj zawodnika.',
+    step3_title:'Śledź na żywo', step3_desc:'Otrzymuj przydziały mat, czasy walk i wyniki na bieżąco.',
+    plans_title:'Plany', free_plan:'Bezpłatny', free_tagline:'Bez konta',
+    plan_individual:'Trener Indywidualny', plan_gym:'Pakiet Siłowni', plan_affiliate:'Pakiet Afiliacyjny',
+    most_popular:'Najpopularniejszy', cancel_anytime:'Bezpłatny okres próbny · Anuluj kiedy chcesz',
+  },
+  ru: {
+    nav_subtitle:'Прямая трансляция', select_tournament:'Выбрать турнир',
+    loading_tournaments:'Загрузка...', mode_team:'Команда', mode_athlete:'Спортсмен',
+    filter_teams:'Фильтр команд…', filter_athletes:'Фильтр спортсменов…',
+    change_tournament:'← Сменить турнир', tap_to_select:'Нажмите для отслеживания',
+    filter_name:'Фильтр по имени...', select_all:'Выбрать всех', deselect_all:'Снять выбор',
+    back:'← Назад', search:'Поиск...', refresh:'⟳ Обновить', edit:'← Изменить',
+    watch_n:'Следить за {n} →', watch_n_pl:'Следить за {n} →',
+    select_to_watch:'Выберите спортсменов',
+    n_selected:'Выбрано: {n}', n_athletes:'{n} спортсменов',
+    building_roster:'Загрузка списка…', eliminated:'Выбыл', searching:'Поиск...',
+    landing_tagline:'Отслеживание турнирных сеток BJJ в реальном времени.',
+    landing_cta:'Начать Бесплатно', landing_cta_sub:'Без регистрации · 1 спортсмен бесплатно',
+    how_title:'Как это работает',
+    step1_title:'Выберите турнир', step1_desc:'Выберите из всех соревнований BJJ.',
+    step2_title:'Найдите команду', step2_desc:'Введите название школы или имя спортсмена.',
+    step3_title:'Следите онлайн', step3_desc:'Получайте номера матов, расписание и результаты.',
+    plans_title:'Тарифы', free_plan:'Бесплатно', free_tagline:'Без регистрации',
+    plan_individual:'Личный тренер', plan_gym:'Пакет для зала', plan_affiliate:'Партнёрский пакет',
+    most_popular:'Самый популярный', cancel_anytime:'Пробный период · Отмена в любое время',
+  },
+  ar: {
+    nav_subtitle:'تتبع مباشر', select_tournament:'اختر البطولة',
+    loading_tournaments:'جارٍ التحميل...', mode_team:'الفريق', mode_athlete:'الرياضي',
+    filter_teams:'تصفية الفرق…', filter_athletes:'تصفية الرياضيين…',
+    change_tournament:'← تغيير البطولة', tap_to_select:'اضغط للمتابعة',
+    filter_name:'تصفية بالاسم...', select_all:'تحديد الكل', deselect_all:'إلغاء تحديد الكل',
+    back:'← رجوع', search:'بحث...', refresh:'⟳ تحديث', edit:'← تعديل',
+    watch_n:'متابعة {n} رياضي →', watch_n_pl:'متابعة {n} رياضيين →',
+    select_to_watch:'اختر الرياضيين للمتابعة',
+    n_selected:'{n} محدد', n_athletes:'{n} رياضيين',
+    building_roster:'جارٍ التحضير…', eliminated:'مُقصى', searching:'جارٍ البحث...',
+    landing_tagline:'تتبع مباشر لجداول بطولات BJJ.',
+    landing_cta:'ابدأ مجاناً', landing_cta_sub:'بدون حساب · رياضي واحد مجاناً',
+    how_title:'كيف يعمل',
+    step1_title:'اختر البطولة', step1_desc:'اختر من جميع بطولات BJJ.',
+    step2_title:'ابحث عن فريقك', step2_desc:'اكتب اسم مدرستك أو ابحث عن رياضي.',
+    step3_title:'تابع مباشرة', step3_desc:'احصل على أرقام المصارعة والأوقات والنتائج فورياً.',
+    plans_title:'الخطط', free_plan:'مجاني', free_tagline:'بدون حساب',
+    plan_individual:'مدرب فردي', plan_gym:'باقة الصالة', plan_affiliate:'باقة الانتساب',
+    most_popular:'الأكثر شيوعاً', cancel_anytime:'تجربة مجانية · إلغاء في أي وقت',
+  },
+  ja: {
+    nav_subtitle:'ライブ試合追跡', select_tournament:'大会を選択',
+    loading_tournaments:'読み込み中...', mode_team:'チーム', mode_athlete:'選手',
+    filter_teams:'チームを検索…', filter_athletes:'選手を検索…',
+    change_tournament:'← 大会変更', tap_to_select:'選手をタップして追跡',
+    filter_name:'名前で検索...', select_all:'すべて選択', deselect_all:'すべて解除',
+    back:'← 戻る', search:'検索...', refresh:'⟳ 更新', edit:'← 編集',
+    watch_n:'{n}人の選手を追跡 →', watch_n_pl:'{n}人の選手を追跡 →',
+    select_to_watch:'選手を選んでください',
+    n_selected:'{n}人選択中', n_athletes:'{n}人の選手',
+    building_roster:'名簿作成中…', eliminated:'敗退', searching:'検索中...',
+    landing_tagline:'BJJ大会のブラケットをリアルタイムで追跡。',
+    landing_cta:'無料で始める', landing_cta_sub:'アカウント不要 · 1名無料',
+    how_title:'使い方',
+    step1_title:'大会を選ぶ', step1_desc:'開催中・予定のBJJ大会から選択。',
+    step2_title:'チームまたは選手を検索', step2_desc:'道場名または選手名を入力。',
+    step3_title:'ライブで観戦', step3_desc:'マット番号、試合時間、結果をリアルタイムで確認。',
+    plans_title:'プラン', free_plan:'無料', free_tagline:'アカウント不要',
+    plan_individual:'個人コーチ', plan_gym:'道場パック', plan_affiliate:'アフィリエイトパック',
+    most_popular:'人気No.1', cancel_anytime:'無料トライアル · いつでもキャンセル可',
+  },
+  ko: {
+    nav_subtitle:'라이브 토너먼트 추적', select_tournament:'대회 선택',
+    loading_tournaments:'불러오는 중...', mode_team:'팀', mode_athlete:'선수',
+    filter_teams:'팀 검색…', filter_athletes:'선수 검색…',
+    change_tournament:'← 대회 변경', tap_to_select:'선수를 탭하세요',
+    filter_name:'이름으로 검색...', select_all:'전체 선택', deselect_all:'전체 해제',
+    back:'← 뒤로', search:'검색...', refresh:'⟳ 새로고침', edit:'← 편집',
+    watch_n:'{n}명 선수 추적 →', watch_n_pl:'{n}명 선수 추적 →',
+    select_to_watch:'추적할 선수를 선택하세요',
+    n_selected:'{n}명 선택됨', n_athletes:'{n}명 선수',
+    building_roster:'명단 작성 중…', eliminated:'탈락', searching:'검색 중...',
+    landing_tagline:'BJJ 토너먼트 브래킷 실시간 추적.',
+    landing_cta:'무료로 시작하기', landing_cta_sub:'계정 불필요 · 선수 1명 무료',
+    how_title:'사용 방법',
+    step1_title:'대회 선택', step1_desc:'모든 BJJ 대회 중에서 선택하세요.',
+    step2_title:'팀 또는 선수 검색', step2_desc:'학교 이름이나 선수 이름을 입력하세요.',
+    step3_title:'실시간 관전', step3_desc:'매트 배정, 경기 시간, 결과를 실시간으로 확인.',
+    plans_title:'요금제', free_plan:'무료', free_tagline:'계정 불필요',
+    plan_individual:'개인 코치', plan_gym:'도장 팩', plan_affiliate:'어필리에이트 팩',
+    most_popular:'가장 인기', cancel_anytime:'무료 체험 · 언제든지 취소',
+  },
+  zh: {
+    nav_subtitle:'赛事实时追踪', select_tournament:'选择赛事',
+    loading_tournaments:'加载中...', mode_team:'队伍', mode_athlete:'运动员',
+    filter_teams:'搜索队伍…', filter_athletes:'搜索运动员…',
+    change_tournament:'← 更换赛事', tap_to_select:'点击运动员进行追踪',
+    filter_name:'按名字筛选...', select_all:'全选', deselect_all:'取消全选',
+    back:'← 返回', search:'搜索...', refresh:'⟳ 刷新', edit:'← 编辑',
+    watch_n:'追踪 {n} 位运动员 →', watch_n_pl:'追踪 {n} 位运动员 →',
+    select_to_watch:'选择要追踪的运动员',
+    n_selected:'已选 {n} 人', n_athletes:'{n} 位运动员',
+    building_roster:'正在加载名单…', eliminated:'已淘汰', searching:'搜索中...',
+    landing_tagline:'BJJ赛事对阵表实时追踪，第一时间掌握运动员上场信息。',
+    landing_cta:'免费开始', landing_cta_sub:'无需注册 · 1名运动员免费',
+    how_title:'使用方法',
+    step1_title:'选择赛事', step1_desc:'从所有BJJ比赛中选择。',
+    step2_title:'搜索队伍或运动员', step2_desc:'输入学校名称或运动员姓名。',
+    step3_title:'实时观看', step3_desc:'实时获取场地安排、比赛时间和结果。',
+    plans_title:'套餐', free_plan:'免费', free_tagline:'无需注册',
+    plan_individual:'个人教练', plan_gym:'道馆套餐', plan_affiliate:'联盟套餐',
+    most_popular:'最受欢迎', cancel_anytime:'免费试用 · 随时取消',
+  },
+};
+
+let _lang = localStorage.getItem('mattrack_lang') || 'en';
+
+function t(key, vars) {
+  const tr = TRANSLATIONS[_lang] || TRANSLATIONS.en;
+  let s = tr[key] || TRANSLATIONS.en[key] || key;
+  if (vars) Object.entries(vars).forEach(([k,v]) => { s = s.replace(`{${k}}`, v); });
+  return s;
+}
+
+function applyTranslations() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    if (el.tagName === 'INPUT') el.placeholder = t(key);
+    else el.textContent = t(key);
+  });
+  // RTL for Arabic
+  document.body.dir = _lang === 'ar' ? 'rtl' : 'ltr';
+  // Update current lang label
+  const cur = LANGUAGES.find(l => l.code === _lang);
+  const el = document.getElementById('lang-current');
+  if (el && cur) el.textContent = cur.code.toUpperCase();
+  // Update school input placeholder
+  const inp = document.getElementById('school-input');
+  if (inp) inp.placeholder = t(_searchMode === 'team' ? 'filter_teams' : 'filter_athletes');
+  // Re-render landing page translated text
+  renderLandingTranslations();
+}
+
+function renderLandingTranslations() {
+  const map = {
+    'landing-sub': 'landing_tagline', 'landing-cta-btn': 'landing_cta',
+    'landing-cta-sub': 'landing_cta_sub', 'how-title': 'how_title',
+    'step1-title': 'step1_title', 'step1-desc': 'step1_desc',
+    'step2-title': 'step2_title', 'step2-desc': 'step2_desc',
+    'step3-title': 'step3_title', 'step3-desc': 'step3_desc',
+    'plans-title': 'plans_title', 'plan-badge-popular': 'most_popular',
+    'pricing-free-note': 'cancel_anytime',
+    'plan-name-individual': 'plan_individual', 'plan-name-gym': 'plan_gym',
+    'plan-name-affiliate': 'plan_affiliate',
+  };
+  Object.entries(map).forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = t(key);
+  });
+}
+
+function setLanguage(code) {
+  _lang = code;
+  localStorage.setItem('mattrack_lang', code);
+  closeLangDropdown();
+  applyTranslations();
+}
+
+function toggleLangDropdown() {
+  const dd = document.getElementById('lang-dropdown');
+  if (dd.classList.contains('open')) { closeLangDropdown(); return; }
+  dd.innerHTML = LANGUAGES.map(l => `
+    <div class="lang-option${l.code===_lang?' active':''}" onclick="setLanguage('${l.code}')">
+      <span class="lang-flag">${l.flag}</span>${l.name}
+    </div>`).join('');
+  dd.classList.add('open');
+}
+
+function closeLangDropdown() {
+  document.getElementById('lang-dropdown')?.classList.remove('open');
+}
+
+document.addEventListener('click', () => closeLangDropdown());
+
+// Apply on load
+document.addEventListener('DOMContentLoaded', () => {
+  applyTranslations();
+});
+
+// Call initAuth on load (already declared above, re-apply translations after fonts load)
+</script>
+</body>
+</html>
