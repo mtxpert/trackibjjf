@@ -275,6 +275,25 @@ async function initAuth() {
     updateAuthUI();
   }
 
+  // Re-run relay when tab becomes visible — handles: user signs in on sibling while this tab was in background
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && !_session && _sb) {
+      const sib = await _fetchSiblingSession();
+      if (sib?.access_token && sib?.refresh_token) {
+        const { data: sd } = await _sb.auth.setSession({
+          access_token: sib.access_token,
+          refresh_token: sib.refresh_token,
+        });
+        if (sd?.session) {
+          _session = sd.session;
+          _userEmail = sd.session.user?.email || '';
+          updateAuthUI();
+          fetchUserPlan(sd.session.access_token).then(updateAuthUI);
+        }
+      }
+    }
+  });
+
   _sb.auth.onAuthStateChange(async (event, session) => {
     _session = session;
     if (session) {

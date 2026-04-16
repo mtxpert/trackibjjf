@@ -2761,8 +2761,22 @@ async function initAuth() {
         _session = session;
         await fetchUserPlan(session.access_token);
         updateAuthUI();
+      } else if (!_session) {
+        // No local session — try sibling relay (handles case where user signed in on trackbjj)
+        const sib = await _fetchSiblingSession();
+        if (sib?.access_token && sib?.refresh_token) {
+          const { data: sd } = await _sb.auth.setSession({
+            access_token: sib.access_token,
+            refresh_token: sib.refresh_token,
+          });
+          if (sd?.session) {
+            _session = sd.session;
+            _userEmail = sd.session.user?.email || '';
+            updateAuthUI();
+            fetchUserPlan(sd.session.access_token).then(() => updateAuthUI());
+          }
+        }
       }
-      // Don't log out here — let onAuthStateChange handle genuine sign-outs
     }
   });
 
