@@ -145,6 +145,106 @@ def first_name_score(a: str, b: str) -> float:
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+@app.route("/api/auth/me")
+def api_auth_me():
+    """Return current user plan. Called on page load to restore session."""
+    from auth import get_user_from_token, get_user_plan, is_plan_active
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"plan": "free", "authenticated": False})
+    plan = get_user_plan(user["sub"])
+    return jsonify({
+        "authenticated": True,
+        "email": user.get("email", ""),
+        "plan": plan,
+        "active": is_plan_active(user["sub"]),
+    })
+
+
+@app.route("/api/stripe/checkout", methods=["POST"])
+def api_stripe_checkout():
+    from auth import get_user_from_token
+    from payments import create_checkout_session
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+    data = request.json or {}
+    plan = data.get("plan", "individual")
+    if plan not in ("individual", "gym", "affiliate"):
+        return jsonify({"error": "Invalid plan"}), 400
+    base_url = os.environ.get("APP_URL", "https://www.trackbjj.net")
+    try:
+        url = create_checkout_session(
+            user_id     = user["sub"],
+            email       = user.get("email", ""),
+            plan        = plan,
+            success_url = f"{base_url}/?checkout=success",
+            cancel_url  = f"{base_url}/?checkout=cancel",
+        )
+        return jsonify({"url": url})
+    except Exception as e:
+        log.error("checkout failed user=%s: %s", user.get("sub"), e)
+        return jsonify({"error": "Failed to create checkout session"}), 500
+
+
+@app.route("/api/billing/portal", methods=["POST"])
+def api_billing_portal():
+    from auth import get_user_from_token
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+    try:
+        import stripe
+        stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+        row = sb.table("users").select("stripe_customer_id").eq("id", user["sub"]).single().execute()
+        customer_id = (row.data or {}).get("stripe_customer_id")
+        if not customer_id:
+            return jsonify({"error": "No billing account found"}), 404
+        base_url = os.environ.get("APP_URL", "https://www.trackbjj.net")
+        portal = stripe.billing_portal.Session.create(
+            customer   = customer_id,
+            return_url = base_url,
+        )
+        return jsonify({"url": portal.url})
+    except Exception as e:
+        log.error("billing portal failed user=%s: %s", user.get("sub"), e)
+        return jsonify({"error": "Failed to open billing portal"}), 500
+
+
+@app.route("/api/gym/redeem", methods=["POST"])
+def api_gym_redeem():
+    from auth import get_user_from_token
+    from payments import redeem_access_code
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+    code = (request.json or {}).get("code", "").strip().upper()
+    if not code:
+        return jsonify({"error": "Code required"}), 400
+    ok = redeem_access_code(code, user["sub"])
+    if ok:
+        return jsonify({"success": True, "plan": "individual"})
+    return jsonify({"error": "Invalid or already used code"}), 400
+
+
+@app.route("/api/gym/codes")
+def api_gym_codes():
+    from auth import get_user_from_token
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"error": "Authentication required"}), 401
+    try:
+        packs = sb.table("gym_packs").select("id,school_name,max_codes,sub_status,plan").eq("owner_id", user["sub"]).execute()
+        result = []
+        for pack in (packs.data or []):
+            codes = sb.table("access_codes").select("code,redeemed_by,redeemed_at,created_at").eq("pack_id", pack["id"]).execute()
+            result.append({**pack, "codes": codes.data or []})
+        return jsonify(result)
+    except Exception as e:
+        log.error("gym codes fetch failed user=%s: %s", user.get("sub"), e)
+        return jsonify({"error": "Failed to load codes"}), 500
+
+
 @app.route("/")
 def index():
     return render_template("trackbjj/index.html")
@@ -201,10 +301,11 @@ def athlete_profile(sc_uid):
 
     # Check for manually verified claim first
     verified_res = (sb.table("sc_ibjjf_verified")
-                     .select("ibjjf_athlete_id,ibjjf_name,belt")
+                     .select("*")
                      .eq("sc_uid", sc_uid)
                      .execute())
     verified_claim = verified_res.data[0] if verified_res.data else None
+    profile_photo_url = (verified_claim or {}).get("photo_url") or ""
 
     # Look up in ibjjf_athletes
     ibjjf_match = None
@@ -393,6 +494,7 @@ def athlete_profile(sc_uid):
 
     return render_template("trackbjj/athlete.html",
                            sc_uid=sc_uid,
+                           profile_photo_url=profile_photo_url,
                            display_name=display_name,
                            names=names,
                            team=team,
@@ -441,14 +543,19 @@ def claim_profile(sc_uid):
     ibjjf_name = profile.get("name", "")
     belt       = profile.get("belt", "")
     academy    = profile.get("academy", "")
+    photo_url  = profile.get("photo_url", "") or ""
 
-    sb.table("sc_ibjjf_verified").upsert({
+    verified_row = {
         "sc_uid":           sc_uid,
         "ibjjf_athlete_id": ibjjf_id,
         "ibjjf_name":       ibjjf_name,
         "belt":             belt,
         "academy":          academy,
-    }, on_conflict="sc_uid").execute()
+    }
+    if photo_url:
+        verified_row["photo_url"] = photo_url
+
+    sb.table("sc_ibjjf_verified").upsert(verified_row, on_conflict="sc_uid").execute()
 
     ibjjf_gender = (profile.get("gender") or "").lower() or None
     upsert_data = {

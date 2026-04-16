@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#c0392b">
   <title>{% block title %}TrackBJJ{% endblock %}</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* Exact mattrack tokens — only accent changes: red → cyan */
     :root {
       --bg:     #0f0f1a;
       --card:   #1e1e30;
@@ -16,10 +16,11 @@
       --text:   #f0f0f0;
       --muted:  #777799;
       --border: #333355;
-      --accent: #c0392b;   /* matches mattrack red exactly */
+      --accent: #c0392b;
       --gold:   #ffd700;
       --silver: #c0c0c0;
       --bronze: #cd7f32;
+      --green:  #27ae60;
     }
 
     body {
@@ -29,7 +30,7 @@
       min-height: 100vh;
     }
 
-    /* Full accent-colored header — mirrors mattrack's red header exactly */
+    /* ── Header ── */
     header {
       background: var(--accent);
       padding: 14px 16px 12px;
@@ -56,11 +57,85 @@
     header .nav-search::placeholder { color: rgba(255,255,255,.6); }
     header .nav-search:focus { border-color: rgba(255,255,255,.6); width: 240px; transition: width .2s; }
 
-    /* Layout */
+    /* ── User pill (identical to mattrack) ── */
+    .user-pill {
+      margin-left: auto;
+      display: flex; align-items: center; gap: 6px;
+      font-size: .75rem; background: rgba(255,255,255,.18);
+      padding: 5px 11px; border-radius: 20px;
+      cursor: pointer; white-space: nowrap; color: #fff;
+    }
+    .user-pill:hover { background: rgba(255,255,255,.26); }
+    .pill-plan {
+      font-size: .65rem; background: var(--green); color: white;
+      padding: 1px 6px; border-radius: 8px; font-weight: 700; text-transform: uppercase;
+    }
+    .pill-plan.free { background: var(--muted); }
+
+    /* ── Modals ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      z-index: 200; align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-sheet {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 24px; width: 100%; max-width: 360px; margin: 16px;
+      position: relative;
+    }
+    .modal-title { font-size: 1.1rem; font-weight: 700; margin-bottom: .25rem; }
+    .modal-sub { font-size: .82rem; color: var(--muted); margin-bottom: 1.25rem; }
+    .btn-modal-close {
+      position: absolute; top: 16px; right: 16px;
+      background: none; border: none; color: var(--muted);
+      font-size: 1.4rem; cursor: pointer; line-height: 1;
+    }
+    .btn-modal-close:hover { color: var(--text); }
+
+    /* Buttons inside modals */
+    .btn {
+      width: 100%; padding: 12px; border-radius: 10px; font-size: .9rem;
+      font-weight: 600; cursor: pointer; border: none; margin-bottom: 8px;
+      text-align: center; display: block; text-decoration: none;
+    }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { opacity: .9; }
+    .btn-secondary { background: var(--gray); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+    .btn-danger { background: var(--gray); color: #e74c3c; border: 1px solid var(--border); }
+    .btn-google {
+      width: 100%; padding: 14px; border-radius: 12px;
+      background: white; color: #222; border: none;
+      font-size: .95rem; font-weight: 600; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      margin-bottom: 10px;
+    }
+    .btn-google:hover { background: #f5f5f5; }
+
+    .modal-divider {
+      text-align: center; font-size: .75rem; color: var(--muted);
+      margin: 8px 0 10px; position: relative;
+    }
+    .modal-divider::before, .modal-divider::after {
+      content: ''; position: absolute; top: 50%;
+      width: 42%; height: 1px; background: var(--border);
+    }
+    .modal-divider::before { left: 0; }
+    .modal-divider::after  { right: 0; }
+
+    .modal-input {
+      width: 100%; padding: .65rem .85rem; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg);
+      color: var(--text); font-size: .875rem; outline: none; margin-bottom: 8px;
+    }
+    .modal-input:focus { border-color: var(--accent); }
+    .modal-status { text-align: center; font-size: .8rem; margin-top: 6px; min-height: 18px; color: var(--muted); }
+
+    /* ── Layout ── */
     .container { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
 
-    /* Org tags */
+    /* ── Tags ── */
     .tag {
       display: inline-block; font-size: .65rem; padding: .15rem .5rem;
       border-radius: 3px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
@@ -74,7 +149,7 @@
     .tag-uaejjf  { background: rgba(239,154,154,.15);  color: #ef9a9a; }
     .tag-sjjif   { background: rgba(255,204,128,.15);  color: #ffcc80; }
 
-    /* Tables */
+    /* ── Tables ── */
     table { width: 100%; border-collapse: collapse; font-size: .875rem; }
     th {
       text-align: left; color: var(--muted); font-weight: 600; font-size: .72rem;
@@ -85,7 +160,7 @@
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: var(--gray); }
 
-    /* Section dividers */
+    /* ── Section titles ── */
     .section-title {
       font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
       color: var(--muted); margin: 2rem 0 .75rem;
@@ -93,7 +168,7 @@
     }
     .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
-    /* Medal */
+    /* ── Medal colours ── */
     .place-1 { color: var(--gold);   font-weight: 700; }
     .place-2 { color: var(--silver); font-weight: 700; }
     .place-3 { color: var(--bronze); font-weight: 700; }
@@ -101,20 +176,70 @@
   {% block head %}{% endblock %}
 </head>
 <body>
+
 <header>
   <a class="logo" href="{{ trackbjj_url }}">TrackBJJ<span>BJJ Athlete Repository</span></a>
   <input class="nav-search" id="nav-search" type="text" placeholder="Search athletes…" autocomplete="off">
   <a class="sibling" href="{{ mattrack_url }}" target="_blank">↗ MatTrack</a>
+  <div id="user-pill" class="user-pill" onclick="authPillClick()">
+    <span id="pill-label">Sign In</span>
+    <span class="pill-plan free" id="pill-plan-badge" style="display:none">FREE</span>
+  </div>
 </header>
+
+<!-- ── Login modal ── -->
+<div class="modal-overlay" id="modal-login">
+  <div class="modal-sheet">
+    <button class="btn-modal-close" onclick="closeModal('modal-login')">✕</button>
+    <div class="modal-title">Sign in to TrackBJJ</div>
+    <div class="modal-sub">Claim your profile, track your results, and unlock premium insights.</div>
+    <button class="btn-google" onclick="signInWithGoogle()">
+      <svg width="18" height="18" viewBox="0 0 24 24">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+      </svg>
+      Continue with Google
+    </button>
+    <div class="modal-divider">or</div>
+    <input class="modal-input" id="magic-email" type="email" placeholder="your@email.com" autocomplete="email">
+    <button class="btn btn-primary" style="margin-bottom:0" onclick="sendMagicLink()">Send magic link</button>
+    <div class="modal-status" id="magic-status"></div>
+  </div>
+</div>
+
+<!-- ── Account modal ── -->
+<div class="modal-overlay" id="modal-account">
+  <div class="modal-sheet">
+    <button class="btn-modal-close" onclick="closeModal('modal-account')">✕</button>
+    <div class="modal-title" id="account-email" style="font-size:.95rem;font-weight:600;margin-bottom:4px"></div>
+    <div id="account-plan-label" style="color:var(--muted);font-size:.82rem;margin-bottom:16px"></div>
+    <button class="btn btn-primary" id="account-upgrade-btn" onclick="startCheckout('individual')" style="display:none">Upgrade Plan — $2.99/mo</button>
+    <button class="btn btn-secondary" id="account-billing-btn" onclick="openBillingPortal()" style="display:none">Manage Billing</button>
+    <button class="btn btn-secondary" id="account-codes-btn" onclick="openCodesSection()" style="display:none">Manage Team Codes</button>
+    <button class="btn btn-secondary" onclick="openRedeemSection()">Redeem a Gym Code</button>
+    <!-- Inline redeem -->
+    <div id="redeem-section" style="display:none;margin-bottom:8px">
+      <input class="modal-input" id="redeem-input" type="text" placeholder="TRACK-XXXX" style="text-transform:uppercase;letter-spacing:2px;text-align:center;margin-bottom:6px">
+      <button class="btn btn-primary" style="margin-bottom:4px" onclick="redeemCode()">Redeem Code</button>
+      <div class="modal-status" id="redeem-status"></div>
+    </div>
+    <button class="btn btn-danger" onclick="signOut()">Sign Out</button>
+  </div>
+</div>
+
 {% block body %}{% endblock %}
+
 <script>
+// ── Nav search ──────────────────────────────────────────────────────────────
 const navSearch = document.getElementById('nav-search');
-let _t;
+let _navT;
 navSearch.addEventListener('input', () => {
-  clearTimeout(_t);
+  clearTimeout(_navT);
   const q = navSearch.value.trim();
   if (q.length < 2) return;
-  _t = setTimeout(() => {
+  _navT = setTimeout(() => {
     window.location.href = '{{ trackbjj_url }}/search?q=' + encodeURIComponent(q);
   }, 400);
 });
@@ -124,6 +249,227 @@ navSearch.addEventListener('keydown', e => {
     if (q) window.location.href = '{{ trackbjj_url }}/search?q=' + encodeURIComponent(q);
   }
 });
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+const _SB_URL  = 'https://kzqvfuqxtbrhlgphyntb.supabase.co';
+const _SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt6cXZmdXF4dGJyaGxncGh5bnRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwMjkyNjAsImV4cCI6MjA5MTYwNTI2MH0.B5oAm1A5kNY01yU5a6KOUDHPyysrJa9-SaSyLzWv4S4';
+
+let _sb = null, _session = null, _userPlan = 'free', _userEmail = '';
+
+async function initAuth() {
+  if (typeof window.supabase === 'undefined') return;
+  _sb = window.supabase.createClient(_SB_URL, _SB_ANON, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
+
+  const isOAuth = !!(location.hash && location.hash.includes('access_token'));
+
+  let { data: { session } } = await _sb.auth.getSession();
+
+  // Clock-skew: if null but token in storage, try explicit refresh
+  if (!session && localStorage.getItem('sb-kzqvfuqxtbrhlgphyntb-auth-token')) {
+    try {
+      const { data: rd } = await _sb.auth.refreshSession();
+      if (rd?.session) session = rd.session;
+    } catch(_) {}
+  }
+
+  _session = session;
+  if (session) {
+    _userEmail = session.user?.email || '';
+    updateAuthUI();
+    fetchUserPlan(session.access_token).then(updateAuthUI);
+    if (isOAuth) history.replaceState(null, '', location.pathname + location.search);
+  } else {
+    updateAuthUI();
+  }
+
+  _sb.auth.onAuthStateChange(async (event, session) => {
+    _session = session;
+    if (session) {
+      _userEmail = session.user?.email || _userEmail;
+      updateAuthUI();
+      fetchUserPlan(session.access_token).then(updateAuthUI);
+    } else {
+      _userPlan = 'free'; _userEmail = '';
+      updateAuthUI();
+    }
+  });
+}
+
+async function fetchUserPlan(token) {
+  try {
+    const r = await fetch('/api/auth/me', {
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {}
+    });
+    const d = await r.json();
+    _userPlan = d.plan || 'free';
+    if (!d.authenticated && _sb) {
+      const { data } = await _sb.auth.refreshSession();
+      if (data?.session) {
+        _session = data.session;
+        const r2 = await fetch('/api/auth/me', {
+          headers: { 'Authorization': 'Bearer ' + data.session.access_token }
+        });
+        const d2 = await r2.json();
+        _userPlan = d2.plan || 'free';
+      }
+    }
+  } catch(_) {}
+}
+
+function updateAuthUI() {
+  const pillLabel = document.getElementById('pill-label');
+  const pillBadge = document.getElementById('pill-plan-badge');
+  if (!pillLabel) return;
+
+  if (_session) {
+    pillLabel.textContent = _userEmail.split('@')[0] || 'Account';
+    const paid = _userPlan !== 'free';
+    pillBadge.style.display = '';
+    pillBadge.textContent   = _userPlan.toUpperCase();
+    pillBadge.className     = 'pill-plan' + (paid ? '' : ' free');
+
+    // Update account modal
+    const em = document.getElementById('account-email');
+    const pl = document.getElementById('account-plan-label');
+    const ub = document.getElementById('account-upgrade-btn');
+    const bb = document.getElementById('account-billing-btn');
+    const cb = document.getElementById('account-codes-btn');
+    if (em) em.textContent = _userEmail;
+    if (pl) pl.textContent = paid ? `Plan: ${_userPlan} (active)` : 'Plan: Free';
+    if (ub) ub.style.display = paid ? 'none'  : 'block';
+    if (bb) bb.style.display = paid ? 'block' : 'none';
+    if (cb) cb.style.display = (_userPlan === 'gym' || _userPlan === 'affiliate') ? 'block' : 'none';
+  } else {
+    pillLabel.textContent   = 'Sign In';
+    pillBadge.style.display = 'none';
+  }
+
+  // Expose globally for page-level scripts
+  window.tbPlan    = _userPlan;
+  window.tbSession = _session;
+  document.dispatchEvent(new CustomEvent('tb:auth', { detail: { plan: _userPlan, session: _session } }));
+}
+
+function authPillClick() {
+  if (_session) openModal('modal-account');
+  else          openModal('modal-login');
+}
+
+function openModal(id) {
+  document.getElementById(id)?.classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id)?.classList.remove('open');
+}
+
+// Close on backdrop click
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('modal-overlay')) {
+    e.target.classList.remove('open');
+  }
+});
+
+async function signInWithGoogle() {
+  if (!_sb) return;
+  await _sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: location.origin + '/' }
+  });
+}
+
+async function sendMagicLink() {
+  const email  = document.getElementById('magic-email')?.value?.trim();
+  const status = document.getElementById('magic-status');
+  if (!email) { if (status) status.textContent = 'Enter your email first'; return; }
+  if (!_sb) return;
+  const { error } = await _sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: location.origin + '/' }
+  });
+  if (status) status.textContent = error ? '✗ ' + error.message : '✓ Check your email for the login link';
+  if (!error) document.getElementById('magic-email').value = '';
+}
+
+async function signOut() {
+  if (_sb) await _sb.auth.signOut();
+  closeModal('modal-account');
+}
+
+// ── Payment actions ──────────────────────────────────────────────────────────
+async function startCheckout(plan) {
+  if (!_session) { openModal('modal-login'); return; }
+  closeModal('modal-account');
+  try {
+    const r = await fetch('/api/stripe/checkout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + _session.access_token
+      },
+      body: JSON.stringify({ plan })
+    });
+    const d = await r.json();
+    if (d.url) window.location.href = d.url;
+    else alert('Could not start checkout. Try again.');
+  } catch(_) { alert('Could not start checkout. Try again.'); }
+}
+
+async function openBillingPortal() {
+  if (!_session) return;
+  closeModal('modal-account');
+  try {
+    const r = await fetch('/api/billing/portal', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + _session.access_token }
+    });
+    const d = await r.json();
+    if (d.url) window.location.href = d.url;
+    else alert('Could not open billing portal. Try again.');
+  } catch(_) { alert('Could not open billing portal. Try again.'); }
+}
+
+function openRedeemSection() {
+  const s = document.getElementById('redeem-section');
+  if (s) s.style.display = s.style.display === 'none' ? 'block' : 'none';
+}
+
+function openCodesSection() {
+  closeModal('modal-account');
+  // Future: open a codes management modal
+  alert('Team codes management coming soon.');
+}
+
+async function redeemCode() {
+  if (!_session) { openModal('modal-login'); return; }
+  const code   = document.getElementById('redeem-input')?.value?.trim().toUpperCase();
+  const status = document.getElementById('redeem-status');
+  if (!code) { if (status) status.textContent = 'Enter a code'; return; }
+  try {
+    const r = await fetch('/api/gym/redeem', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + _session.access_token
+      },
+      body: JSON.stringify({ code })
+    });
+    const d = await r.json();
+    if (d.success) {
+      _userPlan = 'individual';
+      updateAuthUI();
+      if (status) status.textContent = '✓ Code redeemed — plan upgraded!';
+      document.getElementById('redeem-input').value = '';
+    } else {
+      if (status) status.textContent = '✗ ' + (d.error || 'Invalid code');
+    }
+  } catch(_) {
+    if (status) status.textContent = '✗ Error redeeming code';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', initAuth);
 </script>
 </body>
 </html>

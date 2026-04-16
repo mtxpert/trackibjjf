@@ -54,6 +54,20 @@
 
 {% block body %}
 <div class="container">
+
+<div id="premium-gate" style="display:none;max-width:480px;margin:3rem auto">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:2rem;text-align:center">
+    <div style="font-size:2rem;margin-bottom:.75rem">🔒</div>
+    <div style="font-weight:700;font-size:1.1rem;margin-bottom:.5rem">Premium Feature</div>
+    <div style="color:var(--muted);font-size:.85rem;margin-bottom:1.5rem" id="gate-msg">Sign in and upgrade to add social links to your profile.</div>
+    <button class="btn btn-primary" id="gate-btn" style="max-width:240px;margin:0 auto">Sign In</button>
+    <div style="margin-top:.75rem">
+      <a href="{{ url_for('athlete_profile', sc_uid=sc_uid) }}" style="color:var(--muted);font-size:.8rem">← Back to profile</a>
+    </div>
+  </div>
+</div>
+
+<div id="premium-content">
 <div class="claim-card">
   <h2>Social Links</h2>
   <p>Add your social media profiles to your athlete page at TrackBJJ.</p>
@@ -120,5 +134,35 @@
     <a href="{{ url_for('athlete_profile', sc_uid=sc_uid) }}" style="color:var(--muted);font-size:.8rem">← Back to profile</a>
   </p>
 </div>
+</div><!-- /premium-content -->
 </div>
+<script>
+function applyPremiumGate(plan, session) {
+  const gate    = document.getElementById('premium-gate');
+  const content = document.getElementById('premium-content');
+  const msg     = document.getElementById('gate-msg');
+  const btn     = document.getElementById('gate-btn');
+  if (!gate || !content) return;
+  const isPremium = session && plan && plan !== 'free';
+  if (isPremium) {
+    gate.style.display    = 'none';
+    content.style.display = '';
+  } else {
+    gate.style.display    = 'block';
+    content.style.display = 'none';
+    if (!session) {
+      msg.textContent = 'Sign in to add social links to your profile.';
+      btn.textContent = 'Sign In';
+      btn.onclick = () => openModal('modal-login');
+    } else {
+      msg.textContent = 'Upgrade to Premium to add Instagram, Facebook, and YouTube to your athlete profile.';
+      btn.textContent = 'Upgrade — $2.99/mo';
+      btn.onclick = () => startCheckout('individual');
+    }
+  }
+}
+document.getElementById('premium-content').style.display = 'none';
+document.addEventListener('tb:auth', e => applyPremiumGate(e.detail.plan, e.detail.session));
+if (window.tbSession !== undefined) applyPremiumGate(window.tbPlan, window.tbSession);
+</script>
 {% endblock %}

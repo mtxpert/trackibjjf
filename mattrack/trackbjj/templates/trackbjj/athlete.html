@@ -11,7 +11,22 @@
     width: 72px; height: 72px; border-radius: 50%; background: var(--border);
     display: flex; align-items: center; justify-content: center;
     font-size: 1.8rem; font-weight: 800; color: var(--accent); flex-shrink: 0;
+    overflow: hidden; position: relative;
   }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .premium-lock {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1rem 1.25rem; font-size: .85rem; color: var(--muted);
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .premium-lock strong { color: var(--text); }
+  .btn-premium {
+    background: var(--accent); color: white; border: none; border-radius: 6px;
+    padding: .35rem .85rem; font-size: .8rem; font-weight: 600; cursor: pointer;
+    white-space: nowrap; text-decoration: none; display: inline-block;
+  }
+  .btn-premium:hover { opacity: .9; }
   .profile-info h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: .3rem; }
   .profile-info .team-line { color: var(--muted); font-size: .9rem; margin-bottom: .6rem; }
   .name-variants { font-size: .75rem; color: var(--muted); }
@@ -70,13 +85,80 @@
     display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem;
   }
 </style>
+<script>
+const _thisScUid = '{{ sc_uid }}';
+const _ibjjfVerified = {{ 'true' if ibjjf_verified else 'false' }};
+const _hasProfilePhoto = {{ 'true' if profile_photo_url else 'false' }};
+
+const _claimUrl   = '{{ url_for("claim_profile", sc_uid=sc_uid) }}';
+const _socialsUrl  = '{{ url_for("social_links", sc_uid=sc_uid) }}';
+const _verifyScUrl = '{{ url_for("verify_sc", sc_uid=sc_uid) }}';
+const _ibjjfLabel  = _ibjjfVerified ? 'Re-link IBJJF' : 'Link IBJJF';
+
+function _premiumAction(isPremium, url, label) {
+  if (isPremium) {
+    return `<a href="${url}" style="color:var(--accent);font-size:.8rem;text-decoration:none">${label}</a>`;
+  }
+  return `<span title="Upgrade to Premium to unlock" style="color:var(--muted);font-size:.8rem;cursor:not-allowed">🔒 ${label}</span>`;
+}
+
+function renderPremiumCta(plan, session) {
+  const el = document.getElementById('premium-cta');
+  if (!el) return;
+  el.style.display = 'block';
+
+  const isPremium = session && plan && plan !== 'free';
+
+  const socialsItem  = _premiumAction(isPremium, _socialsUrl, 'Edit socials');
+  const ibjjfItem    = _premiumAction(isPremium, _claimUrl, _ibjjfLabel);
+  const scItem       = _premiumAction(isPremium, _verifyScUrl, 'Link Smoothcomp');
+
+  let badge, cta;
+  if (!session) {
+    badge = `<button class="btn-premium" onclick="document.getElementById('modal-login').classList.add('open')">Sign In</button>`;
+    cta   = `<span style="font-size:.8rem;color:var(--muted)">Sign in to manage your profile</span>`;
+  } else if (!isPremium) {
+    badge = `<a class="btn-premium" href="{{ mattrack_url }}" target="_blank">Upgrade $2.99/mo</a>`;
+    cta   = `<span style="font-size:.8rem;color:var(--muted)">Premium unlocks profile editing on MatTrack &amp; TrackBJJ</span>`;
+  } else {
+    badge = `<span style="font-size:.75rem;color:#4caf50;font-weight:700">★ Active</span>`;
+    cta   = '';
+  }
+
+  el.innerHTML = `<div class="premium-lock" style="${isPremium ? 'background:rgba(192,57,43,.05);border-color:rgba(192,57,43,.25)' : ''}">
+    <div>
+      <div style="font-size:.8rem;font-weight:700;margin-bottom:.4rem">${isPremium ? '★ ' : ''}Premium Profile</div>
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center">
+        ${socialsItem}
+        ${ibjjfItem}
+        ${scItem}
+      </div>
+      ${cta ? '<div style="margin-top:.4rem">' + cta + '</div>' : ''}
+    </div>
+    <div style="flex-shrink:0">${badge}</div>
+  </div>`;
+}
+
+document.addEventListener('tb:auth', e => {
+  renderPremiumCta(e.detail.plan, e.detail.session);
+});
+if (window.tbSession !== undefined) {
+  renderPremiumCta(window.tbPlan, window.tbSession);
+}
+</script>
 {% endblock %}
 
 {% block body %}
 <div class="container">
 
   <div class="profile-header">
-    <div class="avatar">{{ display_name[0].upper() if display_name else '?' }}</div>
+    <div class="avatar">
+      {% if profile_photo_url %}
+        <img src="{{ profile_photo_url }}" alt="{{ display_name }}" loading="lazy">
+      {% else %}
+        {{ display_name[0].upper() if display_name else '?' }}
+      {% endif %}
+    </div>
     <div class="profile-info">
       <h1>{{ display_name }}</h1>
       <div class="team-line">{{ team }}</div>
@@ -177,6 +259,11 @@
     <div class="stat-card"><div class="num bronze-num">{{ stats.bronze or 0 }}</div><div class="lbl">Bronze</div></div>
   </div>
   {% endif %}
+
+  <!-- Premium profile CTA (JS-driven) -->
+  <div id="premium-cta" style="display:none;margin-bottom:1rem">
+    <!-- Filled by JS based on auth state -->
+  </div>
 
   {% if ibjjf_rank_data and ibjjf_match %}
   {%- set ogi = ibjjf_rank_data.overall_gi -%}
@@ -336,3 +423,4 @@
 
 </div>
 {% endblock %}
+
