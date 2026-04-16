@@ -15,6 +15,8 @@ import datetime
 from flask import Flask, jsonify, render_template, request, g, redirect, url_for, flash
 from dotenv import load_dotenv
 from supabase import create_client
+import auth as _auth_module
+import payments as _payments_module
 
 import ibjjf_api
 import scrape_smoothcomp_verify
@@ -177,16 +179,15 @@ def first_name_score(a: str, b: str) -> float:
 def api_auth_me():
     """Return current user plan. Called on page load to restore session."""
     try:
-        from auth import get_user_from_token, get_user_plan, is_plan_active
-        user = get_user_from_token(request)
+        user = _auth_module.get_user_from_token(request)
         if not user:
             return jsonify({"plan": "free", "authenticated": False})
-        plan = get_user_plan(user["sub"])
+        plan = _auth_module.get_user_plan(user["sub"])
         return jsonify({
             "authenticated": True,
             "email": user.get("email", ""),
             "plan": plan,
-            "active": is_plan_active(user["sub"]),
+            "active": _auth_module.is_plan_active(user["sub"]),
         })
     except Exception as e:
         log.error("api_auth_me error: %s", e, exc_info=True)
@@ -195,9 +196,7 @@ def api_auth_me():
 
 @app.route("/api/stripe/checkout", methods=["POST"])
 def api_stripe_checkout():
-    from auth import get_user_from_token
-    from payments import create_checkout_session
-    user = get_user_from_token(request)
+    user = _auth_module.get_user_from_token(request)
     if not user:
         return jsonify({"error": "Authentication required"}), 401
     data = request.json or {}
@@ -206,7 +205,7 @@ def api_stripe_checkout():
         return jsonify({"error": "Invalid plan"}), 400
     base_url = os.environ.get("APP_URL", "https://www.trackbjj.net")
     try:
-        url = create_checkout_session(
+        url = _payments_module.create_checkout_session(
             user_id     = user["sub"],
             email       = user.get("email", ""),
             plan        = plan,
@@ -221,8 +220,7 @@ def api_stripe_checkout():
 
 @app.route("/api/billing/portal", methods=["POST"])
 def api_billing_portal():
-    from auth import get_user_from_token
-    user = get_user_from_token(request)
+    user = _auth_module.get_user_from_token(request)
     if not user:
         return jsonify({"error": "Authentication required"}), 401
     try:
@@ -245,15 +243,13 @@ def api_billing_portal():
 
 @app.route("/api/gym/redeem", methods=["POST"])
 def api_gym_redeem():
-    from auth import get_user_from_token
-    from payments import redeem_access_code
-    user = get_user_from_token(request)
+    user = _auth_module.get_user_from_token(request)
     if not user:
         return jsonify({"error": "Authentication required"}), 401
     code = (request.json or {}).get("code", "").strip().upper()
     if not code:
         return jsonify({"error": "Code required"}), 400
-    ok = redeem_access_code(code, user["sub"])
+    ok = _payments_module.redeem_access_code(code, user["sub"])
     if ok:
         return jsonify({"success": True, "plan": "individual"})
     return jsonify({"error": "Invalid or already used code"}), 400
@@ -261,8 +257,7 @@ def api_gym_redeem():
 
 @app.route("/api/gym/codes")
 def api_gym_codes():
-    from auth import get_user_from_token
-    user = get_user_from_token(request)
+    user = _auth_module.get_user_from_token(request)
     if not user:
         return jsonify({"error": "Authentication required"}), 401
     try:
