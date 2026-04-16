@@ -43,6 +43,12 @@
       text-decoration: none; letter-spacing: .01em; flex: 1;
     }
     header .logo span { font-size: .72rem; font-weight: 400; opacity: .85; display: block; margin-top: 1px; }
+    header .sibling {
+      font-size: .75rem; color: rgba(255,255,255,.8); text-decoration: none;
+      border: 1px solid rgba(255,255,255,.35); padding: .2rem .55rem; border-radius: 4px;
+      white-space: nowrap;
+    }
+    header .sibling:hover { color: #fff; border-color: #fff; }
     header .nav-search {
       background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.2);
       color: #fff; padding: .35rem .75rem; border-radius: 8px;
@@ -173,6 +179,7 @@
 
 <header>
   <a class="logo" href="{{ trackbjj_url }}">TrackBJJ<span>BJJ Athlete Repository</span></a>
+  <a class="sibling" href="{{ mattrack_url }}" target="_blank">↗ MatTrack</a>
   <input class="nav-search" id="nav-search" type="text" placeholder="Search athletes…" autocomplete="off">
   <div id="user-pill" class="user-pill" onclick="authPillClick()">
     <span id="pill-label">Sign In</span>
