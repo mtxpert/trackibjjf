@@ -745,6 +745,9 @@ def api_search():
     # Normalize to consistent shape for the frontend
     out = []
     for r in rows:
+        sc_uid = r.get("sc_uid")
+        if not sc_uid:
+            continue  # no profile page exists for athletes without a sc_uid
         country = r.get("country") or ""
         if country in (r"\N", "\\N", "\\\\N"):
             country = ""
@@ -752,7 +755,7 @@ def api_search():
         if isinstance(sources, str):
             sources = [s.strip() for s in sources.split(",") if s.strip()]
         out.append({
-            "athlete_id":   r.get("sc_uid"),
+            "athlete_id":   sc_uid,
             "display_name": r.get("athlete_display") or r.get("athlete_name", ""),
             "team":         r.get("team") or "",
             "country":      country,

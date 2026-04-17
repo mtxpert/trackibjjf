@@ -1404,7 +1404,13 @@ function selectOrgTile(key) {
   document.querySelectorAll('.org-tile').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `selectOrgTile('${key}')`));
 
-  // Always show browse container for all org tiles
+  // IBJJF, NAGA, CompNet → bracket-tracking mode
+  if (key === 'ibjjf' || key === 'naga' || key === 'compnet') {
+    setTournamentSource(key);
+    return;
+  }
+
+  // All other orgs → browse mode
   _tournamentSource = 'browse';
   document.getElementById('tourney-era-toggle').style.display = 'none';
   document.getElementById('tourney-loading').style.display = 'none';
@@ -2986,7 +2992,8 @@ function updateAuthUI() {
     pillLabel.textContent = name;
     const paid = _userPlan !== 'free';
     pillBadge.style.display = '';
-    pillBadge.textContent = _userPlan.toUpperCase();
+    const planLabel = _userPlan === 'individual' ? 'PREMIUM' : _userPlan.toUpperCase();
+    pillBadge.textContent = planLabel;
     pillBadge.className   = 'pill-plan' + (paid ? '' : ' free');
     console.log('[auth] updateAuthUI: logged in email=%s plan=%s', _userEmail, _userPlan);
 
@@ -2996,7 +3003,8 @@ function updateAuthUI() {
     const ub = document.getElementById('account-upgrade-btn');
     const bb = document.getElementById('account-billing-btn');
     if (em) em.textContent = _userEmail;
-    if (pl) pl.textContent = paid ? `Plan: ${_userPlan} (active)` : 'Plan: Free (1 athlete)';
+    const planName = _userPlan === 'individual' ? 'Premium' : _userPlan;
+    if (pl) pl.textContent = paid ? `Plan: ${planName} (active)` : 'Plan: Free (1 athlete)';
     if (ub) ub.style.display = paid ? 'none' : 'block';
     if (bb) bb.style.display = paid ? 'block' : 'none';
     const cb = document.getElementById('account-codes-btn');

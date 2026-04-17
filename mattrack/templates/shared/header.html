@@ -353,7 +353,8 @@ function updateAuthUI() {
     pillLabel.textContent = _userEmail.split('@')[0] || 'Account';
     const paid = _userPlan !== 'free';
     pillBadge.style.display = '';
-    pillBadge.textContent   = _userPlan.toUpperCase();
+    const planLabel = _userPlan === 'individual' ? 'PREMIUM' : _userPlan.toUpperCase();
+    pillBadge.textContent   = planLabel;
     pillBadge.className     = 'pill-plan' + (paid ? '' : ' free');
 
     const em = document.getElementById('account-email');
@@ -362,7 +363,8 @@ function updateAuthUI() {
     const bb = document.getElementById('account-billing-btn');
     const cb = document.getElementById('account-codes-btn');
     if (em) em.textContent = _userEmail;
-    if (pl) pl.textContent = paid ? `Plan: ${_userPlan} (active)` : 'Plan: Free';
+    const planName = _userPlan === 'individual' ? 'Premium' : _userPlan;
+    if (pl) pl.textContent = paid ? `Plan: ${planName} (active)` : 'Plan: Free';
     if (ub) ub.style.display = paid ? 'none'  : 'block';
     if (bb) bb.style.display = paid ? 'block' : 'none';
     if (cb) cb.style.display = (_userPlan === 'gym' || _userPlan === 'affiliate') ? 'block' : 'none';
