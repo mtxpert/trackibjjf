@@ -526,7 +526,7 @@ def _athlete_profile_inner(sc_uid):
         opp = m.get("opponent_name") or "Unknown"
         if opp not in h2h:
             h2h[opp] = {"wins": 0, "losses": 0, "opponent_sc_uid": m.get("opponent_sc_uid")}
-        if m["result"] == "Win":
+        if m.get("result") == "Win":
             h2h[opp]["wins"] += 1
         else:
             h2h[opp]["losses"] += 1
