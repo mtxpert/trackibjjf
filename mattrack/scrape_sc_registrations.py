@@ -1,16 +1,20 @@
 """
 scrape_sc_registrations.py — Scrape upcoming Smoothcomp event registrations.
 
+Designed for nightly cron. Idempotent: deletes stale registered rows for
+past events, then delete+reinserts per event so the list stays fresh.
+
 Flow:
-  1. For each Smoothcomp subdomain/federation: fetch upcoming events
-  2. For each event: fetch paginated participant registrations
-  3. Upsert into tournament_results with status='registered'
+  1. Purge 'registered' rows for events whose date has passed
+  2. For each Smoothcomp subdomain/federation: fetch upcoming events
+  3. For each event: fetch paginated participant registrations
+  4. Upsert into tournament_results with status='registered'
 
 Usage:
-    python scrape_sc_registrations.py                  # all subdomains
+    python scrape_sc_registrations.py                  # full nightly refresh
     python scrape_sc_registrations.py --sub naga       # single subdomain
+    python scrape_sc_registrations.py --days 3         # only events in next 3 days
     python scrape_sc_registrations.py --dry-run        # print only, no DB writes
-    python scrape_sc_registrations.py --weekend-only   # only events Apr 17-20
 """
 
 import argparse
@@ -186,6 +190,40 @@ def scrape_registrations(subdomain: str, org: str, event: dict) -> list[dict]:
     return rows
 
 
+SMOOTHCOMP_ORGS = list({cfg["org"] for cfg in SUBDOMAINS.values()})
+
+
+def purge_past_registrations() -> int:
+    """Delete 'registered' rows for Smoothcomp events whose date has passed."""
+    if not SUPABASE_KEY:
+        return 0
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    total_deleted = 0
+    for org in SMOOTHCOMP_ORGS:
+        resp = requests.delete(
+            f"{SUPABASE_URL}/rest/v1/tournament_results",
+            params={
+                "source": f"eq.{org}",
+                "status": "eq.registered",
+                "event_date": f"lt.{yesterday}",
+            },
+            headers={
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Prefer": "return=representation",
+            },
+            timeout=15,
+        )
+        if resp.status_code in (200, 204):
+            try:
+                total_deleted += len(resp.json())
+            except Exception:
+                pass
+    if total_deleted:
+        log.info("Purged %d stale registrations for past events", total_deleted)
+    return total_deleted
+
+
 def supabase_upsert(rows: list[dict], org: str, event_id: str) -> int:
     if not rows or not SUPABASE_KEY:
         return 0
@@ -245,16 +283,21 @@ def supabase_upsert(rows: list[dict], org: str, event_id: str) -> int:
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description="Scrape Smoothcomp registrations (cron-safe)")
     ap.add_argument("--sub", help="Single subdomain to scrape")
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--weekend-only", action="store_true",
-                    help="Only scrape events Apr 17-20, 2026")
+    ap.add_argument("--days", type=int, default=0,
+                    help="Only scrape events within N days from today (0 = all upcoming)")
+    ap.add_argument("--no-purge", action="store_true",
+                    help="Skip purging stale registrations for past events")
     args = ap.parse_args()
 
     if not SUPABASE_KEY and not args.dry_run:
         log.error("SUPABASE_SERVICE_KEY not set. Use --dry-run or set env var.")
         sys.exit(1)
+
+    if not args.dry_run and not args.no_purge:
+        purge_past_registrations()
 
     subs = {args.sub: SUBDOMAINS[args.sub]} if args.sub else SUBDOMAINS
     total_events = 0
@@ -268,12 +311,11 @@ def main():
         events = get_upcoming_events(subdomain, fed_id)
         log.info("  Found %d upcoming events", len(events))
 
-        if args.weekend_only:
-            weekend_start = date(2026, 4, 17)
-            weekend_end = date(2026, 4, 20)
+        if args.days:
+            cutoff = date.today() + timedelta(days=args.days)
             events = [e for e in events if e["start"] and
-                      weekend_start <= date.fromisoformat(e["start"]) <= weekend_end]
-            log.info("  Filtered to %d weekend events", len(events))
+                      date.today() <= date.fromisoformat(e["start"]) <= cutoff]
+            log.info("  Filtered to %d events within %d days", len(events), args.days)
 
         for ev in events:
             # 90-second overall timeout per event to avoid hangs
