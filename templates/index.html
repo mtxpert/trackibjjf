@@ -819,7 +819,7 @@
         placeholder="Filter teams…"
         autocomplete="off" spellcheck="false"
         oninput="onSchoolInput()"
-        onkeydown="if(event.key==='Enter'&&_isNagaMode())nagaSearch()">
+        onkeydown="if(event.key==='Enter'&&_isNagaMode()&&_nagaClubs&&_nagaClubs.length)nagaSearch()">
       <button id="naga-search-btn" onclick="nagaSearch()"
         style="display:none;padding:10px 16px;background:var(--red);color:white;border:none;border-radius:10px;font-weight:700;cursor:pointer;white-space:nowrap">
         Search
@@ -1258,10 +1258,15 @@ function restoreSession() {
       document.getElementById('school-input').value = '';
       setSearchMode('team');
       showScreen('screen-school', false);
-      if (_isNagaMode()) {
-        _setupNagaSchoolScreen();
+      if (selectedTournament.source === 'ibjjf') {
+        // IBJJF: try live bjjcompsystem cache first (has mat/fight info); on
+        // 503/empty, loadTeamSuggestions falls back to the SC registrations path.
+        loadTeamSuggestions(selectedTournament.id);
+        _loadPickStatuses();
       } else if (_isScRegistrationsMode()) {
         loadScTeamSuggestions(selectedTournament.source, selectedTournament.id);
+      } else if (_isNagaMode()) {
+        _setupNagaSchoolScreen();
       } else {
         loadTeamSuggestions(selectedTournament.id);
         _loadPickStatuses();
@@ -1431,10 +1436,15 @@ function selectTournament(id, el) {
   _pickStatusCache = {};
   _teardownNagaSchoolScreen();
   showScreen('screen-school');
-  if (_isNagaMode()) {
-    _setupNagaSchoolScreen();
+  if (selectedTournament.source === 'ibjjf') {
+    // IBJJF: try live bjjcompsystem cache first (has mat/fight info); on
+    // 503/empty, loadTeamSuggestions falls back to the SC registrations path.
+    loadTeamSuggestions(id);
+    _loadPickStatuses();
   } else if (_isScRegistrationsMode()) {
     loadScTeamSuggestions(selectedTournament.source, id);
+  } else if (_isNagaMode()) {
+    _setupNagaSchoolScreen();
   } else {
     loadTeamSuggestions(id);
     _loadPickStatuses();
@@ -1447,10 +1457,12 @@ function _isNagaMode() {
   return selectedTournament?.source === 'naga' || selectedTournament?.source === 'compnet';
 }
 
-// All Smoothcomp-sourced orgs whose rosters live in tournament_results (status='registered').
+// Orgs whose rosters live in tournament_results (status='registered').
+// Includes all Smoothcomp-sourced orgs + NAGA/CompNet (unified school screen)
+// + IBJJF (used as a fallback when the live bjjcompsystem cache is empty).
 const SC_REGISTRATIONS_SOURCES = new Set([
-  'adcc','gi','fuji','goodfight','newbreed','pbjjf','united',
-  'subchallenge','grapplingx','rollalot',
+  'ibjjf','adcc','naga','compnet','gi','fuji','goodfight','newbreed',
+  'pbjjf','united','subchallenge','grapplingx','rollalot',
 ]);
 
 function _isScRegistrationsMode() {
@@ -1620,19 +1632,22 @@ async function loadTeamSuggestions(tournamentId) {
   if (list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading…</div>';
   try {
     const r    = await fetch(`/api/teams/${tournamentId}`);
-    const data = await r.json();
-    if (data.teams) {
+    // 503 = live bjjcompsystem cache still being built, 200 with no teams = empty.
+    const data = (r.status === 503) ? null : await r.json();
+    if (data && data.teams && data.teams.length) {
       _teamSuggestions = data.teams;
       _athleteSugg     = data.athletes || [];
       if (el) el.textContent = `${data.athlete_count} athletes · ${_teamSuggestions.length} teams`;
       renderItemList('');
     } else {
-      if (el) el.textContent = 'Building roster… try again shortly';
-      if (list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Building roster…</div>';
-      setTimeout(() => loadTeamSuggestions(tournamentId), 4000);
+      // Fall back to the SC registrations path (scrape_ibjjf_registrations runs
+      // nightly and pushes the roster into tournament_results).
+      await loadScTeamSuggestions('ibjjf', tournamentId);
     }
   } catch(e) {
-    if (el) el.textContent = '';
+    // Network error on the live cache — try the registrations fallback too.
+    try { await loadScTeamSuggestions('ibjjf', tournamentId); }
+    catch(_) { if (el) el.textContent = ''; }
   }
 }
 
@@ -1640,7 +1655,10 @@ async function loadTeamSuggestions(tournamentId) {
 
 function onSchoolInput() {
   const val = document.getElementById('school-input').value.trim();
-  if (_isNagaMode()) { _renderNagaClubList(val); return; }
+  // Legacy NAGA "type-a-school-and-Search" flow only runs when _nagaClubs is
+  // populated — i.e. no SC registrations available. Otherwise (which is now
+  // the default for NAGA + CompNet) fall through to the unified team/athlete list.
+  if (_isNagaMode() && _nagaClubs && _nagaClubs.length) { _renderNagaClubList(val); return; }
   renderItemList(val);
 }
 

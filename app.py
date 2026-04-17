@@ -641,8 +641,15 @@ def _get_db_tournaments_for_sources(sources):
 @app.route("/api/sc-teams/<source>/<event_id>")
 def api_sc_teams(source, event_id):
     """Return {teams, athletes, athlete_count} for a Smoothcomp-source event.
-    Queries tournament_results WHERE source=X AND event_id=Y AND status='registered'."""
-    if source not in SC_ORG_KEYS:
+    Queries tournament_results WHERE source=X AND event_id=Y AND status='registered'.
+
+    Also supports 'ibjjf' as a registrations fallback when the live
+    bjjcompsystem roster cache hasn't been built yet (scrape_ibjjf_registrations
+    pushes these rows nightly)."""
+    # SC_ORG_KEYS is used for tournament-list aggregation and must not include
+    # 'ibjjf' (that org comes from a separate scraper and would be duplicated).
+    # For the roster endpoint, 'ibjjf' is an allowed fallback source.
+    if source not in SC_ORG_KEYS and source != "ibjjf":
         return jsonify({"error": "unknown source"}), 400
     try:
         import requests as _req
