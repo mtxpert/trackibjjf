@@ -1406,7 +1406,9 @@ function renderTournaments() {
     const datePart    = _fmtTourneyDate(t.start, t.end);
     const locPart     = t.location || '';
     const meta        = [datePart, locPart].filter(Boolean).join(' · ');
-    const noBrackets  = t.has_brackets === false;
+    // SC-sourced events have rosters in our DB even without live brackets — always clickable.
+    const hasRoster   = SC_REGISTRATIONS_SOURCES.has(t.source);
+    const noBrackets  = t.has_brackets === false && !hasRoster;
     const clickAttr   = noBrackets ? '' : `onclick="selectTournament('${esc(t.id)}', this)"`;
     const cls         = ['tourney-item', noBrackets ? 'no-brackets' : ''].filter(Boolean).join(' ');
     return `<div class="${cls}" id="t-${esc(t.id)}" ${clickAttr}>
