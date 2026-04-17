@@ -294,9 +294,10 @@ def athlete_profile(sc_uid):
     try:
         return _athlete_profile_inner(sc_uid)
     except Exception:
-        import traceback
-        log.error("athlete_profile 500 for sc_uid=%s:\n%s", sc_uid, traceback.format_exc())
-        raise
+        import traceback as _tb
+        tb_str = _tb.format_exc()
+        log.error("athlete_profile 500 for sc_uid=%s:\n%s", sc_uid, tb_str)
+        return f"<pre>500 debug:\n{tb_str}</pre>", 500
 
 
 def _athlete_profile_inner(sc_uid):
