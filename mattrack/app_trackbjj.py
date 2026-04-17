@@ -331,8 +331,13 @@ def _athlete_profile_inner(sc_uid):
                  .execute())
     team_rows_raw = team_res.data or []
     # Prefer 'registered' status for most current team
+    def _date_int(d):
+        try:
+            return int((d or "0000-00-00").replace("-", ""))
+        except (ValueError, AttributeError):
+            return 0
     team_rows_raw.sort(key=lambda r: (0 if r.get("status") == "registered" else 1,
-                                      -(int((r.get("event_date") or "0000-00-00").replace("-", "")) )))
+                                      -_date_int(r.get("event_date"))))
     team = team_rows_raw[0]["team"] if team_rows_raw else next(
         (r["team"] for r in sc_rows if r["team"]), "Unknown"
     )
