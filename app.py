@@ -576,145 +576,106 @@ def api_geocode():
     return jsonify({"error": "not found"}), 404
 
 
-# ── Live Smoothcomp roster cache ─────────────────────────────────────────────
-_sc_live_cache = {}   # event_id -> {"ts": float, "data": list}
-_SC_LIVE_TTL = 900    # 15 minutes
+# ── Smoothcomp-sourced orgs (data lives in tournament_results) ───────────────
+SC_ORG_KEYS = {"adcc", "naga", "compnet", "gi", "fuji", "goodfight", "newbreed",
+               "pbjjf", "united", "subchallenge", "grapplingx", "rollalot"}
+
+_SC_TOURNAMENTS_CACHE = {"ts": 0, "data": []}
+_SC_TOURNAMENTS_TTL = 300   # 5 minutes
 
 
-def _fetch_sc_live_roster(event_id: str, subdomain: str) -> list:
-    """Fetch registered athletes from Smoothcomp participants-new API.
-
-    Requires a session with cookies + CSRF token.  Returns a flat list of
-    {athlete_display, team, division, country} dicts.
-    """
-    host = f"{subdomain}.smoothcomp.com" if subdomain else "smoothcomp.com"
-    base = f"https://{host}/en/event/{event_id}"
-
-    sess = requests.Session()
-    sess.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    })
-
-    # Load the page to obtain cookies + CSRF token
-    page = sess.get(f"{base}/participants-new", timeout=(5, 15))
-    csrf_match = re.search(r'csrf-token"\s+content="([^"]+)"', page.text)
-    if not csrf_match:
-        logger.warning("sc_live: no CSRF token for event %s", event_id)
-        return []
-
-    csrf = csrf_match.group(1)
-    sess.headers.update({
-        "X-Requested-With": "XMLHttpRequest",
-        "X-CSRF-TOKEN": csrf,
-        "Accept": "application/json",
-    })
-
-    roster = []
-    page_num = 1
-    max_pages = 60  # safety cap
-
-    while page_num <= max_pages:
-        try:
-            r = sess.get(
-                f"{base}/participants-new",
-                params={"page": page_num},
-                timeout=(5, 15),
-            )
-            if r.status_code != 200:
-                break
-            body = r.json()
-        except Exception:
+def _get_db_tournaments_for_sources(sources):
+    """Aggregate distinct events per (source, event_id) from tournament_results
+    where status='registered'. Returns a list of tournament dicts."""
+    from supabase import create_client
+    sb = create_client(
+        os.environ.get("SUPABASE_URL", ""),
+        os.environ.get("SUPABASE_SERVICE_KEY", ""),
+    )
+    page_size = 1000
+    offset = 0
+    today = date.today().isoformat()
+    events = {}
+    while True:
+        rows = sb.table("tournament_results") \
+            .select("source,event_id,event_title,event_date") \
+            .in_("source", list(sources)) \
+            .eq("status", "registered") \
+            .range(offset, offset + page_size - 1) \
+            .execute()
+        data = rows.data or []
+        if not data:
             break
-
-        for group in body.get("data", []):
-            if not isinstance(group, dict):
+        for r in data:
+            key = (r.get("source"), str(r.get("event_id")))
+            if key in events:
                 continue
-            division = group.get("name", "Unknown Division")
-            for reg in group.get("registrations", []):
-                if not isinstance(reg, dict):
-                    continue
-                user = reg.get("user") or {}
-                club = reg.get("club") or {}
-                roster.append({
-                    "athlete_display": user.get("name", ""),
-                    "team": club.get("name", ""),
-                    "division": division,
-                    "country": (user.get("country") or "").upper(),
-                })
-
-        last_page = body.get("last_page", 1)
-        if page_num >= last_page:
+            events[key] = {
+                "id": str(r.get("event_id")),
+                "source": r.get("source"),
+                "name": r.get("event_title") or f"Event {r.get('event_id')}",
+                "start": r.get("event_date") or "",
+                "end": r.get("event_date") or "",
+                "location": "",
+                "has_brackets": False,
+                "is_past": bool(r.get("event_date") and r["event_date"] < today),
+            }
+        if len(data) < page_size:
             break
-        page_num += 1
+        offset += page_size
+    return list(events.values())
 
-    return roster
 
-
-@app.route("/api/smoothcomp-roster/<event_id>")
-def api_smoothcomp_roster(event_id):
-    """Return roster for a Smoothcomp event.
-
-    Priority: in-memory live cache → Supabase DB → live fetch from Smoothcomp.
-    """
-    subdomain = request.args.get("subdomain", "")
-
-    # 1. Check live cache
-    cached = _sc_live_cache.get(event_id)
-    if cached and (time.time() - cached["ts"]) < _SC_LIVE_TTL:
-        return jsonify(cached["data"])
-
-    # 2. Check Supabase (past events with recorded results)
+@app.route("/api/sc-teams/<source>/<event_id>")
+def api_sc_teams(source, event_id):
+    """Return {teams, athletes, athlete_count} for a Smoothcomp-source event.
+    Queries tournament_results WHERE source=X AND event_id=Y AND status='registered'."""
+    if source not in SC_ORG_KEYS:
+        return jsonify({"error": "unknown source"}), 400
     try:
         from supabase import create_client
         sb = create_client(
             os.environ.get("SUPABASE_URL", ""),
             os.environ.get("SUPABASE_SERVICE_KEY", ""),
         )
-        rows = sb.table("tournament_results") \
-            .select("athlete_display,team,division,placement") \
-            .eq("source", "smoothcomp") \
-            .eq("event_id", str(event_id)) \
-            .order("division") \
-            .order("placement") \
-            .limit(5000) \
-            .execute()
-        if rows.data:
-            return jsonify(rows.data)
+        page_size = 1000
+        offset = 0
+        rows_all = []
+        while True:
+            rows = sb.table("tournament_results") \
+                .select("athlete_display,team,division") \
+                .eq("source", source) \
+                .eq("event_id", str(event_id)) \
+                .eq("status", "registered") \
+                .range(offset, offset + page_size - 1) \
+                .execute()
+            batch = rows.data or []
+            rows_all.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
     except Exception as e:
-        logger.warning("smoothcomp DB query failed event_id=%s: %s", event_id, e)
+        logger.error("api_sc_teams failed source=%s event=%s: %s", source, event_id, e)
+        return jsonify({"teams": [], "athletes": [], "athlete_count": 0, "error": str(e)}), 500
 
-    # 3. Fetch live from Smoothcomp
-    if not subdomain:
-        return jsonify({"error": "subdomain required for live roster"}), 400
+    team_counts = {}
+    seen_ath = {}
+    for r in rows_all:
+        nm = (r.get("athlete_display") or "").strip()
+        tm = (r.get("team") or "").strip()
+        if tm:
+            team_counts[tm] = team_counts.get(tm, 0) + 1
+        if nm:
+            key = (nm.lower(), tm.lower())
+            if key not in seen_ath:
+                seen_ath[key] = {"name": nm, "team": tm, "division": r.get("division", "")}
 
-    try:
-        roster = _fetch_sc_live_roster(event_id, subdomain)
-        if roster:
-            _sc_live_cache[event_id] = {"ts": time.time(), "data": roster}
-            return jsonify(roster)
-        return jsonify([])
-    except Exception as e:
-        logger.error("smoothcomp live fetch failed event_id=%s: %s", event_id, e)
-        return jsonify({"error": "live fetch failed"}), 500
-
-
-@app.route("/api/browser-events")
-def api_browser_events():
-    """All events for the tournament browser: Smoothcomp (all orgs) + IBJJF schedule."""
-    from scraper_smoothcomp import get_smoothcomp_events
-    from scraper import get_ibjjf_schedule
-
-    sc, ibjjf = [], []
-    try:
-        sc = get_smoothcomp_events()
-    except Exception as e:
-        logger.error("get_smoothcomp_events failed: %s", e)
-    try:
-        ibjjf = [dict(ev, org="ibjjf") for ev in get_ibjjf_schedule()]
-    except Exception as e:
-        logger.error("get_ibjjf_schedule failed: %s", e)
-
-    return jsonify(sc + ibjjf)
+    teams = sorted(
+        [{"name": t, "count": c} for t, c in team_counts.items()],
+        key=lambda x: (-x["count"], x["name"].lower()),
+    )
+    athletes = sorted(seen_ath.values(), key=lambda x: x["name"].lower())
+    return jsonify({"teams": teams, "athletes": athletes, "athlete_count": len(athletes)})
 
 
 @app.route("/api/tournaments")
@@ -776,7 +737,7 @@ def api_tournaments():
             logger.error("get_tournaments fallback failed: %s", e2)
             ibjjf = []
 
-    # NAGA
+    # NAGA — keep scraper source so bracket tracking works day-of
     try:
         naga = get_naga_events()
     except Exception as e:
@@ -792,7 +753,33 @@ def api_tournaments():
         logger.error("compnet from smoothcomp failed: %s", e)
         compnet = []
 
-    return jsonify(ibjjf + naga + compnet)
+    # All other SC-sourced orgs — pulled from tournament_results (status='registered')
+    now = time.time()
+    if (now - _SC_TOURNAMENTS_CACHE["ts"]) < _SC_TOURNAMENTS_TTL and _SC_TOURNAMENTS_CACHE["data"]:
+        sc_events = _SC_TOURNAMENTS_CACHE["data"]
+    else:
+        try:
+            sc_events = _get_db_tournaments_for_sources(SC_ORG_KEYS)
+            _SC_TOURNAMENTS_CACHE["data"] = sc_events
+            _SC_TOURNAMENTS_CACHE["ts"] = now
+        except Exception as e:
+            logger.error("_get_db_tournaments_for_sources failed: %s", e)
+            sc_events = _SC_TOURNAMENTS_CACHE["data"] or []
+
+    # Skip naga/compnet from DB — the scraper sources already cover those and
+    # carry extra bracket-tracking metadata.
+    known_naga_ids = {str(t.get("id")) for t in naga}
+    known_compnet_ids = {str(t.get("id")) for t in compnet}
+    other_sc = []
+    for t in sc_events:
+        src = t.get("source")
+        if src == "naga" and str(t["id"]) in known_naga_ids:
+            continue
+        if src == "compnet" and str(t["id"]) in known_compnet_ids:
+            continue
+        other_sc.append(t)
+
+    return jsonify(ibjjf + naga + compnet + other_sc)
 
 
 # ── Roster cache endpoints ────────────────────────────────────────────────────

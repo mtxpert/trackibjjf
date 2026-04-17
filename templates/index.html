@@ -782,15 +782,10 @@
   <div class="setup-wrap">
     <div class="setup-title" data-i18n="select_tournament">Select Tournament</div>
 
-    <!-- Find Local Tournaments button -->
-    <button class="find-local-btn" onclick="openLocalModal()">
-      📍 Find Tournaments Near Me
-    </button>
-
     <!-- Org grid -->
     <div class="org-grid" id="org-grid"></div>
 
-    <!-- Upcoming / Past toggle (shown for bracket-tracking orgs) -->
+    <!-- Upcoming / Past toggle -->
     <div id="tourney-era-toggle" style="display:none;gap:6px;margin-bottom:10px">
       <button id="era-upcoming" onclick="setTourneyEra('upcoming')"
         style="flex:1;padding:9px;border-radius:10px;border:none;font-size:0.85rem;font-weight:600;cursor:pointer;background:var(--red);color:white">
@@ -802,85 +797,12 @@
       </button>
     </div>
 
-    <!-- Bracket-tracking tournament list (IBJJF / NAGA / CompNet) -->
+    <!-- Tournament list (all orgs share this flow) -->
     <div id="tourney-loading" class="state-msg" style="display:none">
       <div class="spinner"></div>
       <span>Loading tournaments…</span>
     </div>
     <div id="tourney-list" class="tourney-list" style="display:none"></div>
-
-    <!-- Browse list (all other orgs + independent) -->
-    <div id="browse-container" style="display:none">
-      <input class="browse-search" id="browse-search" type="search"
-        placeholder="Search tournaments, cities…" oninput="onBrowseSearch()">
-      <div class="browse-date-row">
-        <button class="browse-date-chip active" data-days="30" onclick="setBrowseDate(30,this)">Next 30 days</button>
-        <button class="browse-date-chip" data-days="90" onclick="setBrowseDate(90,this)">3 months</button>
-        <button class="browse-date-chip" data-days="365" onclick="setBrowseDate(365,this)">This year</button>
-        <button class="browse-date-chip" data-days="0" onclick="setBrowseDate(0,this)">All upcoming</button>
-      </div>
-      <div id="browse-list"></div>
-    </div>
-
-    <!-- Hidden source-tab stubs for session-restore compat -->
-    <div class="source-tabs">
-      <button class="source-tab" id="src-ibjjf"></button>
-      <button class="source-tab" id="src-naga"></button>
-      <button class="source-tab" id="src-compnet"></button>
-      <button class="source-tab" id="src-browse"></button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Roster Modal (Smoothcomp events) ── -->
-<div class="modal-overlay roster-modal" id="roster-modal" onclick="if(event.target===this)closeRosterModal()">
-  <div class="modal-sheet">
-    <button class="btn-modal-close" onclick="closeRosterModal()">✕</button>
-    <div class="roster-header">
-      <div class="roster-title" id="roster-title"></div>
-    </div>
-    <input class="roster-search" id="roster-search" type="search"
-      placeholder="Search athletes, teams…" oninput="filterRoster()">
-    <div class="roster-stats" id="roster-stats"></div>
-    <div class="roster-list" id="roster-list"></div>
-    <a class="roster-ext" id="roster-ext-link" href="#" target="_blank" rel="noopener">View on Smoothcomp ↗</a>
-  </div>
-</div>
-
-<!-- ── Find Local Modal ── -->
-<div class="modal-overlay" id="local-modal" onclick="if(event.target===this)closeLocalModal()">
-  <div class="modal-sheet">
-    <button class="btn-modal-close" onclick="closeLocalModal()">✕</button>
-    <div class="local-sheet-title">📍 Find Tournaments Near You</div>
-    <div class="local-sheet-sub">Use your location or enter a city to find upcoming events nearby.</div>
-
-    <button class="local-loc-btn" id="local-gps-btn" onclick="useMyLocation()">
-      <span>📡</span> Use My Location
-    </button>
-    <div class="local-or">— or enter city —</div>
-    <input class="local-city-input" id="local-city-input" type="text"
-           placeholder="e.g. Atlanta, GA" autocomplete="off"
-           onkeydown="if(event.key==='Enter')runLocalSearch()">
-
-    <div class="local-row">
-      <select class="local-select" id="local-dist">
-        <option value="25">Within 25 mi</option>
-        <option value="50" selected>Within 50 mi</option>
-        <option value="100">Within 100 mi</option>
-        <option value="250">Within 250 mi</option>
-        <option value="500">Within 500 mi</option>
-      </select>
-      <select class="local-select" id="local-days">
-        <option value="30" selected>Next 30 days</option>
-        <option value="60">Next 60 days</option>
-        <option value="90">Next 3 months</option>
-        <option value="180">Next 6 months</option>
-        <option value="0">All upcoming</option>
-      </select>
-    </div>
-
-    <div id="local-status" style="font-size:0.8rem;color:var(--muted);margin-bottom:10px;min-height:18px"></div>
-    <button class="local-search-btn" onclick="runLocalSearch()">Search</button>
   </div>
 </div>
 
@@ -1139,15 +1061,8 @@ function esc(str) { return String(str || '').replace(/[&<>"']/g, c => _ESC[c]); 
 
 // ─── State ─────────────────────────────────────────────────────────────────
 let allTournaments = [];
-let _tournamentSource = null;   // null | 'ibjjf' | 'naga' | 'compnet' | 'browse'
+let _tournamentSource = null;   // org key from _BROWSE_ORGS
 let selectedTournament = null;
-
-// ── Browse state ──
-let _browseEvents = [];
-let _browseFetched = false;
-let _browseOrg = 'all';
-let _browseDays = 30;
-let _browseQ = '';
 
 const _BROWSE_ORGS = [
   // Row 1 — marquee orgs
@@ -1157,19 +1072,16 @@ const _BROWSE_ORGS = [
   { key:'compnet',      name:'CompNet',      icon:'🌿', color:'#58d68d', bg:'rgba(88,214,141,0.15)',  logo:'/static/org-logos/compnet.jpg' },
   // Row 2
   { key:'gi',           name:'Grappling Ind',icon:'🔥', color:'#e67e22', bg:'rgba(230,126,34,0.15)',  logo:'/static/org-logos/gi.jpg' },
-  { key:'tco',          name:'Tap Cancer',   icon:'💜', color:'#a569bd', bg:'rgba(165,105,189,0.15)', logo:'/static/org-logos/tco.jpg' },
   { key:'pbjjf',        name:'PBJJF',        icon:'🎖', color:'#c0392b', bg:'rgba(192,57,43,0.15)',   logo:'/static/org-logos/pbjjf.jpg' },
   { key:'newbreed',     name:'New Breed',    icon:'⚡', color:'#1abc9c', bg:'rgba(26,188,156,0.15)',  logo:'/static/org-logos/newbreed.jpg' },
-  // Row 3
   { key:'fuji',         name:'Fuji BJJ',     icon:'🔵', color:'#3498db', bg:'rgba(52,152,219,0.15)',  logo:'/static/org-logos/fuji.jpg' },
+  // Row 3
   { key:'goodfight',    name:'Good Fight',   icon:'✊', color:'#2ecc71', bg:'rgba(46,204,113,0.15)',  logo:'/static/org-logos/goodfight.jpg' },
   { key:'united',       name:'United',       icon:'🤝', color:'#9b59b6', bg:'rgba(155,89,182,0.15)',  logo:'/static/org-logos/united.jpg' },
-  { key:'nfc',          name:'NFC',          icon:'🎯', color:'#e74c3c', bg:'rgba(231,76,60,0.15)',   logo:'/static/org-logos/nfc.jpg' },
-  // Row 4
   { key:'subchallenge', name:'Sub Challenge',icon:'🎯', color:'#e74c3c', bg:'rgba(231,76,60,0.15)',   logo:'/static/org-logos/subchallenge.jpg' },
   { key:'grapplingx',   name:'Grappling X',  icon:'❌', color:'#f39c12', bg:'rgba(243,156,18,0.15)',  logo:'/static/org-logos/grapplingx.jpg' },
+  // Row 4
   { key:'rollalot',     name:'Roll-a-Lot',   icon:'🎲', color:'#16a085', bg:'rgba(22,160,133,0.15)',  logo:'/static/org-logos/rollalot.jpg' },
-  { key:'other',        name:'Browse All',   icon:'📋', color:'#888',    bg:'rgba(136,136,136,0.1)',  logo:null },
 ];
 const _BROWSE_ORG_MAP = Object.fromEntries(_BROWSE_ORGS.map(o => [o.key, o]));
 const _BROWSE_LOGOS = Object.fromEntries(_BROWSE_ORGS.filter(o=>o.logo).map(o=>[o.key,o.logo]));
@@ -1259,11 +1171,7 @@ function goHome() {
   allAthletes = [];
   selectedKeys = new Set();
   _tournamentSource = null;
-  document.getElementById('src-ibjjf').classList.remove('source-tab--active');
-  document.getElementById('src-naga').classList.remove('source-tab--active');
-  document.getElementById('src-compnet').classList.remove('source-tab--active');
-  document.getElementById('src-browse').classList.remove('source-tab--active');
-  document.getElementById('browse-container').style.display = 'none';
+  document.querySelectorAll('.org-tile').forEach(b => b.classList.remove('active'));
   document.getElementById('header-sub').textContent = 'Live Tournament Tracker';
   showScreen('screen-tournament', false);
   history.pushState({ screen: 'screen-tournament' }, '', '');
@@ -1326,10 +1234,6 @@ function restoreSession() {
     selectedKeys         = new Set(s.selected || []);
     if (s.source) {
       _tournamentSource = s.source;
-      document.getElementById('src-ibjjf').classList.toggle('source-tab--active',   s.source === 'ibjjf');
-      document.getElementById('src-naga').classList.toggle('source-tab--active',    s.source === 'naga');
-      document.getElementById('src-compnet').classList.toggle('source-tab--active', s.source === 'compnet');
-      document.getElementById('src-browse').classList.toggle('source-tab--active',  s.source === 'browse');
     }
     const screen         = s.screen || 'screen-tournament';
     if (screen === 'screen-watch' && selectedKeys.size) {
@@ -1356,6 +1260,8 @@ function restoreSession() {
       showScreen('screen-school', false);
       if (_isNagaMode()) {
         _setupNagaSchoolScreen();
+      } else if (_isScRegistrationsMode()) {
+        loadScTeamSuggestions(selectedTournament.source, selectedTournament.id);
       } else {
         loadTeamSuggestions(selectedTournament.id);
         _loadPickStatuses();
@@ -1398,417 +1304,28 @@ let _tourneyEra = 'upcoming'; // 'upcoming' | 'past'
 function setTournamentSource(src) {
   _tournamentSource = src;
   _tourneyEra = 'upcoming';
-  document.getElementById('src-ibjjf').classList.toggle('source-tab--active',   src === 'ibjjf');
-  document.getElementById('src-naga').classList.toggle('source-tab--active',    src === 'naga');
-  document.getElementById('src-compnet').classList.toggle('source-tab--active', src === 'compnet');
-  document.getElementById('src-browse').classList.toggle('source-tab--active',  src === 'browse');
-
-  const isBrowse = src === 'browse';
-  const toggle   = document.getElementById('tourney-era-toggle');
-  const browseEl = document.getElementById('browse-container');
-  const loading  = document.getElementById('tourney-loading');
-  const list     = document.getElementById('tourney-list');
-
-  if (isBrowse) {
-    if (toggle) toggle.style.display = 'none';
-    browseEl.style.display = 'block';
-    loading.style.display  = 'none';
-    list.style.display     = 'none';
-    if (!_browseFetched) loadBrowseEvents();
-    else renderBrowse();
-  } else {
-    browseEl.style.display = 'none';
-    if (toggle) toggle.style.display = 'flex';
-    _updateEraToggleUI();
-    if (!allTournaments.length) loadTournaments();
-    else renderTournaments();
-  }
+  const toggle  = document.getElementById('tourney-era-toggle');
+  if (toggle) toggle.style.display = 'flex';
+  _updateEraToggleUI();
+  if (!allTournaments.length) loadTournaments();
+  else renderTournaments();
 }
 
-// ─── Browse functions ────────────────────────────────────────────────────────
+// ─── Org grid ────────────────────────────────────────────────────────────────
 function buildOrgGrid() {
   document.getElementById('org-grid').innerHTML = _BROWSE_ORGS.map(o => {
     const imgHtml = o.logo
       ? `<img class="org-tile-img" src="${o.logo}" onerror="this.outerHTML='<div class=\\'org-tile-icon\\'>${o.icon}</div>'">`
       : `<div class="org-tile-icon">${o.icon}</div>`;
-    return `<button class="org-tile${o.key===_browseOrg?' active':''}"
+    return `<button class="org-tile${o.key===_tournamentSource?' active':''}"
       onclick="selectOrgTile('${o.key}')">${imgHtml}<span>${o.name}</span></button>`;
   }).join('');
 }
 
 function selectOrgTile(key) {
-  _browseOrg = key;
   document.querySelectorAll('.org-tile').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `selectOrgTile('${key}')`));
-
-  // IBJJF, NAGA, CompNet → bracket-tracking mode
-  if (key === 'ibjjf' || key === 'naga' || key === 'compnet') {
-    setTournamentSource(key);
-    return;
-  }
-
-  // All other orgs → browse mode
-  _tournamentSource = 'browse';
-  document.getElementById('tourney-era-toggle').style.display = 'none';
-  document.getElementById('tourney-loading').style.display = 'none';
-  document.getElementById('tourney-list').style.display = 'none';
-  document.getElementById('browse-container').style.display = 'block';
-  if (!_browseFetched) loadBrowseEvents();
-  else renderBrowse();
-}
-
-function setBrowseOrg(key) {
-  _browseOrg = key;
-  document.querySelectorAll('.browse-org-pill').forEach(b =>
-    b.classList.toggle('active', b.getAttribute('onclick') === `setBrowseOrg('${key}')`));
-  renderBrowse();
-}
-
-function setBrowseDate(days, btn) {
-  _browseDays = days;
-  document.querySelectorAll('.browse-date-chip').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderBrowse();
-}
-
-function onBrowseSearch() {
-  _browseQ = document.getElementById('browse-search').value.trim().toLowerCase();
-  renderBrowse();
-}
-
-async function loadBrowseEvents() {
-  const list = document.getElementById('browse-list');
-  list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading events…</div>';
-  try {
-    const r = await fetch('/api/browser-events');
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    _browseEvents = await r.json();
-    _browseFetched = true;
-    renderBrowse();
-  } catch(e) {
-    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Failed to load (${e.message})</div>`;
-  }
-}
-
-function _browseLocalDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-function renderBrowse() {
-  const list = document.getElementById('browse-list');
-  const todayStr = _browseLocalDate(new Date());
-  const cutoff   = _browseDays > 0 ? (() => { const d=new Date(); d.setDate(d.getDate()+_browseDays); return _browseLocalDate(d); })() : '9999-99-99';
-
-  let events = _browseEvents.filter(e => {
-    if (!e.start || e.start < todayStr) return false;     // skip past & already-started
-    if (e.start > cutoff) return false;                   // outside date window
-    if (_browseOrg !== 'all' && _browseOrg !== 'other' && e.org !== _browseOrg) return false;
-    if (_browseQ && !(e.name||'').toLowerCase().includes(_browseQ) &&
-                    !(e.city||'').toLowerCase().includes(_browseQ)) return false;
-    return true;
-  }).sort((a,b) => a.start.localeCompare(b.start)).slice(0, 80);
-
-  if (!events.length) {
-    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No events found</div>';
-    return;
-  }
-
-  list.innerHTML = events.map(e => {
-    const org  = _BROWSE_ORG_MAP[e.org] || { name:e.org||'Other', color:'#888', bg:'rgba(136,136,136,0.1)', icon:'📋' };
-    const logo = _BROWSE_LOGOS[e.org];
-    const thumb = logo
-      ? `<img class="browse-thumb" src="${logo}" onerror="this.outerHTML='<div class=\\'browse-thumb-ph\\'>${org.icon}</div>'">`
-      : `<div class="browse-thumb-ph">${org.icon}</div>`;
-    const date = _fmtTourneyDate(e.start, e.end);
-    const loc  = e.city ? (e.country_code==='US' ? e.city : `${e.city}, ${e.country}`) : e.country || '';
-    const meta = [date, loc].filter(Boolean).join(' · ');
-    const href = e.url || '#';
-    const esc2 = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    const isSC = e.source === 'smoothcomp';
-    const rosterBadge = isSC ? '<span class="roster-badge">Roster</span>' : '';
-    if (isSC) {
-      return `<div class="browse-card" style="cursor:pointer"
-        data-sc-id="${esc2(e.id)}" data-sc-name="${esc2(e.name)}" data-sc-url="${esc2(href)}" data-sc-sub="${esc2(e.subdomain||'')}"
-        onclick="openRosterModal(this.dataset.scId,this.dataset.scName,this.dataset.scUrl,this.dataset.scSub)">
-        ${thumb}
-        <div class="browse-body">
-          <div class="browse-name">${esc2(e.name)}${rosterBadge}</div>
-          <div class="browse-meta">
-            <span class="browse-badge" style="background:${org.bg};color:${org.color}">${org.name}</span>
-            ${esc2(meta)}
-          </div>
-        </div>
-      </div>`;
-    }
-    return `<a class="browse-card" href="${href}" target="_blank" rel="noopener">
-      ${thumb}
-      <div class="browse-body">
-        <div class="browse-name">${esc2(e.name)}</div>
-        <div class="browse-meta">
-          <span class="browse-badge" style="background:${org.bg};color:${org.color}">${org.name}</span>
-          ${esc2(meta)}
-        </div>
-      </div>
-    </a>`;
-  }).join('');
-}
-
-// ─── Roster Modal (Smoothcomp events) ────────────────────────────────────────
-let _rosterData = [];   // full roster for current event
-let _rosterEventId = '';
-
-async function openRosterModal(eventId, eventName, extUrl, subdomain) {
-  _rosterEventId = eventId;
-  _rosterData = [];
-  document.getElementById('roster-title').textContent = eventName;
-  document.getElementById('roster-search').value = '';
-  document.getElementById('roster-ext-link').href = extUrl || '#';
-  document.getElementById('roster-stats').innerHTML = '';
-  document.getElementById('roster-list').innerHTML =
-    '<div class="roster-empty"><div class="spinner"></div> Loading roster…</div>';
-  document.getElementById('roster-modal').classList.add('open');
-
-  try {
-    let url = `/api/smoothcomp-roster/${encodeURIComponent(eventId)}`;
-    if (subdomain) url += `?subdomain=${encodeURIComponent(subdomain)}`;
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const body = await r.json();
-    if (body.error) throw new Error(body.error);
-    _rosterData = Array.isArray(body) ? body : [];
-    if (!_rosterData.length) {
-      document.getElementById('roster-list').innerHTML =
-        '<div class="roster-empty">No roster data available for this event yet.</div>';
-      document.getElementById('roster-stats').innerHTML = '';
-      return;
-    }
-    filterRoster();
-  } catch(e) {
-    document.getElementById('roster-list').innerHTML =
-      `<div class="roster-empty">Failed to load roster (${e.message})</div>`;
-  }
-}
-
-function closeRosterModal() {
-  document.getElementById('roster-modal').classList.remove('open');
-  _rosterData = [];
-}
-
-let _rosterGroupBy = 'division'; // 'division' or 'team'
-
-function filterRoster() {
-  const q = (document.getElementById('roster-search').value || '').toLowerCase().trim();
-  const list = document.getElementById('roster-list');
-  const stats = document.getElementById('roster-stats');
-
-  let filtered = _rosterData;
-  if (q) {
-    filtered = _rosterData.filter(r =>
-      (r.athlete_display || '').toLowerCase().includes(q) ||
-      (r.team || '').toLowerCase().includes(q) ||
-      (r.country || '').toLowerCase().includes(q)
-    );
-  }
-
-  const athletes = new Set(filtered.map(r => (r.athlete_display||'').toLowerCase()));
-  const teams = new Set(filtered.filter(r => r.team).map(r => r.team));
-  const divs = new Set(filtered.map(r => r.division));
-  const divBtn = _rosterGroupBy === 'division' ? 'font-weight:700;color:var(--text)' : 'color:var(--muted)';
-  const teamBtn = _rosterGroupBy === 'team' ? 'font-weight:700;color:var(--text)' : 'color:var(--muted)';
-  stats.innerHTML = `<span>${athletes.size} athlete${athletes.size!==1?'s':''}</span>`
-    + `<span>${teams.size} team${teams.size!==1?'s':''}</span>`
-    + `<span>${divs.size} division${divs.size!==1?'s':''}</span>`
-    + `<span style="margin-left:auto;font-size:0.72rem">`
-    + `<a href="#" style="${divBtn};text-decoration:none" onclick="event.preventDefault();_rosterGroupBy='division';filterRoster()">By Division</a>`
-    + ` · <a href="#" style="${teamBtn};text-decoration:none" onclick="event.preventDefault();_rosterGroupBy='team';filterRoster()">By Team</a></span>`;
-
-  if (!filtered.length) {
-    list.innerHTML = '<div class="roster-empty">No matches found</div>';
-    return;
-  }
-
-  const esc2 = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  let html = '';
-
-  if (_rosterGroupBy === 'team') {
-    const byTeam = {};
-    for (const r of filtered) {
-      const t = r.team || 'Unaffiliated';
-      (byTeam[t] = byTeam[t] || []).push(r);
-    }
-    const sorted = Object.entries(byTeam).sort((a,b) => b[1].length - a[1].length);
-    for (const [team, rows] of sorted) {
-      html += `<div class="roster-division">${esc2(team)} (${rows.length})</div>`;
-      for (const r of rows) {
-        const plc = r.placement || '';
-        const plcClass = plc === 1 ? 'gold' : plc === 2 ? 'silver' : plc === 3 ? 'bronze' : '';
-        const plcLabel = plc === 1 ? '1st' : plc === 2 ? '2nd' : plc === 3 ? '3rd' : plc || '';
-        html += `<div class="roster-row">
-          <span class="roster-place ${plcClass}">${plcLabel}</span>
-          <span class="roster-name">${esc2(r.athlete_display)}</span>
-          <span class="roster-team">${esc2(r.division)}</span>
-        </div>`;
-      }
-    }
-  } else {
-    const byDiv = {};
-    for (const r of filtered) {
-      const d = r.division || 'Unknown Division';
-      (byDiv[d] = byDiv[d] || []).push(r);
-    }
-    for (const [div, rows] of Object.entries(byDiv)) {
-      html += `<div class="roster-division">${esc2(div)} (${rows.length})</div>`;
-      for (const r of rows) {
-        const plc = r.placement || '';
-        const plcClass = plc === 1 ? 'gold' : plc === 2 ? 'silver' : plc === 3 ? 'bronze' : '';
-        const plcLabel = plc === 1 ? '1st' : plc === 2 ? '2nd' : plc === 3 ? '3rd' : plc || '';
-        html += `<div class="roster-row">
-          <span class="roster-place ${plcClass}">${plcLabel}</span>
-          <span class="roster-name">${esc2(r.athlete_display)}</span>
-          <span class="roster-team">${esc2(r.team)}</span>
-        </div>`;
-      }
-    }
-  }
-  list.innerHTML = html;
-}
-
-// ─── Find Local Modal ────────────────────────────────────────────────────────
-let _localLat = null, _localLng = null, _localLabel = '';
-
-function openLocalModal() {
-  document.getElementById('local-modal').classList.add('open');
-  _localLat = null; _localLng = null;
-  document.getElementById('local-gps-btn').className = 'local-loc-btn';
-  document.getElementById('local-gps-btn').innerHTML = '<span>📡</span> Use My Location';
-  document.getElementById('local-city-input').value = '';
-  document.getElementById('local-status').textContent = '';
-}
-
-function closeLocalModal() {
-  document.getElementById('local-modal').classList.remove('open');
-}
-
-function useMyLocation() {
-  const btn = document.getElementById('local-gps-btn');
-  const status = document.getElementById('local-status');
-  btn.innerHTML = '<span>⏳</span> Getting location…';
-  status.textContent = '';
-  navigator.geolocation.getCurrentPosition(pos => {
-    _localLat = pos.coords.latitude;
-    _localLng = pos.coords.longitude;
-    _localLabel = 'your location';
-    btn.className = 'local-loc-btn located';
-    btn.innerHTML = '<span>✅</span> Location found';
-    status.textContent = `${_localLat.toFixed(3)}, ${_localLng.toFixed(3)}`;
-  }, err => {
-    btn.innerHTML = '<span>📡</span> Use My Location';
-    status.textContent = 'Location denied — enter a city below.';
-  });
-}
-
-async function runLocalSearch() {
-  const status = document.getElementById('local-status');
-  const cityVal = document.getElementById('local-city-input').value.trim();
-  const distMi  = parseInt(document.getElementById('local-dist').value);
-  const days    = parseInt(document.getElementById('local-days').value);
-
-  let lat = _localLat, lng = _localLng, label = _localLabel;
-
-  if (lat === null && cityVal) {
-    status.textContent = 'Geocoding…';
-    try {
-      const r = await fetch(`/api/geocode?q=${encodeURIComponent(cityVal)}`);
-      const d = await r.json();
-      if (d.lat) { lat = d.lat; lng = d.lng; label = cityVal; }
-      else { status.textContent = `Could not find "${cityVal}" — try "City, State"`; return; }
-    } catch { status.textContent = 'Geocode failed. Try again.'; return; }
-  }
-
-  if (lat === null) { status.textContent = 'Enter a city or use your location first.'; return; }
-
-  closeLocalModal();
-
-  // Ensure browse events are loaded
-  if (!_browseFetched) {
-    await loadBrowseEvents();
-  }
-
-  // Filter by distance + date and show in browse section
-  const todayStr = _browseLocalDate(new Date());
-  const cutoff   = days > 0 ? (() => { const d=new Date(); d.setDate(d.getDate()+days); return _browseLocalDate(d); })() : '9999-99-99';
-
-  function haversineMi(lat1,lng1,lat2,lng2) {
-    if (lat2==null||lng2==null) return null;
-    const R=3959, r=d=>d*Math.PI/180;
-    const dLat=r(lat2-lat1), dLng=r(lng2-lng1);
-    const a=Math.sin(dLat/2)**2+Math.cos(r(lat1))*Math.cos(r(lat2))*Math.sin(dLng/2)**2;
-    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-  }
-
-  const results = _browseEvents
-    .filter(e => {
-      if (!e.start || e.start < todayStr || e.start > cutoff) return false;
-      const mi = haversineMi(lat, lng, e.lat, e.lng);
-      if (mi === null || mi > distMi) return false;
-      e._distMi = mi;
-      return true;
-    })
-    .sort((a,b) => a._distMi - b._distMi);
-
-  // Show results in browse section, clear org selection
-  _browseOrg = 'all';
-  document.querySelectorAll('.org-tile').forEach(b => b.classList.remove('active'));
-  document.getElementById('tourney-era-toggle').style.display = 'none';
-  document.getElementById('tourney-loading').style.display = 'none';
-  document.getElementById('tourney-list').style.display = 'none';
-  document.getElementById('browse-container').style.display = 'block';
-
-  const list = document.getElementById('browse-list');
-  if (!results.length) {
-    list.innerHTML = `<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">No events within ${distMi} mi of ${label}</div>`;
-    return;
-  }
-
-  const esc2 = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  list.innerHTML = `<div style="font-size:0.75rem;color:var(--muted);margin-bottom:8px">📍 ${results.length} events within ${distMi} mi of ${esc2(label)}</div>` +
-    results.map(e => {
-      const org  = _BROWSE_ORG_MAP[e.org] || { name:e.org||'Other', color:'#888', bg:'rgba(136,136,136,0.1)', icon:'📋' };
-      const logo = _BROWSE_LOGOS[e.org];
-      const thumb = logo
-        ? `<img class="browse-thumb" src="${logo}" onerror="this.outerHTML='<div class=\\'browse-thumb-ph\\'>${org.icon}</div>'">`
-        : `<div class="browse-thumb-ph">${org.icon}</div>`;
-      const date = _fmtTourneyDate(e.start, e.end);
-      const loc  = e.city ? (e.country_code==='US' ? e.city : `${e.city}, ${e.country}`) : '';
-      const dist = e._distMi != null ? `${Math.round(e._distMi)} mi` : '';
-      const meta = [date, loc, dist].filter(Boolean).join(' · ');
-      const isSC = e.source === 'smoothcomp';
-      const rosterBadge = isSC ? '<span class="roster-badge">Roster</span>' : '';
-      if (isSC) {
-        return `<div class="browse-card" style="cursor:pointer"
-          data-sc-id="${esc2(e.id)}" data-sc-name="${esc2(e.name)}" data-sc-url="${esc2(e.url||'#')}" data-sc-sub="${esc2(e.subdomain||'')}"
-          onclick="openRosterModal(this.dataset.scId,this.dataset.scName,this.dataset.scUrl,this.dataset.scSub)">
-          ${thumb}
-          <div class="browse-body">
-            <div class="browse-name">${esc2(e.name)}${rosterBadge}</div>
-            <div class="browse-meta">
-              <span class="browse-badge" style="background:${org.bg};color:${org.color}">${org.name}</span>
-              ${esc2(meta)}
-            </div>
-          </div>
-        </div>`;
-      }
-      return `<a class="browse-card" href="${e.url||'#'}" target="_blank" rel="noopener">
-        ${thumb}
-        <div class="browse-body">
-          <div class="browse-name">${esc2(e.name)}</div>
-          <div class="browse-meta">
-            <span class="browse-badge" style="background:${org.bg};color:${org.color}">${org.name}</span>
-            ${esc2(meta)}
-          </div>
-        </div>
-      </a>`;
-    }).join('');
+  setTournamentSource(key);
 }
 
 function setTourneyEra(era) {
@@ -1914,6 +1431,8 @@ function selectTournament(id, el) {
   showScreen('screen-school');
   if (_isNagaMode()) {
     _setupNagaSchoolScreen();
+  } else if (_isScRegistrationsMode()) {
+    loadScTeamSuggestions(selectedTournament.source, id);
   } else {
     loadTeamSuggestions(id);
     _loadPickStatuses();
@@ -1921,8 +1440,39 @@ function selectTournament(id, el) {
   saveSession();
 }
 
+// NAGA/CompNet still use the live-scrape club endpoint (bracket-tracking day-of).
 function _isNagaMode() {
   return selectedTournament?.source === 'naga' || selectedTournament?.source === 'compnet';
+}
+
+// All Smoothcomp-sourced orgs whose rosters live in tournament_results (status='registered').
+const SC_REGISTRATIONS_SOURCES = new Set([
+  'adcc','gi','fuji','goodfight','newbreed','pbjjf','united',
+  'subchallenge','grapplingx','rollalot',
+]);
+
+function _isScRegistrationsMode() {
+  return SC_REGISTRATIONS_SOURCES.has(selectedTournament?.source);
+}
+
+async function loadScTeamSuggestions(source, eventId) {
+  const el   = document.getElementById('cache-status');
+  const list = document.getElementById('item-list');
+  _teamSuggestions = [];
+  _athleteSugg     = [];
+  if (el)   el.textContent = 'Loading registered athletes…';
+  if (list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Loading…</div>';
+  try {
+    const r = await fetch(`/api/sc-teams/${encodeURIComponent(source)}/${encodeURIComponent(eventId)}`);
+    const data = await r.json();
+    _teamSuggestions = data.teams || [];
+    _athleteSugg     = data.athletes || [];
+    if (el) el.textContent = `${data.athlete_count || 0} athletes · ${_teamSuggestions.length} teams`;
+    renderItemList('');
+  } catch(e) {
+    if (el) el.textContent = 'Could not load roster';
+    if (list) list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem">Failed to load roster</div>';
+  }
 }
 
 let _nagaClubs = [];   // club names for current NAGA event
