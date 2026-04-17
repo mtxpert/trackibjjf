@@ -576,6 +576,128 @@ def api_geocode():
     return jsonify({"error": "not found"}), 404
 
 
+# ── Live Smoothcomp roster cache ─────────────────────────────────────────────
+_sc_live_cache = {}   # event_id -> {"ts": float, "data": list}
+_SC_LIVE_TTL = 900    # 15 minutes
+
+
+def _fetch_sc_live_roster(event_id: str, subdomain: str) -> list:
+    """Fetch registered athletes from Smoothcomp participants-new API.
+
+    Requires a session with cookies + CSRF token.  Returns a flat list of
+    {athlete_display, team, division, country} dicts.
+    """
+    host = f"{subdomain}.smoothcomp.com" if subdomain else "smoothcomp.com"
+    base = f"https://{host}/en/event/{event_id}"
+
+    sess = requests.Session()
+    sess.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    })
+
+    # Load the page to obtain cookies + CSRF token
+    page = sess.get(f"{base}/participants-new", timeout=(5, 15))
+    csrf_match = re.search(r'csrf-token"\s+content="([^"]+)"', page.text)
+    if not csrf_match:
+        logger.warning("sc_live: no CSRF token for event %s", event_id)
+        return []
+
+    csrf = csrf_match.group(1)
+    sess.headers.update({
+        "X-Requested-With": "XMLHttpRequest",
+        "X-CSRF-TOKEN": csrf,
+        "Accept": "application/json",
+    })
+
+    roster = []
+    page_num = 1
+    max_pages = 60  # safety cap
+
+    while page_num <= max_pages:
+        try:
+            r = sess.get(
+                f"{base}/participants-new",
+                params={"page": page_num},
+                timeout=(5, 15),
+            )
+            if r.status_code != 200:
+                break
+            body = r.json()
+        except Exception:
+            break
+
+        for group in body.get("data", []):
+            if not isinstance(group, dict):
+                continue
+            division = group.get("name", "Unknown Division")
+            for reg in group.get("registrations", []):
+                if not isinstance(reg, dict):
+                    continue
+                user = reg.get("user") or {}
+                club = reg.get("club") or {}
+                roster.append({
+                    "athlete_display": user.get("name", ""),
+                    "team": club.get("name", ""),
+                    "division": division,
+                    "country": (user.get("country") or "").upper(),
+                })
+
+        last_page = body.get("last_page", 1)
+        if page_num >= last_page:
+            break
+        page_num += 1
+
+    return roster
+
+
+@app.route("/api/smoothcomp-roster/<event_id>")
+def api_smoothcomp_roster(event_id):
+    """Return roster for a Smoothcomp event.
+
+    Priority: in-memory live cache → Supabase DB → live fetch from Smoothcomp.
+    """
+    subdomain = request.args.get("subdomain", "")
+
+    # 1. Check live cache
+    cached = _sc_live_cache.get(event_id)
+    if cached and (time.time() - cached["ts"]) < _SC_LIVE_TTL:
+        return jsonify(cached["data"])
+
+    # 2. Check Supabase (past events with recorded results)
+    try:
+        from supabase import create_client
+        sb = create_client(
+            os.environ.get("SUPABASE_URL", ""),
+            os.environ.get("SUPABASE_SERVICE_KEY", ""),
+        )
+        rows = sb.table("tournament_results") \
+            .select("athlete_display,team,division,placement") \
+            .eq("source", "smoothcomp") \
+            .eq("event_id", str(event_id)) \
+            .order("division") \
+            .order("placement") \
+            .limit(5000) \
+            .execute()
+        if rows.data:
+            return jsonify(rows.data)
+    except Exception as e:
+        logger.warning("smoothcomp DB query failed event_id=%s: %s", event_id, e)
+
+    # 3. Fetch live from Smoothcomp
+    if not subdomain:
+        return jsonify({"error": "subdomain required for live roster"}), 400
+
+    try:
+        roster = _fetch_sc_live_roster(event_id, subdomain)
+        if roster:
+            _sc_live_cache[event_id] = {"ts": time.time(), "data": roster}
+            return jsonify(roster)
+        return jsonify([])
+    except Exception as e:
+        logger.error("smoothcomp live fetch failed event_id=%s: %s", event_id, e)
+        return jsonify({"error": "live fetch failed"}), 500
+
+
 @app.route("/api/browser-events")
 def api_browser_events():
     """All events for the tournament browser: Smoothcomp (all orgs) + IBJJF schedule."""
