@@ -291,7 +291,15 @@ def search():
 @app.route("/athlete/<sc_uid>")
 def athlete_profile(sc_uid):
     """Athlete profile page anchored by Smoothcomp user_id."""
+    try:
+        return _athlete_profile_inner(sc_uid)
+    except Exception:
+        import traceback
+        log.error("athlete_profile 500 for sc_uid=%s:\n%s", sc_uid, traceback.format_exc())
+        raise
 
+
+def _athlete_profile_inner(sc_uid):
     # Get all Smoothcomp rows for this user_id
     sc_res = (sb.table("tournament_results")
                .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,athlete_id")
