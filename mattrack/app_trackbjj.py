@@ -781,18 +781,19 @@ def api_stats():
     SBURL  = os.environ.get("SUPABASE_URL", "")
     try:
         r = req.get(
-            f"{SBURL}/rest/v1/rpc/get_athlete_stats",
+            f"{SBURL}/rest/v1/site_stats?select=key,value",
             headers={"apikey": SVCKEY, "Authorization": f"Bearer {SVCKEY}"},
-            timeout=15,
+            timeout=5,
         )
         rows = r.json() if r.ok else []
+        stats = {row["key"]: row["value"] for row in rows if isinstance(row, dict)}
     except Exception:
-        rows = []
-    if isinstance(rows, dict):  # error response
-        rows = []
-    sc_athletes = next((r.get("smoothcomp_athletes") for r in rows if isinstance(r, dict) and r.get("source") == "smoothcomp"), 0)
-    total_rows  = sum(r.get("rows", 0) for r in rows if isinstance(r, dict))
-    return jsonify({"by_source": rows, "smoothcomp_athletes": sc_athletes, "total_rows": total_rows})
+        stats = {}
+    return jsonify({
+        "smoothcomp_athletes": stats.get("smoothcomp_athletes", 0),
+        "total_rows":          stats.get("total_results", 0),
+        "total_events":        stats.get("total_events", 0),
+    })
 
 
 @app.route("/auth-relay")
