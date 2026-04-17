@@ -586,39 +586,51 @@ _SC_TOURNAMENTS_TTL = 300   # 5 minutes
 
 def _get_db_tournaments_for_sources(sources):
     """Aggregate distinct events per (source, event_id) from tournament_results
-    where status='registered'. Returns a list of tournament dicts."""
-    from supabase import create_client
-    sb = create_client(
-        os.environ.get("SUPABASE_URL", ""),
-        os.environ.get("SUPABASE_SERVICE_KEY", ""),
-    )
-    page_size = 1000
-    offset = 0
+    where status='registered'. Returns a list of tournament dicts.
+
+    Uses direct REST (not supabase-py SDK) — SDK hangs on Render for large queries.
+    """
+    import requests as _req
+    sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    if not sb_url or not sb_key:
+        return []
     today = date.today().isoformat()
     events = {}
+    page_size = 1000
+    offset = 0
+    src_filter = ",".join(f'"{s}"' for s in sources)
+    headers = {
+        "apikey": sb_key,
+        "Authorization": f"Bearer {sb_key}",
+        "Accept": "application/json",
+    }
     while True:
-        rows = sb.table("tournament_results") \
-            .select("source,event_id,event_title,event_date") \
-            .in_("source", list(sources)) \
-            .eq("status", "registered") \
-            .range(offset, offset + page_size - 1) \
-            .execute()
-        data = rows.data or []
+        url = (f"{sb_url}/rest/v1/tournament_results"
+               f"?select=source,event_id,event_title,event_date"
+               f"&source=in.({src_filter})"
+               f"&status=eq.registered"
+               f"&limit={page_size}&offset={offset}")
+        try:
+            r = _req.get(url, headers=headers, timeout=10)
+            data = r.json() if r.ok else []
+        except Exception:
+            data = []
         if not data:
             break
-        for r in data:
-            key = (r.get("source"), str(r.get("event_id")))
+        for row in data:
+            key = (row.get("source"), str(row.get("event_id")))
             if key in events:
                 continue
             events[key] = {
-                "id": str(r.get("event_id")),
-                "source": r.get("source"),
-                "name": r.get("event_title") or f"Event {r.get('event_id')}",
-                "start": r.get("event_date") or "",
-                "end": r.get("event_date") or "",
+                "id": str(row.get("event_id")),
+                "source": row.get("source"),
+                "name": row.get("event_title") or f"Event {row.get('event_id')}",
+                "start": row.get("event_date") or "",
+                "end": row.get("event_date") or "",
                 "location": "",
                 "has_brackets": False,
-                "is_past": bool(r.get("event_date") and r["event_date"] < today),
+                "is_past": bool(row.get("event_date") and row["event_date"] < today),
             }
         if len(data) < page_size:
             break
@@ -633,23 +645,26 @@ def api_sc_teams(source, event_id):
     if source not in SC_ORG_KEYS:
         return jsonify({"error": "unknown source"}), 400
     try:
-        from supabase import create_client
-        sb = create_client(
-            os.environ.get("SUPABASE_URL", ""),
-            os.environ.get("SUPABASE_SERVICE_KEY", ""),
-        )
+        import requests as _req
+        sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+        sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+        headers = {
+            "apikey": sb_key,
+            "Authorization": f"Bearer {sb_key}",
+            "Accept": "application/json",
+        }
         page_size = 1000
         offset = 0
         rows_all = []
         while True:
-            rows = sb.table("tournament_results") \
-                .select("athlete_display,team,division") \
-                .eq("source", source) \
-                .eq("event_id", str(event_id)) \
-                .eq("status", "registered") \
-                .range(offset, offset + page_size - 1) \
-                .execute()
-            batch = rows.data or []
+            url = (f"{sb_url}/rest/v1/tournament_results"
+                   f"?select=athlete_display,team,division"
+                   f"&source=eq.{source}"
+                   f"&event_id=eq.{event_id}"
+                   f"&status=eq.registered"
+                   f"&limit={page_size}&offset={offset}")
+            r = _req.get(url, headers=headers, timeout=10)
+            batch = r.json() if r.ok else []
             rows_all.extend(batch)
             if len(batch) < page_size:
                 break
