@@ -519,6 +519,12 @@ def index():
     return render_template("index.html")
 
 
+# SPA catch-all — client-side router hydrates state from window.location.pathname.
+@app.route("/org/<path:p>")
+def index_org_path(p):
+    return render_template("index.html")
+
+
 @app.route("/browser")
 def tournament_browser():
     return send_file(os.path.join(os.path.dirname(__file__), "tournament_browser.html"))

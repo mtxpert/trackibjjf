@@ -1144,6 +1144,158 @@ function timeSince(isoStr) {
   return `${Math.round(mins/60)}h ago`;
 }
 
+// ─── URL Routing ────────────────────────────────────────────────────────────
+// Path shape: /, /org/<key>, /org/<key>/<event_id>,
+//             /org/<key>/<event_id>/team/<slug>,
+//             /org/<key>/<event_id>/athlete/<slug>.
+// The page state mirrors the URL so links are shareable and back/forward work.
+
+const _routeSlug = s => String(s||'').toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+let _routerHydrating = false;        // skip URL pushes while router applies a route
+let _initialRouteHydrated = false;   // first-load hydration has run
+
+function _parseRoutePath(pathname) {
+  pathname = pathname || window.location.pathname;
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts[0] !== 'org') return null;
+  return {
+    org:     parts[1] || null,
+    eventId: parts[2] || null,
+    kind:    parts[3] || null,     // 'team' | 'athlete'
+    subSlug: parts[4] || null,
+  };
+}
+
+function _buildRoutePath({ org, eventId, kind, subSlug } = {}) {
+  if (!org) return '/';
+  let p = `/org/${encodeURIComponent(org)}`;
+  if (eventId) p += `/${encodeURIComponent(eventId)}`;
+  if (kind && subSlug) p += `/${kind}/${encodeURIComponent(subSlug)}`;
+  return p;
+}
+
+function _currentRouteState() {
+  const r = {};
+  if (_tournamentSource) r.org = _tournamentSource;
+  if (selectedTournament) r.eventId = selectedTournament.id;
+  return r;
+}
+
+// Push a URL reflecting the given partial state. Merges with current route state
+// so callers only need to supply the parts they are changing. Null values reset.
+function _pushRoute(partial, replace = false) {
+  if (_routerHydrating) return;
+  const base = _currentRouteState();
+  const next = Object.assign({}, base, partial);
+  // Explicit nulls clear deeper segments.
+  for (const k of ['org','eventId','kind','subSlug']) {
+    if (partial && partial[k] === null) delete next[k];
+  }
+  const path = _buildRoutePath(next);
+  if (path === window.location.pathname) return;
+  if (replace) history.replaceState({}, '', path);
+  else history.pushState({}, '', path);
+}
+
+// Walk _teamSuggestions / _athleteSugg with slug-dedupe and return the matching item.
+function _findBySlug(items, targetSlug, keyFn) {
+  const used = new Map();
+  for (const it of items) {
+    const base = _routeSlug(keyFn(it));
+    if (!base) continue;
+    const n = (used.get(base) || 0) + 1;
+    used.set(base, n);
+    const s = n === 1 ? base : `${base}-${n}`;
+    if (s === targetSlug) return it;
+  }
+  return null;
+}
+
+function _waitFor(cond, timeoutMs = 8000, intervalMs = 100) {
+  return new Promise(resolve => {
+    const start = Date.now();
+    (function tick() {
+      if (cond()) return resolve(true);
+      if (Date.now() - start > timeoutMs) return resolve(false);
+      setTimeout(tick, intervalMs);
+    })();
+  });
+}
+
+// Apply a parsed route to the app. Called on first-load hydration and popstate.
+async function _applyRoute(route) {
+  _routerHydrating = true;
+  try {
+    if (!route || !route.org) {
+      selectedTournament = null; watchedTournamentId = '';
+      allAthletes = []; selectedKeys = new Set();
+      _tournamentSource = null;
+      document.querySelectorAll('.org-tile').forEach(b => b.classList.remove('active'));
+      document.getElementById('header-sub').textContent = 'Live Tournament Tracker';
+      showScreen('screen-tournament', false);
+      if (!allTournaments.length) {
+        try {
+          const r = await fetch('/api/tournaments');
+          allTournaments = await r.json();
+        } catch(e) {}
+      }
+      renderTournaments();
+      return;
+    }
+
+    // Stage 1: org
+    if (route.org !== _tournamentSource) {
+      document.querySelectorAll('.org-tile').forEach(b =>
+        b.classList.toggle('active', b.getAttribute('onclick') === `selectOrgTile('${route.org}')`));
+      setTournamentSource(route.org);
+    }
+    if (!allTournaments.length) {
+      try {
+        const r = await fetch('/api/tournaments');
+        allTournaments = await r.json();
+        renderTournaments();
+      } catch(e) { return; }
+    }
+
+    if (!route.eventId) {
+      showScreen('screen-tournament', false);
+      return;
+    }
+
+    // Stage 2: event
+    const t = allTournaments.find(x => String(x.id) === String(route.eventId));
+    if (!t) { showScreen('screen-tournament', false); return; }
+    if (!selectedTournament || selectedTournament.id !== t.id) {
+      const el = document.getElementById(`t-${t.id}`) || document.createElement('div');
+      selectTournament(t.id, el);
+    } else {
+      showScreen('screen-school', false);
+    }
+
+    if (!route.kind || !route.subSlug) return;
+
+    // Stage 3: team or athlete
+    if (route.kind === 'team') {
+      setSearchMode('team');
+      await _waitFor(() => _teamSuggestions.length > 0);
+      const team = _findBySlug(_teamSuggestions, route.subSlug, x => x.name);
+      if (team) {
+        document.getElementById('school-input').value = team.name;
+        startSearch();
+      }
+    } else if (route.kind === 'athlete') {
+      setSearchMode('athlete');
+      await _waitFor(() => _athleteSugg.length > 0);
+      const a = _findBySlug(_athleteSugg, route.subSlug, x => x.name);
+      if (a) addAthleteToList(a.name);
+    }
+  } finally {
+    _routerHydrating = false;
+  }
+}
+
 // ─── Screens ───────────────────────────────────────────────────────────────
 function showScreen(id, pushState = true) {
   const prev = document.querySelector('.screen.active')?.id || 'none';
@@ -1174,25 +1326,34 @@ function goHome() {
   document.querySelectorAll('.org-tile').forEach(b => b.classList.remove('active'));
   document.getElementById('header-sub').textContent = 'Live Tournament Tracker';
   showScreen('screen-tournament', false);
-  history.pushState({ screen: 'screen-tournament' }, '', '');
+  if (!_routerHydrating && window.location.pathname !== '/') {
+    history.pushState({}, '', '/');
+  }
   loadTournaments();
 }
 
 window.addEventListener('popstate', (e) => {
-  const screen = e.state?.screen;
-  if (!screen || screen === 'screen-tournament' || screen === 'screen-landing') {
-    // Clear session so goHome doesn't re-restore
+  // URL-based routing takes priority: if the path maps to a route, apply it.
+  const route = _parseRoutePath();
+  if (route) { _applyRoute(route); return; }
+  if (window.location.pathname === '/') {
     localStorage.removeItem('mattrack_session');
     selectedTournament = null; watchedTournamentId = ''; allAthletes = []; selectedKeys = new Set();
+    _tournamentSource = null;
+    document.querySelectorAll('.org-tile').forEach(b => b.classList.remove('active'));
     document.getElementById('header-sub').textContent = 'Live Tournament Tracker';
     showScreen('screen-tournament', false);
     if (!allTournaments.length) loadTournaments();
     else renderTournaments();
-  } else if (screen === 'screen-school' && selectedTournament) {
+    return;
+  }
+  // Legacy fallback (screens that don't have URL mappings — e.g., pick/watch)
+  const screen = e.state?.screen;
+  if (screen === 'screen-school' && selectedTournament) {
     showScreen('screen-school', false);
   } else if (screen === 'screen-pick' && allAthletes.length) {
     showScreen('screen-pick', false);
-    renderPick();
+    filterPick();
   } else if (screen === 'screen-watch' && selectedKeys.size) {
     showScreen('screen-watch', false);
     renderWatch();
@@ -1293,11 +1454,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function loadTournaments() {
-  if (restoreSession()) return;   // resume where we left off
+  const route = _parseRoutePath();
+  const hasRoute = !!(route && route.org);
+  // URL route takes priority over localStorage session restore.
+  if (!hasRoute && restoreSession()) return;
   try {
     const r = await fetch('/api/tournaments');
     allTournaments = await r.json();
-    renderTournaments();
+    if (hasRoute && !_initialRouteHydrated) {
+      _initialRouteHydrated = true;
+      await _applyRoute(route);
+    } else {
+      renderTournaments();
+    }
   } catch(e) {
     document.getElementById('tourney-loading').innerHTML =
       '<div class="icon">⚠️</div><h3>Could not load tournaments</h3><p>Check your connection and reload.</p>';
@@ -1331,6 +1500,7 @@ function selectOrgTile(key) {
   document.querySelectorAll('.org-tile').forEach(b =>
     b.classList.toggle('active', b.getAttribute('onclick') === `selectOrgTile('${key}')`));
   setTournamentSource(key);
+  _pushRoute({ org: key, eventId: null, kind: null, subSlug: null });
 }
 
 function setTourneyEra(era) {
@@ -1426,8 +1596,12 @@ function renderTournaments() {
 
 function selectTournament(id, el) {
   document.querySelectorAll('.tourney-item').forEach(e => e.classList.remove('selected'));
-  el.classList.add('selected');
+  if (el && el.classList) el.classList.add('selected');
   selectedTournament = allTournaments.find(t => t.id === id);
+  if (selectedTournament) {
+    _pushRoute({ eventId: id, kind: null, subSlug: null,
+                 org: _tournamentSource || selectedTournament.source || null });
+  }
   document.getElementById('school-tourney-name').textContent = selectedTournament.name;
   document.getElementById('school-input').value = '';
   _teamSuggestions = [];
@@ -1435,7 +1609,7 @@ function selectTournament(id, el) {
   setSearchMode('team');
   _pickStatusCache = {};
   _teardownNagaSchoolScreen();
-  showScreen('screen-school');
+  showScreen('screen-school', false);
   if (selectedTournament.source === 'ibjjf') {
     // IBJJF: try live bjjcompsystem cache first (has mat/fight info); on
     // 503/empty, loadTeamSuggestions falls back to the SC registrations path.
@@ -1790,12 +1964,13 @@ let _athleteQueue = [];   // [{name, team}] accumulated in athlete mode
 function addAthleteToList(name) {
   const idx = _athleteQueue.findIndex(a => a.name.toLowerCase() === name.toLowerCase());
   if (idx !== -1) {
-    // Deselect
+    // Deselect — leave URL alone (queue is multi-select; URL represents the most-recently added).
     _athleteQueue.splice(idx, 1);
   } else {
     if (!checkAthleteLimit(_athleteQueue.length)) return;
     const meta = Object.assign({}, _athleteSugg.find(a => a.name.toLowerCase() === name.toLowerCase()) || {name, team:''});
     _athleteQueue.push(meta);
+    _pushRoute({ kind: 'athlete', subSlug: _routeSlug(name) });
   }
   renderItemList(document.getElementById('school-input').value.trim());
   _updateAthWatchBtns();
@@ -1846,6 +2021,8 @@ async function startSearch() {
   const school = document.getElementById('school-input').value.trim();
   if (!school) { showToast('Enter a school name'); return; }
   if (!selectedTournament) { showScreen('screen-tournament'); return; }
+
+  _pushRoute({ kind: 'team', subSlug: _routeSlug(school) });
 
   document.getElementById('header-sub').textContent =
     school + ' · ' + selectedTournament.name.split(' ').slice(0,3).join(' ') + '...';
