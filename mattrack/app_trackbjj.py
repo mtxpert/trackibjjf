@@ -842,9 +842,60 @@ def api_debug_athlete(sc_uid):
         steps["sc_verified"] = bool(sc_ver_res.data)
         try:
             sc_mh_res = sb.rpc("get_match_history_sc", {"p_sc_uid": str(sc_uid)}).execute()
-            steps["match_history_sc"] = len(sc_mh_res.data or [])
+            match_history = list(sc_mh_res.data or [])
+            steps["match_history_sc"] = len(match_history)
+            # Test h2h processing
+            h2h = {}
+            for m in match_history:
+                opp = m.get("opponent_name") or "Unknown"
+                if opp not in h2h:
+                    h2h[opp] = {"wins": 0, "losses": 0, "opponent_sc_uid": m.get("opponent_sc_uid")}
+                if m.get("result") == "Win":
+                    h2h[opp]["wins"] += 1
+                else:
+                    h2h[opp]["losses"] += 1
+            steps["h2h_entries"] = len(h2h)
+            steps["match_keys"] = list(match_history[0].keys()) if match_history else []
         except Exception as e:
-            steps["match_history_sc_err"] = str(e)
+            steps["match_history_err"] = str(e)
+        # Test ibjjf_rows fallback processing
+        fp = athlete_fingerprint([r["division"] for r in sc_res.data if r["division"]])
+        norm_display2 = normalize(max(list({r["athlete_display"] or r["athlete_name"] for r in sc_res.data}), key=len))
+        parts2 = norm_display2.split()
+        last_name2 = parts2[-1] if parts2 else ""
+        first_name2 = parts2[0] if parts2 else ""
+        try:
+            fb_res2 = (sb.table("tournament_results")
+                       .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source")
+                       .eq("source", "ibjjf")
+                       .ilike("athlete_name", f"%{last_name2}%")
+                       .or_("status.is.null,status.neq.registered")
+                       .order("event_date").execute())
+            ibjjf_rows_test = []
+            for row in (fb_res2.data or []):
+                row_fp = parse_division(row.get("division") or "")
+                if not age_matches(fp.get("age"), row_fp.get("age")):
+                    continue
+                if fp.get("gender") and row_fp.get("gender") and fp["gender"] != row_fp["gender"]:
+                    continue
+                if not belt_matches(fp.get("belt"), row_fp.get("belt")):
+                    continue
+                row_name = normalize(row.get("athlete_display") or row.get("athlete_name") or "")
+                if first_name_score(first_name2, row_name) < 0.50:
+                    continue
+                ibjjf_rows_test.append(row)
+            steps["ibjjf_rows_filtered"] = len(ibjjf_rows_test)
+            # Test all_rows assembly and sort
+            all_rows_test = []
+            for r in sc_res.data:
+                all_rows_test.append(dict(r, _source="smoothcomp"))
+            for r in ibjjf_rows_test:
+                all_rows_test.append(dict(r, _source="ibjjf"))
+            all_rows_test.sort(key=lambda r: (r["event_date"] or "0000-00-00"))
+            steps["all_rows"] = len(all_rows_test)
+        except Exception as e:
+            import traceback as tb2
+            steps["ibjjf_filter_err"] = tb2.format_exc()
         return jsonify({"ok": True, "steps": steps})
     except Exception:
         steps["traceback"] = traceback.format_exc()
