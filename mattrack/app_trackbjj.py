@@ -785,6 +785,72 @@ def api_athlete_results(sc_uid):
     return jsonify(res.data or [])
 
 
+@app.route("/api/debug/athlete/<sc_uid>")
+def api_debug_athlete(sc_uid):
+    """Temporary debug endpoint — trace athlete profile steps."""
+    import traceback
+    steps = {}
+    try:
+        sc_res = (sb.table("tournament_results")
+                   .select("athlete_name,athlete_display,team,event_date,division,placement")
+                   .eq("source", "smoothcomp").eq("athlete_id", str(sc_uid))
+                   .order("event_date", desc=True).execute())
+        steps["sc_rows"] = len(sc_res.data or [])
+        if not sc_res.data:
+            return jsonify({"steps": steps, "error": "no sc_rows → 404"})
+        sc_rows = sc_res.data
+        names = list({r["athlete_display"] or r["athlete_name"] for r in sc_rows})
+        steps["names"] = names
+        display_name = max(names, key=len)
+        steps["display_name"] = display_name
+        norm_display = normalize(display_name)
+        parts = norm_display.split()
+        last_name = parts[-1] if parts else ""
+        first_name = parts[0] if parts else ""
+        steps["last_name"] = last_name
+        team_res = (sb.table("tournament_results")
+                     .select("team,status,event_date")
+                     .ilike("athlete_name", f"%{last_name}%")
+                     .not_.is_("team", "null")
+                     .order("event_date", desc=True).limit(50).execute())
+        steps["team_rows"] = len(team_res.data or [])
+        fp = athlete_fingerprint([r["division"] for r in sc_rows if r["division"]])
+        steps["fp"] = fp
+        verified_res = (sb.table("sc_ibjjf_verified").select("*").eq("sc_uid", sc_uid).execute())
+        steps["verified_claim"] = bool(verified_res.data)
+        cand_res = (sb.table("ibjjf_athletes")
+                     .select("ibjjf_id,name,slug,belt")
+                     .ilike("name_lower", f"%{last_name}%")
+                     .order("points", desc=True, nulls_first=False).limit(20).execute())
+        steps["ibjjf_candidates"] = len(cand_res.data or [])
+        reg_res = (sb.table("tournament_results")
+                    .select("athlete_name,division,status")
+                    .eq("source", "ibjjf").eq("status", "registered")
+                    .ilike("athlete_name", f"%{last_name}%")
+                    .order("event_date").execute())
+        steps["upcoming_ibjjf"] = len(reg_res.data or [])
+        fb_res = (sb.table("tournament_results")
+                   .select("athlete_name,division,placement")
+                   .eq("source", "ibjjf")
+                   .ilike("athlete_name", f"%{last_name}%")
+                   .or_("status.is.null,status.neq.registered")
+                   .order("event_date").execute())
+        steps["fallback_ibjjf"] = len(fb_res.data or [])
+        sl_res = sb.table("athlete_social_links").select("*").eq("sc_uid", sc_uid).execute()
+        steps["social_links"] = bool(sl_res.data)
+        sc_ver_res = sb.table("sc_smoothcomp_verified").select("sc_name").eq("sc_uid", sc_uid).execute()
+        steps["sc_verified"] = bool(sc_ver_res.data)
+        try:
+            sc_mh_res = sb.rpc("get_match_history_sc", {"p_sc_uid": str(sc_uid)}).execute()
+            steps["match_history_sc"] = len(sc_mh_res.data or [])
+        except Exception as e:
+            steps["match_history_sc_err"] = str(e)
+        return jsonify({"ok": True, "steps": steps})
+    except Exception:
+        steps["traceback"] = traceback.format_exc()
+        return jsonify({"ok": False, "steps": steps}), 500
+
+
 @app.route("/api/stats")
 def api_stats():
     import requests as req
