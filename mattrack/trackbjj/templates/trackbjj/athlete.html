@@ -330,7 +330,7 @@ if (window.tbSession !== undefined) {
     <div style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:.4rem .8rem;font-size:.8rem">
       {% if rec.opponent_sc_uid %}
       <a href="{{ url_for('athlete_profile', sc_uid=rec.opponent_sc_uid) }}" style="color:var(--text);text-decoration:none;font-weight:600">{{ opp }}</a>
-      {% else %}<span style="font-weight:600">{{ opp }}</span>{% endif %}
+      {% else %}<a href="{{ url_for('search') }}?q={{ opp | urlencode }}" style="color:var(--text);text-decoration:none;font-weight:600;opacity:.85">{{ opp }}</a>{% endif %}
       <span style="margin-left:.4rem">
         <span style="color:#4caf50">{{ rec.wins }}W</span>–<span style="color:#ef5350">{{ rec.losses }}L</span>
       </span>
@@ -353,7 +353,9 @@ if (window.tbSession !== undefined) {
       <td style="font-size:.85rem">
         {% if m.opponent_sc_uid %}
         <a href="{{ url_for('athlete_profile', sc_uid=m.opponent_sc_uid) }}" style="color:var(--accent);text-decoration:none">{{ m.opponent_name or '—' }}</a>
-        {% else %}{{ m.opponent_name or '—' }}{% endif %}
+        {% elif m.opponent_name %}
+        <a href="{{ url_for('search') }}?q={{ m.opponent_name | urlencode }}" style="color:var(--accent);text-decoration:none;opacity:.85">{{ m.opponent_name }}</a>
+        {% else %}—{% endif %}
         <span style="font-size:.7rem;color:var(--muted);margin-left:.3rem">({{ m.athlete_place }} vs {{ m.opp_place }})</span>
       </td>
       <td>
