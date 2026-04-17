@@ -1,0 +1,92 @@
+{% extends "trackbjj/base.html" %}
+{% block title %}{{ event_title }} — TrackBJJ{% endblock %}
+
+{% block head %}
+<style>
+  .event-header {
+    padding: 1.5rem; background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 2rem;
+  }
+  .event-header h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: .4rem; }
+  .event-header .meta { color: var(--muted); font-size: .85rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+  .team-chip {
+    display: inline-flex; align-items: center; gap: .4rem;
+    background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+    padding: .35rem .7rem; font-size: .8rem; color: var(--text); text-decoration: none;
+  }
+  .team-chip:hover { border-color: var(--accent); }
+  .team-chip .count { color: var(--muted); font-size: .72rem; }
+  .name-link { color: var(--text); text-decoration: none; }
+  .name-link:hover { color: var(--accent); }
+  .team-link { color: var(--muted); text-decoration: none; font-size: .82rem; }
+  .team-link:hover { color: var(--accent); }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="event-header">
+    <h1>{{ event_title }}</h1>
+    <div class="meta">
+      <span><span class="tag tag-{{ source }}">{{ source|upper }}</span></span>
+      {% if event_date %}<span>{{ event_date }}</span>{% endif %}
+      <span>{{ athlete_count }} registrations{% if has_results %} · results available{% endif %}</span>
+      {% if external_url %}
+      <a href="{{ external_url }}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;margin-left:auto">View on {{ source|upper }} ↗</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if top_teams %}
+  <div class="section-title">Top Teams</div>
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:2rem">
+    {% for team_name, count in top_teams %}
+    <a class="team-chip" href="{{ url_for('team_profile', team_slug_in=team_slug_fn(team_name)) }}">
+      <span>{{ team_name }}</span>
+      <span class="count">{{ count }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="section-title">
+    {% if has_results %}Results{% else %}Roster{% endif %}
+    <span style="font-size:.75rem;color:var(--muted);font-weight:400;margin-left:.5rem">{{ athlete_count }} entries</span>
+  </div>
+
+  {% if roster %}
+  <div class="card" style="padding:0;overflow:hidden">
+  <table>
+    <thead><tr>
+      {% if has_results %}<th>Place</th>{% endif %}
+      <th>Athlete</th><th>Team</th><th>Division</th>
+    </tr></thead>
+    <tbody>
+      {% for r in roster %}
+      <tr>
+        {% if has_results %}
+        <td class="place-col {% if r.placement == 1 %}place-1{% elif r.placement == 2 %}place-2{% elif r.placement == 3 %}place-3{% endif %}">
+          {% if r.placement == 1 %}🥇{% elif r.placement == 2 %}🥈{% elif r.placement == 3 %}🥉{% elif r.placement %}{{ r.placement }}{% else %}—{% endif %}
+        </td>
+        {% endif %}
+        <td>
+          {% if r.athlete_id and source == 'smoothcomp' %}
+          <a href="{{ url_for('athlete_profile', sc_uid=r.athlete_id) }}" class="name-link">{{ r.athlete_display or r.athlete_name or '—' }}</a>
+          {% else %}{{ r.athlete_display or r.athlete_name or '—' }}{% endif %}
+        </td>
+        <td>
+          {% if r.team %}
+          <a class="team-link" href="{{ url_for('team_profile', team_slug_in=team_slug_fn(r.team)) }}">{{ r.team }}</a>
+          {% else %}<span style="color:var(--muted);font-size:.82rem">—</span>{% endif %}
+        </td>
+        <td style="color:var(--muted);font-size:.8rem">{{ r.division or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted)">No roster or results available yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

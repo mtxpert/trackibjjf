@@ -288,6 +288,185 @@ def search():
     return render_template("trackbjj/search.html", q=q)
 
 
+# ── Team / Event URL routes ────────────────────────────────────────────────────
+
+SUPABASE_MGMT_TOKEN = os.environ.get(
+    "SUPABASE_MGMT_TOKEN",
+    "sbp_4a09e8b4bd3e03919904bda674dcd141602604cc",
+)
+SUPABASE_PROJECT_REF = os.environ.get("SUPABASE_PROJECT_REF", "kzqvfuqxtbrhlgphyntb")
+
+
+def _mgmt_sql(query: str):
+    """Run SQL via Supabase Management API (bypasses supabase-py hang on Render)."""
+    import requests as _req
+    r = _req.post(
+        f"https://api.supabase.com/v1/projects/{SUPABASE_PROJECT_REF}/database/query",
+        headers={
+            "Authorization": f"Bearer {SUPABASE_MGMT_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        json={"query": query},
+        timeout=15,
+    )
+    r.raise_for_status()
+    return r.json() or []
+
+
+def team_slug(s: str) -> str:
+    s = (s or "").lower().strip()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    return s.strip("-")
+
+
+app.jinja_env.filters["team_slug"] = team_slug
+
+
+def _sql_escape(s: str) -> str:
+    return (s or "").replace("'", "''")
+
+
+@app.route("/team/<team_slug_in>")
+def team_profile(team_slug_in):
+    slug = team_slug(team_slug_in)
+    if not slug:
+        return render_template("trackbjj/not_found.html"), 404
+
+    esc = _sql_escape(slug)
+    teams = _mgmt_sql(f"""
+        SELECT team, COUNT(*) AS result_count
+        FROM tournament_results
+        WHERE team IS NOT NULL AND team <> ''
+          AND lower(regexp_replace(trim(team), '[^a-zA-Z0-9]+', '-', 'g')) = '{esc}'
+        GROUP BY team
+        ORDER BY result_count DESC
+    """)
+
+    if not teams:
+        return render_template("trackbjj/not_found.html",
+                               message=f"No team matches \u201C{team_slug_in}\u201D."), 404
+
+    team_names = [t["team"] for t in teams]
+    team_list_sql = ", ".join(f"'{_sql_escape(n)}'" for n in team_names)
+    canonical_name = team_names[0]
+
+    athletes = _mgmt_sql(f"""
+        SELECT
+            athlete_id,
+            MAX(COALESCE(athlete_display, athlete_name)) AS display_name,
+            COUNT(*) AS result_count,
+            SUM(CASE WHEN placement = 1 THEN 1 ELSE 0 END) AS gold,
+            SUM(CASE WHEN placement = 2 THEN 1 ELSE 0 END) AS silver,
+            SUM(CASE WHEN placement = 3 THEN 1 ELSE 0 END) AS bronze,
+            MAX(event_date) AS last_seen,
+            STRING_AGG(DISTINCT source, ',') AS sources
+        FROM tournament_results
+        WHERE team IN ({team_list_sql})
+          AND source = 'smoothcomp'
+          AND athlete_id IS NOT NULL
+        GROUP BY athlete_id
+        ORDER BY last_seen DESC NULLS LAST, result_count DESC
+        LIMIT 500
+    """)
+
+    recent_wins = _mgmt_sql(f"""
+        SELECT
+            source, event_id, event_title, event_date, division, placement,
+            athlete_id, COALESCE(athlete_display, athlete_name) AS display_name
+        FROM tournament_results
+        WHERE team IN ({team_list_sql})
+          AND placement = 1
+          AND event_date IS NOT NULL AND event_date <> ''
+        ORDER BY event_date DESC
+        LIMIT 30
+    """)
+
+    total_results = sum(t["result_count"] for t in teams)
+
+    return render_template(
+        "trackbjj/team.html",
+        team_slug=slug,
+        team_name=canonical_name,
+        team_variants=team_names,
+        athletes=athletes,
+        recent_wins=recent_wins,
+        athlete_count=len(athletes),
+        total_results=total_results,
+        now_year=datetime.date.today().year,
+    )
+
+
+@app.route("/event/<source>/<event_id>")
+def event_profile(source, event_id):
+    esc_source = _sql_escape(source)
+    esc_event = _sql_escape(event_id)
+
+    meta_rows = _mgmt_sql(f"""
+        SELECT event_title, event_date, COUNT(*) AS row_count
+        FROM tournament_results
+        WHERE source = '{esc_source}' AND event_id = '{esc_event}'
+        GROUP BY event_title, event_date
+        ORDER BY row_count DESC
+        LIMIT 1
+    """)
+    if not meta_rows:
+        return render_template("trackbjj/not_found.html",
+                               message=f"No event matches {source}/{event_id}."), 404
+
+    event_title = meta_rows[0]["event_title"] or "Event"
+    event_date = meta_rows[0]["event_date"]
+
+    roster = _mgmt_sql(f"""
+        SELECT
+            athlete_id,
+            athlete_display,
+            athlete_name,
+            team,
+            division,
+            placement,
+            status
+        FROM tournament_results
+        WHERE source = '{esc_source}' AND event_id = '{esc_event}'
+        ORDER BY
+            CASE WHEN placement = 1 THEN 1
+                 WHEN placement = 2 THEN 2
+                 WHEN placement = 3 THEN 3
+                 ELSE 9 END,
+            division NULLS LAST,
+            COALESCE(athlete_display, athlete_name)
+        LIMIT 5000
+    """)
+
+    team_counts: dict[str, int] = {}
+    for r in roster:
+        t = (r.get("team") or "").strip()
+        if t:
+            team_counts[t] = team_counts.get(t, 0) + 1
+    top_teams = sorted(team_counts.items(), key=lambda x: -x[1])[:10]
+
+    external_url = None
+    if source == "smoothcomp":
+        external_url = f"https://smoothcomp.com/en/event/{event_id}"
+    elif source == "ibjjf":
+        external_url = f"https://www.ibjjf.com/events/{event_id}"
+
+    has_results = any(r.get("placement") for r in roster)
+
+    return render_template(
+        "trackbjj/event.html",
+        source=source,
+        event_id=event_id,
+        event_title=event_title,
+        event_date=event_date,
+        roster=roster,
+        athlete_count=len(roster),
+        has_results=has_results,
+        top_teams=top_teams,
+        external_url=external_url,
+        team_slug_fn=team_slug,
+    )
+
+
 @app.route("/athlete/<sc_uid>")
 def athlete_profile(sc_uid):
     """Athlete profile page anchored by Smoothcomp user_id."""
@@ -302,7 +481,7 @@ def athlete_profile(sc_uid):
 def _athlete_profile_inner(sc_uid):
     # Get all Smoothcomp rows for this user_id
     sc_res = (sb.table("tournament_results")
-               .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,athlete_id")
+               .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,athlete_id,event_id")
                .eq("source", "smoothcomp")
                .eq("athlete_id", str(sc_uid))
                .order("event_date", desc=True)
@@ -408,7 +587,7 @@ def _athlete_profile_inner(sc_uid):
     ibjjf_verified = bool(verified_claim)
     if ibjjf_match:
         ir_res = (sb.table("tournament_results")
-                   .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source")
+                   .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,event_id")
                    .eq("source", "ibjjf")
                    .eq("ibjjf_athlete_id", ibjjf_match["ibjjf_id"])
                    .or_("status.is.null,status.neq.registered")
@@ -418,7 +597,7 @@ def _athlete_profile_inner(sc_uid):
 
     if not ibjjf_rows and last_name:
         fb_res = (sb.table("tournament_results")
-                   .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source")
+                   .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,event_id")
                    .eq("source", "ibjjf")
                    .ilike("athlete_name", f"%{last_name}%")
                    .or_("status.is.null,status.neq.registered")

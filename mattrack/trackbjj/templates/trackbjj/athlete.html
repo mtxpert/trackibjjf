@@ -161,7 +161,11 @@ if (window.tbSession !== undefined) {
     </div>
     <div class="profile-info">
       <h1>{{ display_name }}</h1>
-      <div class="team-line">{{ team }}</div>
+      <div class="team-line">
+        {% if team and team != 'Unknown' %}
+          <a href="{{ url_for('team_profile', team_slug_in=team|team_slug) }}" style="color:var(--muted);text-decoration:none">{{ team }}</a>
+        {% else %}{{ team }}{% endif %}
+      </div>
       {%- set weight_display = ibjjf_rank_data.weight_display if ibjjf_rank_data else None -%}
       {%- set div_belt = (ibjjf_match.belt|title ~ ' Belt') if ibjjf_match and ibjjf_match.belt else (fp.belt|title ~ ' Belt' if fp.belt else None) -%}
       {%- set div_age = (ibjjf_match.age_division|replace('master','Master ')|title) if ibjjf_match and ibjjf_match.age_division else (fp.age if fp.age else None) -%}
@@ -311,9 +315,14 @@ if (window.tbSession !== undefined) {
     {% for r in upcoming_rows %}
     <tr>
       <td style="white-space:nowrap;color:var(--muted)">{{ r.event_date or '—' }}</td>
-      <td>{{ r.event_title or '—' }}</td>
+      <td>
+        {% if r.event_id %}<a href="{{ url_for('event_profile', source=r._source or 'ibjjf', event_id=r.event_id) }}" style="color:var(--text);text-decoration:none">{{ r.event_title or '—' }}</a>
+        {% else %}{{ r.event_title or '—' }}{% endif %}
+      </td>
       <td style="color:var(--muted);font-size:.8rem">{{ r.division or '—' }}</td>
-      <td style="color:var(--muted);font-size:.8rem">{{ r.team or '' }}</td>
+      <td style="color:var(--muted);font-size:.8rem">
+        {% if r.team %}<a href="{{ url_for('team_profile', team_slug_in=r.team|team_slug) }}" style="color:var(--muted);text-decoration:none">{{ r.team }}</a>{% endif %}
+      </td>
     </tr>
     {% endfor %}
     </tbody>
@@ -403,7 +412,10 @@ if (window.tbSession !== undefined) {
     {% for r in all_rows %}
     <tr>
       <td style="white-space:nowrap;color:var(--muted)">{{ r.event_date or '—' }}</td>
-      <td>{{ r.event_title or '—' }}</td>
+      <td>
+        {% if r.event_id %}<a href="{{ url_for('event_profile', source=r._source, event_id=r.event_id) }}" style="color:var(--text);text-decoration:none">{{ r.event_title or '—' }}</a>
+        {% else %}{{ r.event_title or '—' }}{% endif %}
+      </td>
       <td>
         {% if r._source == 'smoothcomp' %}<span class="org-tag tag-sc" style="font-size:.65rem">SC</span>
         {% elif r._source == 'ibjjf' %}<span class="org-tag tag-ibjjf" style="font-size:.65rem">IBJJF</span>
@@ -413,7 +425,9 @@ if (window.tbSession !== undefined) {
       <td class="place-col {% if r.placement == 1 %}place-1{% elif r.placement == 2 %}place-2{% elif r.placement == 3 %}place-3{% endif %}">
         {% if r.placement == 1 %}🥇{% elif r.placement == 2 %}🥈{% elif r.placement == 3 %}🥉{% else %}{{ r.placement or '—' }}{% endif %}
       </td>
-      <td style="color:var(--muted);font-size:.8rem">{{ r.team or '' }}</td>
+      <td style="color:var(--muted);font-size:.8rem">
+        {% if r.team %}<a href="{{ url_for('team_profile', team_slug_in=r.team|team_slug) }}" style="color:var(--muted);text-decoration:none">{{ r.team }}</a>{% endif %}
+      </td>
     </tr>
     {% endfor %}
     </tbody>

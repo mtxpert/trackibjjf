@@ -1,0 +1,102 @@
+{% extends "trackbjj/base.html" %}
+{% block title %}{{ team_name }} — TrackBJJ{% endblock %}
+
+{% block head %}
+<style>
+  .team-header {
+    padding: 1.5rem; background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 2rem;
+  }
+  .team-header h1 { font-size: 1.6rem; font-weight: 800; margin-bottom: .4rem; }
+  .team-header .meta { color: var(--muted); font-size: .85rem; }
+  .stats-strip { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1.2rem; text-align: center; }
+  .stat-card .num { font-size: 1.5rem; font-weight: 800; color: var(--accent); }
+  .stat-card .lbl { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .name-link { color: var(--text); text-decoration: none; font-weight: 600; }
+  .name-link:hover { color: var(--accent); }
+  .variants {
+    font-size: .72rem; color: var(--muted); margin-top: .4rem;
+  }
+  .variant-chip {
+    display: inline-block; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: .05rem .4rem; margin-right: .3rem; font-family: monospace;
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="team-header">
+    <h1>{{ team_name }}</h1>
+    <div class="meta">
+      {{ athlete_count }} athletes · {{ total_results }} total results
+    </div>
+    {% if team_variants|length > 1 %}
+    <div class="variants">
+      Also recorded as:
+      {% for v in team_variants if v != team_name %}
+        <span class="variant-chip">{{ v }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  {% if recent_wins %}
+  <div class="section-title">Recent Wins</div>
+  <div class="card" style="padding:0;overflow:hidden;margin-bottom:2rem">
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Athlete</th><th>Event</th><th>Division</th><th>Place</th>
+    </tr></thead>
+    <tbody>
+      {% for w in recent_wins %}
+      <tr>
+        <td style="white-space:nowrap;color:var(--muted)">{{ w.event_date or '—' }}</td>
+        <td>
+          {% if w.athlete_id and w.source == 'smoothcomp' %}
+          <a href="{{ url_for('athlete_profile', sc_uid=w.athlete_id) }}" class="name-link">{{ w.display_name }}</a>
+          {% else %}{{ w.display_name }}{% endif %}
+        </td>
+        <td style="font-size:.85rem">
+          {% if w.event_id %}
+          <a href="{{ url_for('event_profile', source=w.source, event_id=w.event_id) }}" style="color:var(--text);text-decoration:none">{{ w.event_title or '—' }}</a>
+          {% else %}{{ w.event_title or '—' }}{% endif %}
+        </td>
+        <td style="color:var(--muted);font-size:.8rem">{{ w.division or '—' }}</td>
+        <td class="place-col place-1">🥇</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  <div class="section-title">Athletes <span style="font-size:.75rem;color:var(--muted);font-weight:400;margin-left:.5rem">{{ athlete_count }} total</span></div>
+  {% if athletes %}
+  <div class="card" style="padding:0;overflow:hidden">
+  <table>
+    <thead><tr>
+      <th>Athlete</th><th>Results</th><th>Gold</th><th>Silver</th><th>Bronze</th><th>Last Seen</th>
+    </tr></thead>
+    <tbody>
+      {% for a in athletes %}
+      <tr>
+        <td>
+          <a href="{{ url_for('athlete_profile', sc_uid=a.athlete_id) }}" class="name-link">{{ a.display_name }}</a>
+        </td>
+        <td style="color:var(--muted)">{{ a.result_count }}</td>
+        <td class="place-1">{{ a.gold or 0 }}</td>
+        <td class="place-2">{{ a.silver or 0 }}</td>
+        <td class="place-3">{{ a.bronze or 0 }}</td>
+        <td style="color:var(--muted);font-size:.8rem">{{ (a.last_seen or '')[:10] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted)">No Smoothcomp-indexed athletes for this team yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
