@@ -368,7 +368,7 @@ def _athlete_profile_inner(sc_uid):
         cand_res = (sb.table("ibjjf_athletes")
                      .select("ibjjf_id,name,slug,belt,academy,points,ranking_category,age_division,gi_nogi,gender")
                      .ilike("name_lower", f"%{last_name}%")
-                     .order("points", desc=True, nulls_first=False)
+                     .order("points", desc=True, nullsfirst=False)
                      .limit(20)
                      .execute())
         candidates = cand_res.data or []
@@ -821,7 +821,7 @@ def api_debug_athlete(sc_uid):
         cand_res = (sb.table("ibjjf_athletes")
                      .select("ibjjf_id,name,slug,belt")
                      .ilike("name_lower", f"%{last_name}%")
-                     .order("points", desc=True, nulls_first=False).limit(20).execute())
+                     .order("points", desc=True, nullsfirst=False).limit(20).execute())
         steps["ibjjf_candidates"] = len(cand_res.data or [])
         reg_res = (sb.table("tournament_results")
                     .select("athlete_name,division,status")
