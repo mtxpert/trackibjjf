@@ -741,7 +741,26 @@ def api_search():
     if len(q) < 2:
         return jsonify([])
     result = sb.rpc("search_athletes", {"q": normalize(q)}).execute()
-    return jsonify(result.data or [])
+    rows = result.data or []
+    # Normalize to consistent shape for the frontend
+    out = []
+    for r in rows:
+        country = r.get("country") or ""
+        if country in (r"\N", "\\N", "\\\\N"):
+            country = ""
+        sources = r.get("sources") or []
+        if isinstance(sources, str):
+            sources = [s.strip() for s in sources.split(",") if s.strip()]
+        out.append({
+            "athlete_id":   r.get("sc_uid"),
+            "display_name": r.get("athlete_display") or r.get("athlete_name", ""),
+            "team":         r.get("team") or "",
+            "country":      country,
+            "event_count":  r.get("result_count", 0),
+            "last_seen":    r.get("last_seen", ""),
+            "sources":      sources,
+        })
+    return jsonify(out)
 
 
 @app.route("/api/athlete/<sc_uid>/results")
@@ -757,10 +776,23 @@ def api_athlete_results(sc_uid):
 
 @app.route("/api/stats")
 def api_stats():
-    res = sb.rpc("get_athlete_stats", {}).execute()
-    rows = res.data or []
-    sc_athletes = next((r.get("smoothcomp_athletes") for r in rows if r.get("source") == "smoothcomp"), 0)
-    return jsonify({"by_source": rows, "smoothcomp_athletes": sc_athletes})
+    import requests as req
+    SVCKEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    SBURL  = os.environ.get("SUPABASE_URL", "")
+    try:
+        r = req.get(
+            f"{SBURL}/rest/v1/rpc/get_athlete_stats",
+            headers={"apikey": SVCKEY, "Authorization": f"Bearer {SVCKEY}"},
+            timeout=15,
+        )
+        rows = r.json() if r.ok else []
+    except Exception:
+        rows = []
+    if isinstance(rows, dict):  # error response
+        rows = []
+    sc_athletes = next((r.get("smoothcomp_athletes") for r in rows if isinstance(r, dict) and r.get("source") == "smoothcomp"), 0)
+    total_rows  = sum(r.get("rows", 0) for r in rows if isinstance(r, dict))
+    return jsonify({"by_source": rows, "smoothcomp_athletes": sc_athletes, "total_rows": total_rows})
 
 
 @app.route("/auth-relay")

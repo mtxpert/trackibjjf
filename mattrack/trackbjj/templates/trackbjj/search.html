@@ -57,20 +57,21 @@ const SOURCE_COLORS = {
 
 function renderResults(rows) {
   const out = document.getElementById('out');
-  if (!rows.length) {
+  if (!rows || !rows.length) {
     out.innerHTML = '<div class="no-results">No athletes found.</div>';
     return;
   }
   out.innerHTML = '<div class="results-list">' + rows.map(r => {
-    const srcs = (r.sources || '').split(',').filter(Boolean);
+    const srcs = Array.isArray(r.sources) ? r.sources : (r.sources || '').split(',').filter(Boolean);
     const dots = srcs.map(s => `<span class="src-dot" style="background:${SOURCE_COLORS[s]||'#888'}" title="${s}"></span>`).join('');
     const last = r.last_seen ? r.last_seen.slice(0,10) : '';
-    return `<a class="athlete-row" href="{{ trackbjj_url }}/athlete/${r.athlete_id}">
-      <div class="name">${r.display_name || r.athlete_id}</div>
+    const href = r.athlete_id ? `/athlete/${r.athlete_id}` : '#';
+    return `<a class="athlete-row" href="${href}">
+      <div class="name">${r.display_name || '—'}</div>
       <div class="team">${r.team || ''}</div>
       <div class="sources">${dots}</div>
       <div class="meta">
-        <span class="events-badge">${r.event_count} events</span><br>
+        <span class="events-badge">${r.event_count || 0} results</span><br>
         <span style="margin-top:.2rem;display:inline-block">${last}</span>
       </div>
     </a>`;
@@ -80,9 +81,9 @@ function renderResults(rows) {
 function doSearch() {
   const q = document.getElementById('q').value.trim();
   if (!q) return;
-  history.replaceState({}, '', '{{ trackbjj_url }}/search?q=' + encodeURIComponent(q));
+  history.replaceState({}, '', '/search?q=' + encodeURIComponent(q));
   document.getElementById('out').innerHTML = '<div class="loading">Searching…</div>';
-  fetch('{{ trackbjj_url }}/api/search?q=' + encodeURIComponent(q))
+  fetch('/api/search?q=' + encodeURIComponent(q))
     .then(r => r.json())
     .then(renderResults)
     .catch(() => { document.getElementById('out').innerHTML = '<div class="no-results">Error fetching results.</div>'; });

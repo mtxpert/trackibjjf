@@ -68,13 +68,11 @@ btn.addEventListener('click', go);
 inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
 // Load stats
-fetch('{{ trackbjj_url }}/api/stats').then(r => r.json()).then(d => {
-  const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(0)+'K' : n;
+fetch('/api/stats').then(r => r.json()).then(d => {
+  const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? Math.round(n/1e3)+'K' : String(n);
   document.getElementById('s-athletes').textContent = fmt(d.smoothcomp_athletes || 0);
-  const total = (d.by_source||[]).reduce((s,r) => s + (r.rows||0), 0);
-  document.getElementById('s-results').textContent = fmt(total);
-  // Events: sum distinct from stats not available here, show total rows as placeholder
-  document.getElementById('s-events').textContent = '18K+';
+  document.getElementById('s-results').textContent  = fmt(d.total_rows || 0);
+  document.getElementById('s-events').textContent   = '18K+';
 }).catch(() => {});
 </script>
 {% endblock %}
