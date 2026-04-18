@@ -290,25 +290,21 @@ def search():
 
 # ── Team / Event URL routes ────────────────────────────────────────────────────
 
-SUPABASE_MGMT_TOKEN = os.environ.get(
-    "SUPABASE_MGMT_TOKEN",
-    "sbp_4a09e8b4bd3e03919904bda674dcd141602604cc",
-)
 SUPABASE_PROJECT_REF = os.environ.get("SUPABASE_PROJECT_REF", "kzqvfuqxtbrhlgphyntb")
 
 
-def _mgmt_sql(query: str):
-    """Run SQL via Supabase Management API (bypasses supabase-py hang on Render)."""
+def _rest_get(path: str, params: dict = None, limit: int = None):
+    """Query Supabase PostgREST with service role key. Returns list of rows."""
     import requests as _req
-    r = _req.post(
-        f"https://api.supabase.com/v1/projects/{SUPABASE_PROJECT_REF}/database/query",
-        headers={
-            "Authorization": f"Bearer {SUPABASE_MGMT_TOKEN}",
-            "Content-Type": "application/json",
-        },
-        json={"query": query},
-        timeout=15,
-    )
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Accept": "application/json",
+    }
+    if limit:
+        headers["Range"] = f"0-{limit - 1}"
+    url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/{path}"
+    r = _req.get(url, params=params or {}, headers=headers, timeout=15)
     r.raise_for_status()
     return r.json() or []
 
@@ -332,56 +328,112 @@ def team_profile(team_slug_in):
     if not slug:
         return render_template("trackbjj/not_found.html"), 404
 
-    esc = _sql_escape(slug)
-    teams = _mgmt_sql(f"""
-        SELECT team, COUNT(*) AS result_count
-        FROM tournament_results
-        WHERE team IS NOT NULL AND team <> ''
-          AND lower(regexp_replace(trim(team), '[^a-zA-Z0-9]+', '-', 'g')) = '{esc}'
-        GROUP BY team
-        ORDER BY result_count DESC
-    """)
+    # Convert slug back to a likely team name (e.g. "gracie-barra" → "gracie barra")
+    # Then fuzzy-match via ilike to find all team variants matching this slug.
+    pattern = slug.replace("-", "%")
+    rows = _rest_get(
+        "tournament_results",
+        params={
+            "select": "team",
+            "team": f"ilike.*{pattern}*",
+            "team": f"not.is.null",  # duplicate key — requests handles this? No, need different approach
+        },
+        limit=5000,
+    )
+    # requests params can't have duplicate keys — build URL manually via list of tuples
+    import requests as _req
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Accept": "application/json",
+        "Range": "0-4999",
+    }
+    q_url = (f"{SUPABASE_URL.rstrip('/')}/rest/v1/tournament_results"
+             f"?select=team&team=ilike.*{pattern}*&team=not.is.null")
+    rows = _req.get(q_url, headers=headers, timeout=15).json() or []
 
-    if not teams:
+    # Filter client-side to exact slug match
+    team_counts: dict[str, int] = {}
+    for r in rows:
+        t = (r.get("team") or "").strip()
+        if not t:
+            continue
+        if team_slug(t) == slug:
+            team_counts[t] = team_counts.get(t, 0) + 1
+
+    if not team_counts:
         return render_template("trackbjj/not_found.html",
                                message=f"No team matches \u201C{team_slug_in}\u201D."), 404
 
-    team_names = [t["team"] for t in teams]
-    team_list_sql = ", ".join(f"'{_sql_escape(n)}'" for n in team_names)
+    team_names = sorted(team_counts.keys(), key=lambda x: -team_counts[x])
     canonical_name = team_names[0]
+    teams = [{"team": n, "result_count": team_counts[n]} for n in team_names]
 
-    athletes = _mgmt_sql(f"""
-        SELECT
-            athlete_id,
-            MAX(COALESCE(athlete_display, athlete_name)) AS display_name,
-            COUNT(*) AS result_count,
-            SUM(CASE WHEN placement = 1 THEN 1 ELSE 0 END) AS gold,
-            SUM(CASE WHEN placement = 2 THEN 1 ELSE 0 END) AS silver,
-            SUM(CASE WHEN placement = 3 THEN 1 ELSE 0 END) AS bronze,
-            MAX(event_date) AS last_seen,
-            STRING_AGG(DISTINCT source, ',') AS sources
-        FROM tournament_results
-        WHERE team IN ({team_list_sql})
-          AND source = 'smoothcomp'
-          AND athlete_id IS NOT NULL
-        GROUP BY athlete_id
-        ORDER BY last_seen DESC NULLS LAST, result_count DESC
-        LIMIT 500
-    """)
+    # Fetch athletes from matching teams (use "in.(name1,name2)" filter)
+    team_filter = "(" + ",".join(f'"{n.replace(chr(34), chr(92)+chr(34))}"' for n in team_names) + ")"
+    ath_rows = _req.get(
+        f"{SUPABASE_URL.rstrip('/')}/rest/v1/tournament_results",
+        params={
+            "select": "athlete_id,athlete_display,athlete_name,event_date,placement,source,team",
+            "team": f"in.{team_filter}",
+            "source": "eq.smoothcomp",
+            "athlete_id": "not.is.null",
+        },
+        headers={**headers, "Range": "0-19999"},
+        timeout=30,
+    ).json() or []
 
-    recent_wins = _mgmt_sql(f"""
-        SELECT
-            source, event_id, event_title, event_date, division, placement,
-            athlete_id, COALESCE(athlete_display, athlete_name) AS display_name
-        FROM tournament_results
-        WHERE team IN ({team_list_sql})
-          AND placement = 1
-          AND event_date IS NOT NULL AND event_date <> ''
-        ORDER BY event_date DESC
-        LIMIT 30
-    """)
+    # Aggregate athletes client-side
+    by_ath: dict = {}
+    for r in ath_rows:
+        aid = r.get("athlete_id")
+        if not aid:
+            continue
+        if aid not in by_ath:
+            by_ath[aid] = {
+                "athlete_id": aid,
+                "display_name": r.get("athlete_display") or r.get("athlete_name") or "",
+                "result_count": 0, "gold": 0, "silver": 0, "bronze": 0,
+                "last_seen": "", "sources": set(),
+            }
+        entry = by_ath[aid]
+        entry["result_count"] += 1
+        pl = r.get("placement")
+        if pl == 1: entry["gold"] += 1
+        elif pl == 2: entry["silver"] += 1
+        elif pl == 3: entry["bronze"] += 1
+        ed = r.get("event_date") or ""
+        if ed > entry["last_seen"]:
+            entry["last_seen"] = ed
+        if r.get("source"):
+            entry["sources"].add(r["source"])
+    athletes = sorted(
+        by_ath.values(),
+        key=lambda x: (x["last_seen"] or "", x["result_count"]),
+        reverse=True,
+    )[:500]
+    for a in athletes:
+        a["sources"] = ",".join(sorted(a["sources"]))
 
-    total_results = sum(t["result_count"] for t in teams)
+    # Recent wins (placement=1)
+    win_rows = _req.get(
+        f"{SUPABASE_URL.rstrip('/')}/rest/v1/tournament_results",
+        params={
+            "select": "source,event_id,event_title,event_date,division,placement,athlete_id,athlete_display,athlete_name",
+            "team": f"in.{team_filter}",
+            "placement": "eq.1",
+            "event_date": "not.is.null",
+            "order": "event_date.desc",
+        },
+        headers={**headers, "Range": "0-29"},
+        timeout=15,
+    ).json() or []
+    recent_wins = [
+        {**r, "display_name": r.get("athlete_display") or r.get("athlete_name") or ""}
+        for r in win_rows
+    ]
+
+    total_results = sum(team_counts.values())
 
     return render_template(
         "trackbjj/team.html",
@@ -398,44 +450,40 @@ def team_profile(team_slug_in):
 
 @app.route("/event/<source>/<event_id>")
 def event_profile(source, event_id):
-    esc_source = _sql_escape(source)
-    esc_event = _sql_escape(event_id)
+    import requests as _req
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Accept": "application/json",
+    }
 
-    meta_rows = _mgmt_sql(f"""
-        SELECT event_title, event_date, COUNT(*) AS row_count
-        FROM tournament_results
-        WHERE source = '{esc_source}' AND event_id = '{esc_event}'
-        GROUP BY event_title, event_date
-        ORDER BY row_count DESC
-        LIMIT 1
-    """)
-    if not meta_rows:
+    # Fetch the full roster (includes event_title/event_date)
+    roster = _req.get(
+        f"{SUPABASE_URL.rstrip('/')}/rest/v1/tournament_results",
+        params={
+            "select": "athlete_id,athlete_display,athlete_name,team,division,placement,status,event_title,event_date",
+            "source": f"eq.{source}",
+            "event_id": f"eq.{event_id}",
+            "order": "placement.asc.nullslast,division.asc.nullslast",
+        },
+        headers={**headers, "Range": "0-4999"},
+        timeout=30,
+    ).json() or []
+
+    if not roster:
         return render_template("trackbjj/not_found.html",
                                message=f"No event matches {source}/{event_id}."), 404
 
-    event_title = meta_rows[0]["event_title"] or "Event"
-    event_date = meta_rows[0]["event_date"]
-
-    roster = _mgmt_sql(f"""
-        SELECT
-            athlete_id,
-            athlete_display,
-            athlete_name,
-            team,
-            division,
-            placement,
-            status
-        FROM tournament_results
-        WHERE source = '{esc_source}' AND event_id = '{esc_event}'
-        ORDER BY
-            CASE WHEN placement = 1 THEN 1
-                 WHEN placement = 2 THEN 2
-                 WHEN placement = 3 THEN 3
-                 ELSE 9 END,
-            division NULLS LAST,
-            COALESCE(athlete_display, athlete_name)
-        LIMIT 5000
-    """)
+    # Derive event metadata from most common values in roster
+    titles: dict[str, int] = {}
+    dates: dict[str, int] = {}
+    for r in roster:
+        t = r.get("event_title")
+        d = r.get("event_date")
+        if t: titles[t] = titles.get(t, 0) + 1
+        if d: dates[d] = dates.get(d, 0) + 1
+    event_title = max(titles.items(), key=lambda x: x[1])[0] if titles else "Event"
+    event_date = max(dates.items(), key=lambda x: x[1])[0] if dates else None
 
     team_counts: dict[str, int] = {}
     for r in roster:
