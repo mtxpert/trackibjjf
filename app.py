@@ -589,6 +589,10 @@ SC_ORG_KEYS = {"adcc", "naga", "compnet", "gi", "fuji", "goodfight", "newbreed",
 _SC_TOURNAMENTS_CACHE = {"ts": 0, "data": []}
 _SC_TOURNAMENTS_TTL = 300   # 5 minutes
 
+# Response-level cache for /api/tournaments (external scrapers are slow/flaky)
+_TOURNAMENTS_CACHE = {"ts": 0, "data": None}
+_TOURNAMENTS_TTL = 180  # 3 minutes
+
 
 def _get_db_tournaments_for_sources(sources):
     """Aggregate distinct events per (source, event_id) from tournament_results
@@ -708,6 +712,13 @@ def api_sc_teams(source, event_id):
 
 @app.route("/api/tournaments")
 def api_tournaments():
+    # Cache the full merged response for 3 min — external scrapers are slow/flaky
+    now = time.time()
+    if _TOURNAMENTS_CACHE["data"] is not None and (now - _TOURNAMENTS_CACHE["ts"]) < _TOURNAMENTS_TTL:
+        resp = jsonify(_TOURNAMENTS_CACHE["data"])
+        resp.headers["X-Cache"] = "HIT"
+        return resp
+
     from scraper_naga import get_naga_events
 
     # IBJJF — merge bjjcompsystem (brackets built) with ibjjf.com schedule (full calendar)
@@ -807,7 +818,14 @@ def api_tournaments():
             continue
         other_sc.append(t)
 
-    return jsonify(ibjjf + naga + compnet + other_sc)
+    merged = ibjjf + naga + compnet + other_sc
+    # Only cache if we got a non-empty response (so errors don't cache emptiness)
+    if merged:
+        _TOURNAMENTS_CACHE["data"] = merged
+        _TOURNAMENTS_CACHE["ts"] = now
+    resp = jsonify(merged)
+    resp.headers["X-Cache"] = "MISS"
+    return resp
 
 
 # ── Roster cache endpoints ────────────────────────────────────────────────────
