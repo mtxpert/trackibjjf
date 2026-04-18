@@ -328,7 +328,8 @@ def team_profile(team_slug_in):
         return _team_profile_inner(team_slug_in)
     except Exception:
         import traceback as _tb
-        return f"<pre>500 debug (team):\n{_tb.format_exc()}</pre>", 500
+        log.error("team_profile 500 for slug=%s:\n%s", team_slug_in, _tb.format_exc())
+        raise
 
 
 def _team_profile_inner(team_slug_in):
@@ -465,7 +466,8 @@ def event_profile(source, event_id):
         return _event_profile_inner(source, event_id)
     except Exception:
         import traceback as _tb
-        return f"<pre>500 debug (event):\n{_tb.format_exc()}</pre>", 500
+        log.error("event_profile 500 for %s/%s:\n%s", source, event_id, _tb.format_exc())
+        raise
 
 
 def _event_profile_inner(source, event_id):
