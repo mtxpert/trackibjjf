@@ -336,8 +336,9 @@ def _team_profile_inner(team_slug_in):
     if not slug:
         return render_template("trackbjj/not_found.html"), 404
 
-    # Fuzzy-match teams via ilike, then filter to exact slug match client-side.
-    pattern = slug.replace("-", "%")
+    # Fuzzy-match teams via ilike (PostgREST uses * for wildcards, not %),
+    # then filter to exact slug match client-side.
+    pattern = slug.replace("-", "*")
     import requests as _req
     headers = {
         "apikey": SUPABASE_SERVICE_KEY,
@@ -347,7 +348,12 @@ def _team_profile_inner(team_slug_in):
     }
     q_url = (f"{SUPABASE_URL.rstrip('/')}/rest/v1/tournament_results"
              f"?select=team&team=ilike.*{pattern}*")
-    rows = _req.get(q_url, headers=headers, timeout=15).json() or []
+    resp = _req.get(q_url, headers=headers, timeout=15)
+    if not resp.ok:
+        log.error("team ilike query failed: %s %s", resp.status_code, resp.text[:200])
+        rows = []
+    else:
+        rows = resp.json() or []
 
     # Filter client-side to exact slug match
     team_counts: dict[str, int] = {}
