@@ -349,15 +349,16 @@ def _team_profile_inner(team_slug_in):
     q_url = (f"{SUPABASE_URL.rstrip('/')}/rest/v1/tournament_results"
              f"?select=team&team=ilike.*{pattern}*")
     resp = _req.get(q_url, headers=headers, timeout=15)
-    if not resp.ok:
-        log.error("team ilike query failed: %s %s", resp.status_code, resp.text[:200])
+    rows = resp.json() if resp.ok else []
+    if not isinstance(rows, list):
+        log.error("team ilike query returned non-list: %s", str(rows)[:200])
         rows = []
-    else:
-        rows = resp.json() or []
 
     # Filter client-side to exact slug match
     team_counts: dict[str, int] = {}
     for r in rows:
+        if not isinstance(r, dict):
+            continue
         t = (r.get("team") or "").strip()
         if not t:
             continue
@@ -374,7 +375,7 @@ def _team_profile_inner(team_slug_in):
 
     # Fetch athletes from matching teams (use "in.(name1,name2)" filter)
     team_filter = "(" + ",".join(f'"{n.replace(chr(34), chr(92)+chr(34))}"' for n in team_names) + ")"
-    ath_rows = _req.get(
+    ath_resp = _req.get(
         f"{SUPABASE_URL.rstrip('/')}/rest/v1/tournament_results",
         params={
             "select": "athlete_id,athlete_display,athlete_name,event_date,placement,source,team",
@@ -384,7 +385,11 @@ def _team_profile_inner(team_slug_in):
         },
         headers={**headers, "Range": "0-19999"},
         timeout=30,
-    ).json() or []
+    )
+    ath_rows = ath_resp.json() if ath_resp.ok else []
+    if not isinstance(ath_rows, list):
+        log.error("team athletes query returned non-list: %s", str(ath_rows)[:200])
+        ath_rows = []
 
     # Aggregate athletes client-side
     by_ath: dict = {}
@@ -419,7 +424,7 @@ def _team_profile_inner(team_slug_in):
         a["sources"] = ",".join(sorted(a["sources"]))
 
     # Recent wins (placement=1)
-    win_rows = _req.get(
+    win_resp = _req.get(
         f"{SUPABASE_URL.rstrip('/')}/rest/v1/tournament_results",
         params={
             "select": "source,event_id,event_title,event_date,division,placement,athlete_id,athlete_display,athlete_name",
@@ -430,10 +435,13 @@ def _team_profile_inner(team_slug_in):
         },
         headers={**headers, "Range": "0-29"},
         timeout=15,
-    ).json() or []
+    )
+    win_rows = win_resp.json() if win_resp.ok else []
+    if not isinstance(win_rows, list):
+        win_rows = []
     recent_wins = [
         {**r, "display_name": r.get("athlete_display") or r.get("athlete_name") or ""}
-        for r in win_rows
+        for r in win_rows if isinstance(r, dict)
     ]
 
     total_results = sum(team_counts.values())
