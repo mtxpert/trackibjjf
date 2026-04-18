@@ -324,23 +324,20 @@ def _sql_escape(s: str) -> str:
 
 @app.route("/team/<team_slug_in>")
 def team_profile(team_slug_in):
+    try:
+        return _team_profile_inner(team_slug_in)
+    except Exception:
+        import traceback as _tb
+        return f"<pre>500 debug (team):\n{_tb.format_exc()}</pre>", 500
+
+
+def _team_profile_inner(team_slug_in):
     slug = team_slug(team_slug_in)
     if not slug:
         return render_template("trackbjj/not_found.html"), 404
 
-    # Convert slug back to a likely team name (e.g. "gracie-barra" → "gracie barra")
-    # Then fuzzy-match via ilike to find all team variants matching this slug.
+    # Fuzzy-match teams via ilike, then filter to exact slug match client-side.
     pattern = slug.replace("-", "%")
-    rows = _rest_get(
-        "tournament_results",
-        params={
-            "select": "team",
-            "team": f"ilike.*{pattern}*",
-            "team": f"not.is.null",  # duplicate key — requests handles this? No, need different approach
-        },
-        limit=5000,
-    )
-    # requests params can't have duplicate keys — build URL manually via list of tuples
     import requests as _req
     headers = {
         "apikey": SUPABASE_SERVICE_KEY,
@@ -349,7 +346,7 @@ def team_profile(team_slug_in):
         "Range": "0-4999",
     }
     q_url = (f"{SUPABASE_URL.rstrip('/')}/rest/v1/tournament_results"
-             f"?select=team&team=ilike.*{pattern}*&team=not.is.null")
+             f"?select=team&team=ilike.*{pattern}*")
     rows = _req.get(q_url, headers=headers, timeout=15).json() or []
 
     # Filter client-side to exact slug match
@@ -450,6 +447,14 @@ def team_profile(team_slug_in):
 
 @app.route("/event/<source>/<event_id>")
 def event_profile(source, event_id):
+    try:
+        return _event_profile_inner(source, event_id)
+    except Exception:
+        import traceback as _tb
+        return f"<pre>500 debug (event):\n{_tb.format_exc()}</pre>", 500
+
+
+def _event_profile_inner(source, event_id):
     import requests as _req
     headers = {
         "apikey": SUPABASE_SERVICE_KEY,
