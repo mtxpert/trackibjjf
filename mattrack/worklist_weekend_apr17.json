@@ -1,0 +1,22 @@
+[
+  {"event_id": "28183", "source": "adcc"},
+  {"event_id": "22519", "source": "adcc"},
+  {"event_id": "29066", "source": "adcc"},
+  {"event_id": "29185", "source": "compnet"},
+  {"event_id": "30047", "source": "compnet"},
+  {"event_id": "29238", "source": "compnet"},
+  {"event_id": "29236", "source": "fuji"},
+  {"event_id": "25150", "source": "gi"},
+  {"event_id": "25939", "source": "gi"},
+  {"event_id": "25362", "source": "gi"},
+  {"event_id": "25913", "source": "gi"},
+  {"event_id": "27152", "source": "gi"},
+  {"event_id": "27840", "source": "grapplingx"},
+  {"event_id": "28895", "source": "naga"},
+  {"event_id": "30003", "source": "naga"},
+  {"event_id": "27537", "source": "newbreed"},
+  {"event_id": "27687", "source": "newbreed"},
+  {"event_id": "29333", "source": "rollalot"},
+  {"event_id": "27064", "source": "subchallenge"},
+  {"event_id": "28433", "source": "united"}
+]
