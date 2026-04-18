@@ -50,8 +50,19 @@ _CAT_HREF   = re.compile(r'/tournaments/(\d+)/categories/(\d+)["\']')
 _TDAYS_HREF = re.compile(r'/tournaments/(\d+)/tournament_days/(\d+)["\']')
 _TDAYS_DATE = re.compile(r'(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*(\d{2}/\d{2})')
 
+# Process-level cache: a tournament's dates never change, only need to fetch once.
+_TDAYS_CACHE: dict[str, tuple[str, str]] = {}
+
 
 def _infer_ibjjf_dates(tournament_id: str) -> tuple[str, str]:
+    if tournament_id in _TDAYS_CACHE:
+        return _TDAYS_CACHE[tournament_id]
+    result = _infer_ibjjf_dates_uncached(tournament_id)
+    _TDAYS_CACHE[tournament_id] = result
+    return result
+
+
+def _infer_ibjjf_dates_uncached(tournament_id: str) -> tuple[str, str]:
     """Return (start_iso, end_iso) for an IBJJF tournament.
 
     Tries roster cache first (fight_time: 'Sat 04/11 at 03:40 PM').
