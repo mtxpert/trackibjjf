@@ -122,7 +122,7 @@ def verify_sc_login(email: str, password: str) -> dict:
         "_token": csrf_token,
         "email": email,
         "password": password,
-        "_next_url": "/en/account/profile",
+        "_next_url": "/en",
     }
     r = session.post(
         LOGIN_URL,
@@ -144,27 +144,41 @@ def verify_sc_login(email: str, password: str) -> dict:
         err_msg = error_el.get_text(strip=True) if error_el else "Invalid credentials"
         raise ValueError(f"Login failed: {err_msg[:200]}")
 
-    # Step 3: Extract user ID from the redirected page or fetch profile
-    user_id = _extract_user_id_from_page(r.text)
-    sc_name = _extract_display_name(r.text)
+    # Step 3: Extract user ID from the post-login page.
+    # After login, Smoothcomp redirects to the homepage which contains
+    # nav links like /en/profile/479054 — extract from there directly.
+    import re as _re
+    user_id = None
+    sc_name = ""
 
-    # If we didn't land on profile page, fetch it explicitly
-    if not user_id or "account/profile" not in final_url:
-        log.info("Fetching profile page explicitly")
-        pr = session.get(PROFILE_URL, headers=HEADERS, timeout=20)
-        pr.raise_for_status()
-        if "auth/login" in pr.url:
-            raise ValueError("Session not established after login")
-        user_id = _extract_user_id_from_page(pr.text) or user_id
-        if not sc_name:
-            sc_name = _extract_display_name(pr.text)
+    # Primary: look for /en/profile/<id> in nav links on the redirect page
+    m = _re.search(r'/en/profile/(\d+)', r.text)
+    if m:
+        user_id = m.group(1)
 
+    # Fallback: use the generic extractor
     if not user_id:
-        # Try fetching the user's public profile link from the account page
-        log.warning("Could not extract user ID from profile page HTML — trying account/settings")
-        sr = session.get(f"{SC_BASE}/en/account/settings", headers=HEADERS, timeout=20)
-        if sr.status_code == 200:
-            user_id = _extract_user_id_from_page(sr.text)
+        user_id = _extract_user_id_from_page(r.text)
+
+    # Smoothcomp public profile pages are Cloudflare-protected — don't try to scrape.
+    # The sc_name will be populated from our tournament_results DB by the caller.
+    sc_name = ""
+
+    # If still no user_id, try fetching the user's own profile URL directly
+    if not user_id:
+        log.info("Trying /en/account/profile and /en/account/settings")
+        for path in ["/en/account/profile", "/en/account/settings", "/en/account"]:
+            try:
+                pr = session.get(f"{SC_BASE}{path}", headers=HEADERS, timeout=15, allow_redirects=True)
+                if pr.status_code == 200 and "auth/login" not in pr.url:
+                    uid = _re.search(r'/en/profile/(\d+)', pr.text)
+                    if uid:
+                        user_id = uid.group(1)
+                        if not sc_name:
+                            sc_name = _extract_display_name(pr.text)
+                        break
+            except Exception:
+                continue
 
     if not user_id:
         raise ValueError(

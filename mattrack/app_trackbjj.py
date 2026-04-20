@@ -902,14 +902,28 @@ def verify_sc(sc_uid):
         )
         return render_template("trackbjj/verify_sc.html", sc_uid=sc_uid, existing=existing)
 
+    # Get best display name from our own DB (SC profile page is Cloudflare-blocked)
+    name_res = (sb.table("tournament_results")
+                  .select("athlete_display,athlete_name")
+                  .eq("source", "smoothcomp")
+                  .eq("athlete_id", str(sc_uid))
+                  .not_.is_("athlete_display", "null")
+                  .order("event_date", desc=True)
+                  .limit(1)
+                  .execute())
+    sc_name = ""
+    if name_res.data:
+        sc_name = name_res.data[0].get("athlete_display") or name_res.data[0].get("athlete_name") or ""
+
     sb.table("sc_smoothcomp_verified").upsert({
         "sc_uid":    sc_uid,
         "sc_email":  result["email"],
         "sc_user_id": returned_id,
-        "sc_name":   result["sc_name"],
+        "sc_name":   sc_name or result["sc_name"],
     }, on_conflict="sc_uid").execute()
 
-    flash(f"Smoothcomp profile verified! Welcome, {result['sc_name']}.", "success")
+    display = sc_name or returned_id
+    flash(f"Smoothcomp profile verified! Welcome, {display}.", "success")
     return redirect(url_for("athlete_profile", sc_uid=sc_uid))
 
 
