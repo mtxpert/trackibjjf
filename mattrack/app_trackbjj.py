@@ -751,17 +751,20 @@ def _athlete_profile_inner(sc_uid):
         except Exception as e:
             log.warning("Failed to fetch IBJJF rankings for sc_uid=%s: %s", sc_uid, e)
 
-    # Match history (adjacent-placement inference)
+    # Match history — separate try/except so a failing IBJJF RPC doesn't block SC results
     match_history = []
-    try:
-        if ibjjf_match and ibjjf_match.get("ibjjf_id"):
+    if ibjjf_match and ibjjf_match.get("ibjjf_id"):
+        try:
             mh_res = sb.rpc("get_match_history_ibjjf",
                             {"p_ibjjf_athlete_id": str(ibjjf_match["ibjjf_id"])}).execute()
             match_history.extend(mh_res.data or [])
+        except Exception as e:
+            log.warning("get_match_history_ibjjf failed for sc_uid=%s: %s", sc_uid, e)
+    try:
         sc_mh_res = sb.rpc("get_match_history_sc", {"p_sc_uid": str(sc_uid)}).execute()
         match_history.extend(sc_mh_res.data or [])
     except Exception as e:
-        log.warning("Failed to fetch match history for sc_uid=%s: %s", sc_uid, e)
+        log.warning("get_match_history_sc failed for sc_uid=%s: %s", sc_uid, e)
 
     # Deduplicate by (event_date, division, opponent_name) and sort newest first
     seen = set()
