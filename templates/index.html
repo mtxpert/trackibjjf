@@ -1563,8 +1563,12 @@ function renderTournaments() {
   loading.style.display = 'none';
   list.style.display = 'flex';
 
+  const _today = new Date().toISOString().slice(0, 10);
   const showing = filtered
-    .filter(t => _tourneyEra === 'past' ? t.is_past : !t.is_past)
+    .filter(t => {
+      const isPast = t.is_past || (t.start && t.start < _today && !(t.end && t.end >= _today));
+      return _tourneyEra === 'past' ? isPast : !isPast;
+    })
     .sort((a, b) => _tourneyEra === 'past'
       ? (b.start || '').localeCompare(a.start || '')  // most recent first
       : (a.start || '').localeCompare(b.start || '')); // soonest first
