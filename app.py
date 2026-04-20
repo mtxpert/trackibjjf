@@ -712,114 +712,69 @@ def api_sc_teams(source, event_id):
 
 @app.route("/api/tournaments")
 def api_tournaments():
-    # Cache the full merged response for 3 min — external scrapers are slow/flaky
+    """Read-only from Supabase tournament_events table. Zero live scrapers.
+
+    Populated nightly by scrape_tournament_list.py (Render cron). If the table is
+    empty for any reason, returns [] rather than hitting any external API.
+    """
     now = time.time()
     if _TOURNAMENTS_CACHE["data"] is not None and (now - _TOURNAMENTS_CACHE["ts"]) < _TOURNAMENTS_TTL:
         resp = jsonify(_TOURNAMENTS_CACHE["data"])
         resp.headers["X-Cache"] = "HIT"
         return resp
 
-    from scraper_naga import get_naga_events
-
-    # IBJJF — merge bjjcompsystem (brackets built) with ibjjf.com schedule (full calendar)
+    import requests as _req
+    from datetime import date as _date
+    sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    today_iso = _date.today().isoformat()
+    merged = []
     try:
-        from scraper import get_tournaments, get_ibjjf_schedule
-        bracket_events = get_tournaments()   # events on bjjcompsystem (have rosters)
-        schedule       = get_ibjjf_schedule()  # all events on ibjjf.com/events/championships
-
-        # Index bracket events by start date; also build name→location map from schedule
-        brackets_by_start = {}
-        for bt in bracket_events:
-            if bt.get("start"):
-                brackets_by_start.setdefault(bt["start"], []).append(bt)
-
-        # Secondary lookup: location by slug keywords (for bracket events not in upcoming API)
-        sched_loc_by_slug = {}
-        for ev in schedule:
-            slug_key = ev.get("id", "")  # championship id == slug fallback
-            name_key = ev.get("name", "").lower()
-            if ev.get("location"):
-                sched_loc_by_slug[slug_key] = ev["location"]
-                sched_loc_by_slug[name_key] = ev["location"]
-
-        ibjjf = []
-        matched_bracket_ids = set()
-        for ev in schedule:
-            match = None
-            if ev.get("start"):
-                candidates = brackets_by_start.get(ev["start"], [])
-                for bt in candidates:
-                    if bt["id"] not in matched_bracket_ids:
-                        match = bt
-                        matched_bracket_ids.add(bt["id"])
-                        break
-            if match:
-                # Use bjjcompsystem id (for roster lookup) + location from schedule
-                ibjjf.append(dict(match, source="ibjjf", has_brackets=True,
-                                  location=ev.get("location", "")))
-            else:
-                ibjjf.append(ev)  # future/no-bracket event from schedule
-
-        # Add any bracket events that didn't match a schedule entry
-        # (typically events already underway / just past — not in "upcoming" API)
-        for bt in bracket_events:
-            if bt["id"] not in matched_bracket_ids:
-                loc = (bt.get("location") or
-                       sched_loc_by_slug.get(bt.get("name", "").lower(), ""))
-                ibjjf.append(dict(bt, source="ibjjf", has_brackets=True, location=loc))
+        # Paginate through tournament_events — up to ~2000 rows
+        page_size = 1000
+        offset = 0
+        while True:
+            url = (f"{sb_url}/rest/v1/tournament_events"
+                   f"?select=source,event_id,name,start_date,end_date,location,city,country,country_code,"
+                   f"lat,lng,url,cover_image,has_brackets,is_past,registered_count"
+                   f"&order=start_date.asc.nullslast"
+                   f"&limit={page_size}&offset={offset}")
+            r = _req.get(url, headers={
+                "apikey": sb_key,
+                "Authorization": f"Bearer {sb_key}",
+                "Accept": "application/json",
+            }, timeout=10)
+            batch = r.json() if r.ok else []
+            if not isinstance(batch, list) or not batch:
+                break
+            for row in batch:
+                start = row.get("start_date") or ""
+                end = row.get("end_date") or start
+                merged.append({
+                    "id": row.get("event_id"),
+                    "source": row.get("source"),
+                    "name": row.get("name"),
+                    "start": start,
+                    "end": end,
+                    "location": row.get("location") or "",
+                    "city": row.get("city") or "",
+                    "country": row.get("country") or "",
+                    "country_code": row.get("country_code") or "",
+                    "lat": row.get("lat"),
+                    "lng": row.get("lng"),
+                    "url": row.get("url") or "",
+                    "cover_image": row.get("cover_image") or "",
+                    "has_brackets": bool(row.get("has_brackets")),
+                    "is_past": bool(start and start < today_iso),
+                    "registered_count": row.get("registered_count") or 0,
+                })
+            if len(batch) < page_size:
+                break
+            offset += page_size
     except Exception as e:
-        logger.error("ibjjf schedule merge failed: %s", e)
-        try:
-            from scraper import get_tournaments
-            ibjjf = [dict(t, source="ibjjf", has_brackets=True) for t in get_tournaments()]
-        except Exception as e2:
-            logger.error("get_tournaments fallback failed: %s", e2)
-            ibjjf = []
+        logger.error("api_tournaments read failed: %s", e)
+        merged = _TOURNAMENTS_CACHE["data"] or []
 
-    # NAGA — keep scraper source so bracket tracking works day-of
-    try:
-        naga = get_naga_events()
-    except Exception as e:
-        logger.error("get_naga_events failed: %s", e)
-        naga = []
-
-    # CompNet — sourced from Smoothcomp (same platform, no separate scraper needed)
-    try:
-        from scraper_smoothcomp import get_smoothcomp_events
-        compnet = [dict(e, source="compnet") for e in get_smoothcomp_events()
-                   if e.get("org") == "compnet"]
-    except Exception as e:
-        logger.error("compnet from smoothcomp failed: %s", e)
-        compnet = []
-
-    # All other SC-sourced orgs — pulled from tournament_results (status='registered')
-    now = time.time()
-    if (now - _SC_TOURNAMENTS_CACHE["ts"]) < _SC_TOURNAMENTS_TTL and _SC_TOURNAMENTS_CACHE["data"]:
-        sc_events = _SC_TOURNAMENTS_CACHE["data"]
-    else:
-        try:
-            sc_events = _get_db_tournaments_for_sources(SC_ORG_KEYS)
-            _SC_TOURNAMENTS_CACHE["data"] = sc_events
-            _SC_TOURNAMENTS_CACHE["ts"] = now
-        except Exception as e:
-            logger.error("_get_db_tournaments_for_sources failed: %s", e)
-            sc_events = _SC_TOURNAMENTS_CACHE["data"] or []
-
-    # Skip naga/compnet from DB — the scraper sources already cover those and
-    # carry extra bracket-tracking metadata.
-    known_naga_ids = {str(t.get("id")) for t in naga}
-    known_compnet_ids = {str(t.get("id")) for t in compnet}
-    other_sc = []
-    for t in sc_events:
-        src = t.get("source")
-        if src == "naga" and str(t["id"]) in known_naga_ids:
-            continue
-        if src == "compnet" and str(t["id"]) in known_compnet_ids:
-            continue
-        other_sc.append(t)
-
-    merged = ibjjf + naga + compnet + other_sc
-    # Only cache if we got a non-empty response (so errors don't cache emptiness)
     if merged:
         _TOURNAMENTS_CACHE["data"] = merged
         _TOURNAMENTS_CACHE["ts"] = now
