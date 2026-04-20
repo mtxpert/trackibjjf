@@ -1566,7 +1566,8 @@ function renderTournaments() {
   const _today = new Date().toISOString().slice(0, 10);
   const showing = filtered
     .filter(t => {
-      const isPast = t.is_past || (t.start && t.start < _today && !(t.end && t.end >= _today));
+      // Treat as past if flagged, start < today, or no start date at all
+      const isPast = t.is_past || !t.start || (t.start < _today && !(t.end && t.end >= _today));
       return _tourneyEra === 'past' ? isPast : !isPast;
     })
     .sort((a, b) => _tourneyEra === 'past'
