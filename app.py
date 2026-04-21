@@ -514,15 +514,22 @@ def refresh_bracket(tournament_id, category_id, category_name=""):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+def _no_cache(resp):
+    """Force browsers to always re-fetch index.html so JS updates roll out immediately."""
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return _no_cache(make_response(render_template("index.html")))
 
 
 # SPA catch-all — client-side router hydrates state from window.location.pathname.
 @app.route("/org/<path:p>")
 def index_org_path(p):
-    return render_template("index.html")
+    return _no_cache(make_response(render_template("index.html")))
 
 
 @app.route("/browser")
