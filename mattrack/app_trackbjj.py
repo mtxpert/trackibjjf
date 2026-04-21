@@ -288,6 +288,77 @@ def search():
     return render_template("trackbjj/search.html", q=q)
 
 
+@app.route("/findme", methods=["GET", "POST"])
+def findme():
+    """Lookup page — user submits name / IBJJF id / SC id. If we find them,
+    redirect to their profile. If not, save a report for nightly review."""
+    if request.method == "GET":
+        return render_template("trackbjj/findme.html")
+
+    name = (request.form.get("name") or "").strip()
+    ibjjf_id = (request.form.get("ibjjf_id") or "").strip()
+    sc_uid = (request.form.get("sc_uid") or "").strip()
+    email = (request.form.get("email") or "").strip()
+
+    if not (name or ibjjf_id or sc_uid):
+        return render_template("trackbjj/findme.html",
+                               error="Please enter at least one field.")
+
+    # Priority 1: SC ID — go straight to profile if we have data
+    if sc_uid:
+        try:
+            sc_res = (sb.table("tournament_results")
+                        .select("athlete_id")
+                        .eq("source", "smoothcomp")
+                        .eq("athlete_id", sc_uid)
+                        .limit(1).execute())
+            if sc_res.data:
+                return redirect(url_for("athlete_profile", sc_uid=sc_uid))
+        except Exception as e:
+            log.warning("findme sc lookup failed: %s", e)
+
+    # Priority 2: IBJJF ID — find linked sc_uid via sc_ibjjf_verified
+    if ibjjf_id:
+        try:
+            v_res = (sb.table("sc_ibjjf_verified")
+                       .select("sc_uid")
+                       .eq("ibjjf_athlete_id", ibjjf_id)
+                       .limit(1).execute())
+            if v_res.data:
+                return redirect(url_for("athlete_profile", sc_uid=v_res.data[0]["sc_uid"]))
+        except Exception as e:
+            log.warning("findme ibjjf lookup failed: %s", e)
+
+    # Priority 3: Name search — redirect to search results
+    if name:
+        norm = normalize(name)
+        try:
+            search_res = sb.rpc("search_athletes", {"q": norm}).execute()
+            rows = search_res.data or []
+            if rows:
+                return redirect(url_for("search", q=name))
+        except Exception as e:
+            log.warning("findme name search failed: %s", e)
+
+    # Not found — save report for nightly review
+    try:
+        sb.table("findme_reports").insert({
+            "name":       name or None,
+            "ibjjf_id":   ibjjf_id or None,
+            "sc_uid":     sc_uid or None,
+            "email":      email or None,
+            "user_agent": request.headers.get("User-Agent", "")[:500],
+            "ip":         request.headers.get("X-Forwarded-For", "").split(",")[0].strip(),
+            "status":     "pending",
+        }).execute()
+    except Exception as e:
+        log.error("findme report save failed: %s", e)
+
+    return render_template("trackbjj/findme.html",
+                           submitted=True,
+                           submitted_name=name or ibjjf_id or sc_uid)
+
+
 # ── Team / Event URL routes ────────────────────────────────────────────────────
 
 SUPABASE_PROJECT_REF = os.environ.get("SUPABASE_PROJECT_REF", "kzqvfuqxtbrhlgphyntb")

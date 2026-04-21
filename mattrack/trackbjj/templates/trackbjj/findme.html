@@ -1,0 +1,107 @@
+{% extends "trackbjj/base.html" %}
+{% block title %}Find Me — TrackBJJ{% endblock %}
+
+{% block head %}
+<style>
+  .findme-wrap { max-width: 520px; margin: 2rem auto; padding: 0 1rem; }
+  .findme-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.5rem;
+  }
+  .findme-card h1 { font-size: 1.4rem; font-weight: 800; margin-bottom: .4rem; }
+  .findme-card p.lede { color: var(--muted); font-size: .88rem; margin-bottom: 1.2rem; }
+  .findme-field { margin-bottom: .9rem; }
+  .findme-field label {
+    display: block; font-size: .8rem; font-weight: 600;
+    color: var(--text); margin-bottom: .3rem;
+  }
+  .findme-field label .hint {
+    font-weight: 400; color: var(--muted); font-size: .75rem; margin-left: .4rem;
+  }
+  .findme-field input {
+    width: 100%; padding: .6rem .8rem; font-size: .95rem;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  .findme-field input:focus { outline: none; border-color: var(--accent); }
+  .findme-submit {
+    width: 100%; padding: .8rem; font-size: 1rem; font-weight: 700;
+    background: var(--accent); color: white; border: none; border-radius: 6px;
+    cursor: pointer; margin-top: .5rem;
+  }
+  .findme-submit:hover { opacity: .92; }
+  .findme-submit:active { transform: translateY(1px); }
+  .findme-error {
+    background: rgba(239,83,80,.12); color: #ef5350;
+    border: 1px solid rgba(239,83,80,.3); border-radius: 6px;
+    padding: .6rem .8rem; font-size: .85rem; margin-bottom: 1rem;
+  }
+  .findme-success {
+    background: rgba(39,174,96,.12); color: #27ae60;
+    border: 1px solid rgba(39,174,96,.3); border-radius: 6px;
+    padding: .9rem 1rem; font-size: .9rem; line-height: 1.5;
+  }
+  .findme-success strong { color: #2ecc71; }
+  .findme-help {
+    margin-top: 1rem; font-size: .75rem; color: var(--muted); line-height: 1.55;
+  }
+  .findme-help a { color: var(--accent); text-decoration: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="findme-wrap">
+  <div class="findme-card">
+    <h1>🔎 Find Me</h1>
+    <p class="lede">
+      Can't find your profile? Enter what you know — we'll find you or add you to the database.
+    </p>
+
+    {% if submitted %}
+    <div class="findme-success">
+      <strong>Got it — thanks for helping us improve!</strong><br>
+      We couldn't find <em>{{ submitted_name }}</em> in our database yet. Our nightly review
+      will search IBJJF and Smoothcomp for you and add your profile within 24 hours.
+      Check back tomorrow by searching your name.
+    </div>
+    <div class="findme-help" style="margin-top:1.2rem">
+      <a href="/findme">← Submit another</a> &middot;
+      <a href="/search">Go to search</a>
+    </div>
+    {% else %}
+
+    {% if error %}<div class="findme-error">{{ error }}</div>{% endif %}
+
+    <form method="POST" action="/findme">
+      <div class="findme-field">
+        <label>Athlete Name <span class="hint">e.g. Michael Bambic</span></label>
+        <input type="text" name="name" autocomplete="off" placeholder="Full name" autofocus>
+      </div>
+
+      <div class="findme-field">
+        <label>IBJJF Profile Number <span class="hint">optional</span></label>
+        <input type="text" name="ibjjf_id" autocomplete="off"
+               placeholder="e.g. 462510" inputmode="numeric" pattern="[0-9]*">
+      </div>
+
+      <div class="findme-field">
+        <label>Smoothcomp ID <span class="hint">optional</span></label>
+        <input type="text" name="sc_uid" autocomplete="off"
+               placeholder="e.g. 479054" inputmode="numeric" pattern="[0-9]*">
+      </div>
+
+      <button type="submit" class="findme-submit">Find My Profile</button>
+    </form>
+
+    <div class="findme-help">
+      <strong>Where to find your IDs:</strong><br>
+      • IBJJF: log in at <a href="https://ibjjf.com" target="_blank" rel="noopener">ibjjf.com</a>,
+        your profile URL ends in your ID.<br>
+      • Smoothcomp: log in at <a href="https://smoothcomp.com" target="_blank" rel="noopener">smoothcomp.com</a>,
+        your profile URL is <code>smoothcomp.com/en/profile/&lt;id&gt;</code>.<br>
+      • Providing any of the three helps — name alone works, but IDs make the lookup exact.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
