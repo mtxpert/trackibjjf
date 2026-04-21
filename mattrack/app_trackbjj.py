@@ -859,6 +859,26 @@ def _athlete_profile_inner(sc_uid):
                    .execute())
         ibjjf_rows = ir_res.data or []
 
+    # Explicit cross-source links: IBJJF rows tagged with this sc_uid
+    # (backfilled manually or by nightly agent for athletes whose IBJJF results
+    # don't have ibjjf_athlete_id populated but we know they belong to this SC profile)
+    try:
+        explicit_res = (sb.table("tournament_results")
+                         .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,event_id")
+                         .eq("source", "ibjjf")
+                         .eq("athlete_id", str(sc_uid))
+                         .or_("status.is.null,status.neq.registered")
+                         .order("event_date")
+                         .execute())
+        for row in (explicit_res.data or []):
+            # Dedupe by (event_id, division, placement)
+            key = (row.get("event_id"), row.get("division"), row.get("placement"))
+            if not any((r.get("event_id"), r.get("division"), r.get("placement")) == key
+                       for r in ibjjf_rows):
+                ibjjf_rows.append(row)
+    except Exception as e:
+        log.warning("explicit IBJJF link query failed: %s", e)
+
     if not ibjjf_rows and last_name:
         fb_res = (sb.table("tournament_results")
                    .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,event_id")
