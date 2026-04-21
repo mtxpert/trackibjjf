@@ -322,6 +322,18 @@ def findme():
         except Exception as e:
             flash(f"IBJJF login failed: {e}", "error")
             return redirect(url_for("findme"))
+        # Upsert their ibjjf_athletes row so they exist in our directory even
+        # if they're not in the top-ranked cache we scrape
+        try:
+            sb.table("ibjjf_athletes").upsert({
+                "ibjjf_id": str(athlete_id),
+                "name":     ibjjf_name,
+                "belt":     (profile.get("belt") or "").lower() or None,
+                "academy":  profile.get("academy") or profile.get("team") or None,
+                "gender":   profile.get("gender") or None,
+            }, on_conflict="ibjjf_id").execute()
+        except Exception as e:
+            log.warning("findme ibjjf_athletes upsert failed: %s", e)
         session["findme_ibjjf_id"] = str(athlete_id)
         session["findme_ibjjf_name"] = ibjjf_name
         return _findme_resolve(session)
@@ -353,12 +365,32 @@ def findme():
 
 
 def _findme_resolve(session):
-    """After an auth step, check if we have enough info to find the athlete."""
-    from flask import session as _s
+    """After an auth step, check if we have enough info to find the athlete.
+    Always saves a findme_reports entry with the verified ID(s) so the nightly
+    Claude agent can pick up any gaps (missing ibjjf_athletes rows, unscraped
+    SC events, etc.)."""
     ibjjf_id = session.get("findme_ibjjf_id")
     sc_uid = session.get("findme_sc_uid")
 
-    # If both: link them and go to profile
+    # Always save a report with the verified IDs. The nightly agent uses these
+    # to backfill missing athlete records and link sc_uid ↔ ibjjf_athlete_id.
+    try:
+        sb.table("findme_reports").insert({
+            "name":       session.get("findme_ibjjf_name") or None,
+            "ibjjf_id":   ibjjf_id or None,
+            "sc_uid":     sc_uid or None,
+            "email":      session.get("findme_sc_email") or None,
+            "user_agent": request.headers.get("User-Agent", "")[:500],
+            "ip":         request.headers.get("X-Forwarded-For", "").split(",")[0].strip(),
+            "status":     "pending",
+            "resolution_notes": "verified auth: " + ",".join(
+                filter(None, ["ibjjf" if ibjjf_id else "", "sc" if sc_uid else ""])
+            ),
+        }).execute()
+    except Exception as e:
+        log.warning("findme report save failed: %s", e)
+
+    # If both IDs: link them immediately and go to profile
     if ibjjf_id and sc_uid:
         try:
             sb.table("sc_ibjjf_verified").upsert({
@@ -368,14 +400,23 @@ def _findme_resolve(session):
             }, on_conflict="sc_uid").execute()
         except Exception as e:
             log.warning("findme link failed: %s", e)
-        # Clear session, redirect
         for k in ("findme_ibjjf_id", "findme_ibjjf_name",
                   "findme_sc_uid", "findme_sc_email"):
             session.pop(k, None)
         return redirect(url_for("athlete_profile", sc_uid=sc_uid))
 
-    # SC alone — check if we have any tournament data for this sc_uid
+    # SC alone — if we have any SC tournament data, go to profile
     if sc_uid and not ibjjf_id:
+        try:
+            # Save the verified sc_smoothcomp record too
+            sb.table("sc_smoothcomp_verified").upsert({
+                "sc_uid": sc_uid,
+                "sc_user_id": sc_uid,
+                "sc_email": session.get("findme_sc_email") or "",
+                "sc_name": "",
+            }, on_conflict="sc_uid").execute()
+        except Exception:
+            pass
         try:
             sc_res = (sb.table("tournament_results")
                         .select("athlete_id")
@@ -383,8 +424,7 @@ def _findme_resolve(session):
                         .eq("athlete_id", sc_uid)
                         .limit(1).execute())
             if sc_res.data:
-                # Found — they can view their profile; prompt to also link IBJJF
-                return redirect(url_for("findme"))  # page will show the linked state + prompt for IBJJF
+                return redirect(url_for("athlete_profile", sc_uid=sc_uid))
         except Exception:
             pass
 
@@ -396,7 +436,6 @@ def _findme_resolve(session):
                        .eq("ibjjf_athlete_id", ibjjf_id)
                        .limit(1).execute())
             if v_res.data:
-                # Already linked — go to that profile
                 sc = v_res.data[0]["sc_uid"]
                 for k in ("findme_ibjjf_id", "findme_ibjjf_name"):
                     session.pop(k, None)
@@ -404,7 +443,7 @@ def _findme_resolve(session):
         except Exception:
             pass
 
-    # Not resolvable yet — show the page with verified-so-far state
+    # Not resolvable — show the page with verified-so-far state
     return redirect(url_for("findme"))
 
 
