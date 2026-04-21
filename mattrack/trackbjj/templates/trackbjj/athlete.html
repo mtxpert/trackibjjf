@@ -306,50 +306,53 @@ if (window.tbSession !== undefined) {
 
   {% if upcoming_rows %}
   <div class="section-title">Upcoming Registrations</div>
-  <div style="display:flex;flex-direction:column;gap:1rem;margin-bottom:1.5rem">
+  <div class="card" style="padding:0;overflow:hidden;margin-bottom:1.5rem">
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Event</th><th>Division</th><th>Team</th>
+    </tr></thead>
+    <tbody>
     {% for r in upcoming_rows %}
-    <div class="card" style="padding:0;overflow:hidden">
-      <div style="padding:.8rem 1rem;border-bottom:1px solid var(--border);background:rgba(192,57,43,.04)">
-        <div style="font-size:.75rem;color:var(--muted);margin-bottom:.15rem">{{ r.event_date or '—' }}</div>
-        <div style="font-size:.95rem;font-weight:700;margin-bottom:.15rem">
-          {% if r.event_id %}<a href="{{ url_for('event_profile', source=r._source or 'ibjjf', event_id=r.event_id) }}" style="color:var(--text);text-decoration:none">{{ r.event_title or '—' }}</a>
-          {% else %}{{ r.event_title or '—' }}{% endif %}
-        </div>
-        <div style="font-size:.78rem;color:var(--muted)">
-          {{ r.division or '—' }}
-          {% if r.team %} · <a href="{{ url_for('team_profile', team_slug_in=r.team|team_slug) }}" style="color:var(--muted);text-decoration:none">{{ r.team }}</a>{% endif %}
-        </div>
-      </div>
-      {% if r.bracket_mates %}
-      <div style="padding:.6rem 1rem">
-        <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem">
-          In your bracket ({{ r.bracket_mates|length }})
-        </div>
-        <table style="width:100%;border-collapse:collapse">
-          <tbody>
-          {% for m in r.bracket_mates %}
-          <tr style="border-top:1px solid var(--border)">
-            <td style="padding:.4rem 0;font-size:.85rem;font-weight:600">
-              {% if m.sc_uid %}<a href="{{ url_for('athlete_profile', sc_uid=m.sc_uid) }}" style="color:var(--accent);text-decoration:none">{{ m.name }}</a>
-              {% else %}<a href="{{ url_for('search') }}?q={{ m.name | urlencode }}" style="color:var(--accent);text-decoration:none;opacity:.85">{{ m.name }}</a>{% endif %}
-            </td>
-            <td style="padding:.4rem 0;font-size:.75rem;color:var(--muted);text-align:right">
-              {% if m.team %}<a href="{{ url_for('team_profile', team_slug_in=m.team|team_slug) }}" style="color:var(--muted);text-decoration:none">{{ m.team }}</a>{% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <div style="padding:.8rem 1rem;font-size:.8rem;color:var(--muted);text-align:center">
-        <span style="display:inline-block;padding:.3rem .7rem;background:var(--bg);border:1px dashed var(--border);border-radius:5px">
-          🕊️ No other competitors registered yet
-        </span>
-      </div>
-      {% endif %}
-    </div>
+    <tr>
+      <td style="white-space:nowrap;color:var(--muted)">{{ r.event_date or '—' }}</td>
+      <td>
+        {% if r.event_id %}<a href="{{ url_for('event_profile', source=r._source or 'ibjjf', event_id=r.event_id) }}" style="color:var(--text);text-decoration:none">{{ r.event_title or '—' }}</a>
+        {% else %}{{ r.event_title or '—' }}{% endif %}
+      </td>
+      <td style="color:var(--muted);font-size:.8rem">{{ r.division or '—' }}</td>
+      <td style="color:var(--muted);font-size:.8rem">
+        {% if r.team %}<a href="{{ url_for('team_profile', team_slug_in=r.team|team_slug) }}" style="color:var(--muted);text-decoration:none">{{ r.team }}</a>{% endif %}
+      </td>
+    </tr>
+    <tr style="background:rgba(192,57,43,.03)">
+      <td colspan="4" style="padding:.5rem .8rem">
+        {% if r.bracket_mates %}
+          <div style="color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:.68rem;margin-bottom:.35rem">
+            In bracket ({{ r.bracket_mates|length }})
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:.8rem">
+            <tbody>
+            {% for m in r.bracket_mates %}
+            <tr>
+              <td style="padding:.25rem .5rem .25rem 0;font-weight:600;width:55%">
+                {% if m.sc_uid %}<a href="{{ url_for('athlete_profile', sc_uid=m.sc_uid) }}" style="color:var(--accent);text-decoration:none">{{ m.name }}</a>
+                {% else %}<a href="{{ url_for('search') }}?q={{ m.name | urlencode }}" style="color:var(--accent);text-decoration:none;opacity:.85">{{ m.name }}</a>{% endif %}
+              </td>
+              <td style="padding:.25rem 0;color:var(--muted);font-size:.75rem">
+                {% if m.team %}<a href="{{ url_for('team_profile', team_slug_in=m.team|team_slug) }}" style="color:var(--muted);text-decoration:none">{{ m.team }}</a>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <span style="color:var(--muted);font-style:italic;font-size:.8rem">🕊️ No other competitors registered yet</span>
+        {% endif %}
+      </td>
+    </tr>
     {% endfor %}
+    </tbody>
+  </table>
   </div>
   {% endif %}
 
