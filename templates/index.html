@@ -2829,8 +2829,11 @@ async function initAuth() {
   } else {
     updateAuthUI();
     // Not logged in — if restoreSession left us somewhere deep, return to landing
+    // UNLESS the user is browsing via a shareable URL (/org/..., /search, etc.)
     console.log('[auth] initAuth: no session, activeId=%s', activeId);
-    if (activeId && activeId !== 'screen-landing' && activeId !== 'screen-tournament') {
+    const onShareableUrl = /^\/(org|search|team|event|athlete)\//.test(window.location.pathname);
+    if (activeId && activeId !== 'screen-landing' && activeId !== 'screen-tournament'
+        && activeId !== 'screen-school' && !onShareableUrl) {
       localStorage.removeItem('mattrack_session');
       showScreen('screen-landing', false);
       history.replaceState({ screen: 'screen-landing' }, '', '');
