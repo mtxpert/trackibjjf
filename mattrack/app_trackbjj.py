@@ -367,16 +367,15 @@ def findme():
 
 def _findme_resolve(session):
     """After an auth step, check if we have enough info to find the athlete.
-    Always saves a findme_reports entry with the verified ID(s) so the nightly
-    Claude agent can pick up any gaps (missing ibjjf_athletes rows, unscraped
-    SC events, etc.)."""
+    Saves a findme_reports entry with the verified ID(s). Marks the report
+    `resolved` if we can auto-route the user to a profile, otherwise leaves it
+    `pending` for the nightly agent."""
     ibjjf_id = session.get("findme_ibjjf_id")
     sc_uid = session.get("findme_sc_uid")
 
-    # Always save a report with the verified IDs. The nightly agent uses these
-    # to backfill missing athlete records and link sc_uid ↔ ibjjf_athlete_id.
+    report_id = None
     try:
-        sb.table("findme_reports").insert({
+        ins_res = sb.table("findme_reports").insert({
             "name":       session.get("findme_ibjjf_name") or None,
             "ibjjf_id":   ibjjf_id or None,
             "sc_uid":     sc_uid or None,
@@ -388,8 +387,27 @@ def _findme_resolve(session):
                 filter(None, ["ibjjf" if ibjjf_id else "", "sc" if sc_uid else ""])
             ),
         }).execute()
+        if ins_res.data:
+            report_id = ins_res.data[0].get("id")
     except Exception as e:
         log.warning("findme report save failed: %s", e)
+
+    def _mark_resolved(notes):
+        if not report_id:
+            return
+        try:
+            sb.table("findme_reports").update({
+                "status": "resolved",
+                "resolution_notes": notes,
+            }).eq("id", report_id).execute()
+        except Exception as e:
+            log.warning("findme report mark resolved failed: %s", e)
+
+    def _cleanup_session():
+        for k in ("findme_ibjjf_id", "findme_ibjjf_name",
+                  "findme_sc_uid", "findme_sc_email",
+                  "claim_intent_ibjjf_id", "claim_intent_sc_uid"):
+            session.pop(k, None)
 
     # If both IDs: link them immediately and go to profile
     if ibjjf_id and sc_uid:
@@ -399,17 +417,16 @@ def _findme_resolve(session):
                 "ibjjf_athlete_id": ibjjf_id,
                 "ibjjf_name": session.get("findme_ibjjf_name") or "",
             }, on_conflict="sc_uid").execute()
+            _mark_resolved("auto-linked sc_uid ↔ ibjjf_id on auth")
         except Exception as e:
             log.warning("findme link failed: %s", e)
-        for k in ("findme_ibjjf_id", "findme_ibjjf_name",
-                  "findme_sc_uid", "findme_sc_email"):
-            session.pop(k, None)
+            _mark_resolved(f"link attempted but failed: {e}")
+        _cleanup_session()
         return redirect(url_for("athlete_profile", sc_uid=sc_uid))
 
     # SC alone — if we have any SC tournament data, go to profile
     if sc_uid and not ibjjf_id:
         try:
-            # Save the verified sc_smoothcomp record too
             sb.table("sc_smoothcomp_verified").upsert({
                 "sc_uid": sc_uid,
                 "sc_user_id": sc_uid,
@@ -425,11 +442,13 @@ def _findme_resolve(session):
                         .eq("athlete_id", sc_uid)
                         .limit(1).execute())
             if sc_res.data:
+                _mark_resolved("SC-only resolved via sc_uid → profile")
+                _cleanup_session()
                 return redirect(url_for("athlete_profile", sc_uid=sc_uid))
         except Exception:
             pass
 
-    # IBJJF alone — look up in sc_ibjjf_verified for already-linked sc_uid
+    # IBJJF alone — route to linked sc_uid if any, else slim IBJJF profile
     if ibjjf_id and not sc_uid:
         try:
             v_res = (sb.table("sc_ibjjf_verified")
@@ -438,14 +457,168 @@ def _findme_resolve(session):
                        .limit(1).execute())
             if v_res.data:
                 sc = v_res.data[0]["sc_uid"]
-                for k in ("findme_ibjjf_id", "findme_ibjjf_name"):
-                    session.pop(k, None)
+                _mark_resolved("IBJJF-only resolved via existing link")
+                _cleanup_session()
                 return redirect(url_for("athlete_profile", sc_uid=sc))
         except Exception:
             pass
+        _mark_resolved("IBJJF-only profile — no SC link yet")
+        target = ibjjf_id
+        _cleanup_session()
+        return redirect(url_for("ibjjf_athlete_profile", ibjjf_id=target))
 
     # Not resolvable — show the page with verified-so-far state
     return redirect(url_for("findme"))
+
+
+@app.route("/claim-me", methods=["GET", "POST"])
+def claim_me():
+    """Unified claim-by-auth entrypoint. Takes an intent (?ibjjf_id=... &sc_uid=...)
+    and verifies the user is the rightful owner via IBJJF and/or Smoothcomp login.
+    Rejects claim-jacking: auth'd IDs must match the intent, and an IBJJF/SC ID
+    already linked to a different profile cannot be re-linked."""
+    from flask import session
+
+    intent_ibjjf = request.args.get("ibjjf_id")
+    intent_sc = request.args.get("sc_uid")
+    if intent_ibjjf:
+        session["claim_intent_ibjjf_id"] = str(intent_ibjjf)
+    if intent_sc:
+        session["claim_intent_sc_uid"] = str(intent_sc)
+    intent_ibjjf = session.get("claim_intent_ibjjf_id")
+    intent_sc = session.get("claim_intent_sc_uid")
+
+    if request.method == "GET":
+        intent_info = {}
+        if intent_ibjjf:
+            try:
+                ia_res = (sb.table("ibjjf_athletes")
+                            .select("ibjjf_id,name,belt,academy")
+                            .eq("ibjjf_id", str(intent_ibjjf))
+                            .limit(1).execute())
+                if ia_res.data:
+                    intent_info["ibjjf"] = ia_res.data[0]
+            except Exception:
+                pass
+            intent_info.setdefault("ibjjf", {"ibjjf_id": intent_ibjjf})
+        if intent_sc:
+            intent_info["sc"] = {"sc_uid": intent_sc}
+        return render_template(
+            "trackbjj/claim_me.html",
+            intent=intent_info,
+            verified_ibjjf_id=session.get("findme_ibjjf_id"),
+            verified_ibjjf_name=session.get("findme_ibjjf_name"),
+            verified_sc_uid=session.get("findme_sc_uid"),
+        )
+
+    action = (request.form.get("action") or "").strip()
+
+    if action == "ibjjf":
+        email = (request.form.get("email") or "").strip()
+        password = (request.form.get("password") or "").strip()
+        if not email or not password:
+            flash("Enter IBJJF email and password.", "error")
+            return redirect(url_for("claim_me"))
+        try:
+            athlete_id, token = ibjjf_api.login(email, password)
+            profile = ibjjf_api.get_athlete_profile(token)
+            ibjjf_name = profile.get("name") or profile.get("display_name") or ""
+        except Exception as e:
+            flash(f"IBJJF login failed: {e}", "error")
+            return redirect(url_for("claim_me"))
+
+        # Intent mismatch — user logged in as a different IBJJF account
+        if intent_ibjjf and str(athlete_id) != str(intent_ibjjf):
+            flash(
+                f"You logged in as IBJJF #{athlete_id}, but this claim is for "
+                f"IBJJF #{intent_ibjjf}. Claim rejected.",
+                "error",
+            )
+            return redirect(url_for("claim_me"))
+
+        # Conflict — this IBJJF id is already linked to a different sc_uid
+        try:
+            existing = (sb.table("sc_ibjjf_verified")
+                          .select("sc_uid")
+                          .eq("ibjjf_athlete_id", str(athlete_id))
+                          .limit(1).execute())
+        except Exception:
+            existing = None
+        if existing and existing.data:
+            linked_sc = str(existing.data[0]["sc_uid"])
+            if intent_sc and linked_sc != str(intent_sc):
+                flash(
+                    "That IBJJF account is already claimed on a different profile. "
+                    "If this is a mistake, contact support.",
+                    "error",
+                )
+                return redirect(url_for("claim_me"))
+
+        try:
+            sb.table("ibjjf_athletes").upsert({
+                "ibjjf_id":    str(athlete_id),
+                "name":        ibjjf_name,
+                "name_lower":  (ibjjf_name or "").lower(),
+                "belt":        (profile.get("belt") or "").lower() or None,
+                "academy":     profile.get("academy") or profile.get("team") or None,
+                "gender":      profile.get("gender") or None,
+            }, on_conflict="ibjjf_id").execute()
+        except Exception as e:
+            log.warning("claim_me ibjjf_athletes upsert failed: %s", e)
+
+        session["findme_ibjjf_id"] = str(athlete_id)
+        session["findme_ibjjf_name"] = ibjjf_name
+        return _findme_resolve(session)
+
+    if action == "smoothcomp":
+        email = (request.form.get("email") or "").strip()
+        password = (request.form.get("password") or "").strip()
+        if not email or not password:
+            flash("Enter Smoothcomp email and password.", "error")
+            return redirect(url_for("claim_me"))
+        try:
+            result = scrape_smoothcomp_verify.verify_sc_login(email, password)
+        except Exception as e:
+            flash(f"Smoothcomp login failed: {e}", "error")
+            return redirect(url_for("claim_me"))
+
+        sc_authed = str(result["sc_user_id"])
+        if intent_sc and sc_authed != str(intent_sc):
+            flash(
+                f"You logged in as SC #{sc_authed}, but this claim is for "
+                f"SC #{intent_sc}. Claim rejected.",
+                "error",
+            )
+            return redirect(url_for("claim_me"))
+
+        try:
+            existing = (sb.table("sc_ibjjf_verified")
+                          .select("ibjjf_athlete_id")
+                          .eq("sc_uid", sc_authed)
+                          .limit(1).execute())
+        except Exception:
+            existing = None
+        if existing and existing.data and intent_ibjjf:
+            linked_ibjjf = str(existing.data[0]["ibjjf_athlete_id"] or "")
+            if linked_ibjjf and linked_ibjjf != str(intent_ibjjf):
+                flash(
+                    "That Smoothcomp account is already linked to a different IBJJF profile.",
+                    "error",
+                )
+                return redirect(url_for("claim_me"))
+
+        session["findme_sc_uid"] = sc_authed
+        session["findme_sc_email"] = result.get("email") or email
+        return _findme_resolve(session)
+
+    if action == "reset":
+        for k in ("claim_intent_ibjjf_id", "claim_intent_sc_uid",
+                  "findme_ibjjf_id", "findme_ibjjf_name",
+                  "findme_sc_uid", "findme_sc_email"):
+            session.pop(k, None)
+        return redirect(url_for("findme"))
+
+    return redirect(url_for("claim_me"))
 
 
 # ── Team / Event URL routes ────────────────────────────────────────────────────
@@ -693,6 +866,77 @@ def _event_profile_inner(source, event_id):
         top_teams=top_teams,
         external_url=external_url,
         team_slug_fn=team_slug,
+    )
+
+
+@app.route("/ibjjf-athlete/<ibjjf_id>")
+def ibjjf_athlete_profile(ibjjf_id):
+    """Slim profile for IBJJF-only athletes (no sc_uid yet).
+    If this IBJJF ID is already linked via sc_ibjjf_verified, 302 to the
+    canonical sc_uid-keyed profile. Otherwise render a Claim CTA page.
+    """
+    # If already linked, redirect to the full profile
+    try:
+        v_res = (sb.table("sc_ibjjf_verified")
+                   .select("sc_uid")
+                   .eq("ibjjf_athlete_id", str(ibjjf_id))
+                   .limit(1).execute())
+        if v_res.data:
+            return redirect(url_for("athlete_profile", sc_uid=v_res.data[0]["sc_uid"]))
+    except Exception as e:
+        log.warning("ibjjf_athlete_profile verified lookup failed: %s", e)
+
+    # Fetch the IBJJF athlete record
+    try:
+        ia_res = (sb.table("ibjjf_athletes")
+                    .select("ibjjf_id,name,slug,belt,academy,points,ranking_category,age_division,gi_nogi,gender")
+                    .eq("ibjjf_id", str(ibjjf_id))
+                    .limit(1).execute())
+    except Exception as e:
+        log.warning("ibjjf_athlete_profile ibjjf_athletes lookup failed: %s", e)
+        ia_res = None
+    if not (ia_res and ia_res.data):
+        return render_template("trackbjj/not_found.html",
+                               message=f"No IBJJF athlete found with ID {ibjjf_id}."), 404
+    ia = ia_res.data[0]
+
+    # Results for this IBJJF ID
+    try:
+        results_res = (sb.table("tournament_results")
+                         .select("event_title,event_date,division,placement,team,event_id,status")
+                         .eq("source", "ibjjf")
+                         .eq("ibjjf_athlete_id", str(ibjjf_id))
+                         .or_("status.is.null,status.neq.registered")
+                         .order("event_date", desc=True)
+                         .limit(500)
+                         .execute())
+        results = results_res.data or []
+    except Exception as e:
+        log.warning("ibjjf_athlete_profile results lookup failed: %s", e)
+        results = []
+
+    gold   = sum(1 for r in results if r.get("placement") == 1)
+    silver = sum(1 for r in results if r.get("placement") == 2)
+    bronze = sum(1 for r in results if r.get("placement") == 3)
+    stats = {"events": len({r.get("event_id") for r in results}),
+             "divisions": len(results),
+             "gold": gold, "silver": silver, "bronze": bronze}
+
+    return render_template(
+        "trackbjj/ibjjf_athlete.html",
+        ibjjf_id=ia.get("ibjjf_id"),
+        name=ia.get("name") or "IBJJF Athlete",
+        belt=(ia.get("belt") or "").title(),
+        academy=ia.get("academy") or "",
+        slug=ia.get("slug") or "",
+        points=ia.get("points"),
+        ranking_category=ia.get("ranking_category") or "",
+        age_division=ia.get("age_division") or "",
+        gi_nogi=ia.get("gi_nogi") or "",
+        gender=ia.get("gender") or "",
+        results=results,
+        stats=stats,
+        now_year=datetime.date.today().year,
     )
 
 
@@ -1031,119 +1275,16 @@ def _athlete_profile_inner(sc_uid):
 
 @app.route("/claim/<sc_uid>", methods=["GET", "POST"])
 def claim_profile(sc_uid):
-    existing_res = sb.table("sc_ibjjf_verified").select("ibjjf_athlete_id,ibjjf_name").eq("sc_uid", sc_uid).execute()
-    existing = existing_res.data[0] if existing_res.data else None
-
-    if request.method == "GET":
-        return render_template("trackbjj/claim.html", sc_uid=sc_uid, existing=existing)
-
-    email    = request.form.get("email", "").strip()
-    password = request.form.get("password", "").strip()
-
-    if not email or not password:
-        flash("Email and password are required.", "error")
-        return render_template("trackbjj/claim.html", sc_uid=sc_uid, existing=existing)
-
-    try:
-        athlete_id, token = ibjjf_api.login(email, password)
-        profile = ibjjf_api.get_athlete_profile(token)
-    except Exception as e:
-        flash(f"IBJJF login failed: {e}", "error")
-        return render_template("trackbjj/claim.html", sc_uid=sc_uid, existing=existing)
-
-    ibjjf_id   = profile.get("athlete_id") or athlete_id
-    ibjjf_name = profile.get("name", "")
-    belt       = profile.get("belt", "")
-    academy    = profile.get("academy", "")
-    photo_url  = profile.get("photo_url", "") or ""
-
-    verified_row = {
-        "sc_uid":           sc_uid,
-        "ibjjf_athlete_id": ibjjf_id,
-        "ibjjf_name":       ibjjf_name,
-        "belt":             belt,
-        "academy":          academy,
-    }
-    if photo_url:
-        verified_row["photo_url"] = photo_url
-
-    sb.table("sc_ibjjf_verified").upsert(verified_row, on_conflict="sc_uid").execute()
-
-    ibjjf_gender = (profile.get("gender") or "").lower() or None
-    upsert_data = {
-        "ibjjf_id":         ibjjf_id,
-        "name":             ibjjf_name,
-        "name_lower":       ibjjf_name.lower(),
-        "ranking_category": "adult",
-        "ranking_year":     datetime.date.today().year,
-    }
-    if belt:
-        upsert_data["belt"] = belt.lower()
-    if ibjjf_gender:
-        upsert_data["gender"] = ibjjf_gender
-
-    sb.table("ibjjf_athletes").upsert(upsert_data, on_conflict="ibjjf_id").execute()
-
-    flash(f"Profile claimed! Verified as {ibjjf_name} (IBJJF ID: {ibjjf_id})", "success")
-    return redirect(url_for("athlete_profile", sc_uid=sc_uid))
+    # Legacy entrypoint — redirect to the unified /claim-me flow with sc_uid intent.
+    return redirect(url_for("claim_me", sc_uid=sc_uid), code=302)
 
 
 # ── Smoothcomp verification ────────────────────────────────────────────────────
 
 @app.route("/verify-sc/<sc_uid>", methods=["GET", "POST"])
 def verify_sc(sc_uid):
-    existing_res = sb.table("sc_smoothcomp_verified").select("sc_name,sc_email").eq("sc_uid", sc_uid).execute()
-    existing = existing_res.data[0] if existing_res.data else None
-
-    if request.method == "GET":
-        return render_template("trackbjj/verify_sc.html", sc_uid=sc_uid, existing=existing)
-
-    email    = request.form.get("email", "").strip()
-    password = request.form.get("password", "").strip()
-
-    if not email or not password:
-        flash("Email and password are required.", "error")
-        return render_template("trackbjj/verify_sc.html", sc_uid=sc_uid, existing=existing)
-
-    try:
-        result = scrape_smoothcomp_verify.verify_sc_login(email, password)
-    except Exception as e:
-        flash(f"Smoothcomp login failed: {e}", "error")
-        return render_template("trackbjj/verify_sc.html", sc_uid=sc_uid, existing=existing)
-
-    returned_id = str(result["sc_user_id"])
-    if returned_id != str(sc_uid):
-        flash(
-            f"Login succeeded but your Smoothcomp ID ({returned_id}) "
-            f"does not match this profile (#{sc_uid}). "
-            "Make sure you're logging in with the account that owns this profile.",
-            "error",
-        )
-        return render_template("trackbjj/verify_sc.html", sc_uid=sc_uid, existing=existing)
-
-    # Get best display name from our own DB (SC profile page is Cloudflare-blocked)
-    name_res = (sb.table("tournament_results")
-                  .select("athlete_display,athlete_name")
-                  .eq("source", "smoothcomp")
-                  .eq("athlete_id", str(sc_uid))
-                  .not_.is_("athlete_display", "null")
-                  .order("event_date", desc=True)
-                  .limit(1)
-                  .execute())
-    sc_name = ""
-    if name_res.data:
-        sc_name = name_res.data[0].get("athlete_display") or name_res.data[0].get("athlete_name") or ""
-
-    sb.table("sc_smoothcomp_verified").upsert({
-        "sc_uid":    sc_uid,
-        "sc_email":  result["email"],
-        "sc_user_id": returned_id,
-        "sc_name":   sc_name or result["sc_name"],
-    }, on_conflict="sc_uid").execute()
-
-    display = sc_name or returned_id
-    flash(f"Smoothcomp profile verified! Welcome, {display}.", "success")
-    return redirect(url_for("athlete_profile", sc_uid=sc_uid))
+    # Legacy entrypoint — redirect to the unified /claim-me flow with sc_uid intent.
+    return redirect(url_for("claim_me", sc_uid=sc_uid), code=302)
 
 
 # ── Social links ───────────────────────────────────────────────────────────────
@@ -1236,12 +1377,15 @@ def api_search():
         return jsonify([])
     result = sb.rpc("search_athletes", {"q": normalize(q)}).execute()
     rows = result.data or []
-    # Normalize to consistent shape for the frontend
+    # Normalize to consistent shape for the frontend.
+    # Includes IBJJF-only athletes (no sc_uid) — they're rendered with a
+    # "Claim" CTA on the search card.
     out = []
     for r in rows:
         sc_uid = r.get("sc_uid")
-        if not sc_uid:
-            continue  # no profile page exists for athletes without a sc_uid
+        ibjjf_id = r.get("ibjjf_id")
+        if not sc_uid and not ibjjf_id:
+            continue  # neither keyed — skip
         country = r.get("country") or ""
         if country in (r"\N", "\\N", "\\\\N"):
             country = ""
@@ -1250,6 +1394,8 @@ def api_search():
             sources = [s.strip() for s in sources.split(",") if s.strip()]
         out.append({
             "athlete_id":   sc_uid,
+            "ibjjf_id":     ibjjf_id,
+            "claimed":      bool(r.get("claimed")),
             "display_name": r.get("athlete_display") or r.get("athlete_name", ""),
             "team":         r.get("team") or "",
             "country":      country,

@@ -1,0 +1,137 @@
+{% extends "trackbjj/base.html" %}
+{% block title %}{{ name }} — TrackBJJ{% endblock %}
+
+{% block head %}
+<style>
+  .profile-header {
+    display: flex; align-items: flex-start; gap: 1.5rem; margin-bottom: 1.5rem;
+    padding: 1.5rem; background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .avatar {
+    width: 72px; height: 72px; border-radius: 50%; background: var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.8rem; font-weight: 800; color: var(--accent); flex-shrink: 0;
+  }
+  .profile-info h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: .3rem; }
+  .profile-info .team-line { color: var(--muted); font-size: .9rem; margin-bottom: .4rem; }
+  .meta-line { font-size: .82rem; color: var(--muted); margin-bottom: .5rem; }
+  .uid-badge {
+    font-size: .7rem; color: var(--muted); font-family: monospace;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: .1rem .4rem;
+  }
+
+  .claim-banner {
+    background: rgba(76,175,80,.08); border: 1px solid rgba(76,175,80,.35);
+    border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .claim-banner .text { font-size: .9rem; color: var(--text); }
+  .claim-banner .text strong { color: #4caf50; }
+  .claim-cta {
+    background: var(--accent); color: #000; font-weight: 700;
+    padding: .55rem 1rem; border-radius: 6px; text-decoration: none;
+    white-space: nowrap; font-size: .9rem;
+  }
+  .claim-cta:hover { opacity: .9; }
+
+  .stats-strip { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; }
+  .stat-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: .8rem 1.2rem; text-align: center;
+  }
+  .stat-card .num { font-size: 1.5rem; font-weight: 800; }
+  .stat-card .lbl { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .gold-num { color: var(--gold); }
+  .silver-num { color: var(--silver); }
+  .bronze-num { color: var(--bronze); }
+  .cyan-num { color: var(--accent); }
+  .place-col { font-weight: 700; min-width: 28px; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+
+  <div class="profile-header">
+    <div class="avatar">{{ name[0].upper() if name else '?' }}</div>
+    <div class="profile-info">
+      <h1>{{ name }}</h1>
+      <div class="team-line">
+        {% if academy %}
+          <a href="{{ url_for('team_profile', team_slug_in=academy|team_slug) }}" style="color:var(--muted);text-decoration:none">{{ academy }}</a>
+        {% endif %}
+      </div>
+      {% if belt or age_division or ranking_category %}
+      <div class="meta-line">
+        {%- if belt %}{{ belt }}{% endif %}
+        {%- if age_division %} · {{ age_division|replace('master','Master ')|title }}{% endif %}
+        {%- if gender %} · {{ gender|title }}{% endif %}
+        {%- if ranking_category %} · {{ ranking_category }}{% endif %}
+      </div>
+      {% endif %}
+      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+        <span class="uid-badge">IBJJF #{{ ibjjf_id }}</span>
+        {% if slug %}
+        <a href="https://ibjjf.com/athletes/{{ slug }}" target="_blank" style="font-size:.75rem;color:var(--accent);text-decoration:none;">↗ IBJJF Profile</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="claim-banner">
+    <div class="text">
+      <strong>Is this you?</strong> Link your Smoothcomp account to see all your results in one place and unlock profile editing.
+    </div>
+    <a class="claim-cta" href="{{ url_for('claim_me') }}?ibjjf_id={{ ibjjf_id }}">This is me — Claim</a>
+  </div>
+
+  {% if stats %}
+  <div class="stats-strip">
+    <div class="stat-card"><div class="num cyan-num">{{ stats.events or 0 }}</div><div class="lbl">Events</div></div>
+    <div class="stat-card"><div class="num cyan-num">{{ stats.divisions or 0 }}</div><div class="lbl">Divisions</div></div>
+    <div class="stat-card"><div class="num gold-num">{{ stats.gold or 0 }}</div><div class="lbl">Gold</div></div>
+    <div class="stat-card"><div class="num silver-num">{{ stats.silver or 0 }}</div><div class="lbl">Silver</div></div>
+    <div class="stat-card"><div class="num bronze-num">{{ stats.bronze or 0 }}</div><div class="lbl">Bronze</div></div>
+  </div>
+  {% endif %}
+
+  <div class="section-title">
+    IBJJF Results
+    {% if points %}
+    <span style="font-size:.75rem;color:var(--muted);font-weight:400;margin-left:.5rem">{{ points|int }} pts</span>
+    {% endif %}
+  </div>
+
+  {% if results %}
+  <div class="card" style="padding:0;overflow:hidden">
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Event</th><th>Division</th><th>Place</th><th>Team</th>
+    </tr></thead>
+    <tbody>
+    {% for r in results %}
+    <tr>
+      <td style="white-space:nowrap;color:var(--muted)">{{ r.event_date or '—' }}</td>
+      <td>
+        {% if r.event_id %}<a href="{{ url_for('event_profile', source='ibjjf', event_id=r.event_id) }}" style="color:var(--text);text-decoration:none">{{ r.event_title or '—' }}</a>
+        {% else %}{{ r.event_title or '—' }}{% endif %}
+      </td>
+      <td style="color:var(--muted);font-size:.8rem">{{ r.division or '—' }}</td>
+      <td class="place-col {% if r.placement == 1 %}place-1{% elif r.placement == 2 %}place-2{% elif r.placement == 3 %}place-3{% endif %}">
+        {% if r.placement == 1 %}🥇{% elif r.placement == 2 %}🥈{% elif r.placement == 3 %}🥉{% else %}{{ r.placement or '—' }}{% endif %}
+      </td>
+      <td style="color:var(--muted);font-size:.8rem">
+        {% if r.team %}<a href="{{ url_for('team_profile', team_slug_in=r.team|team_slug) }}" style="color:var(--muted);text-decoration:none">{{ r.team }}</a>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted)">No IBJJF results recorded yet.</p>
+  {% endif %}
+
+</div>
+{% endblock %}
