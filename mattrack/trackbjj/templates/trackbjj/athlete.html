@@ -349,35 +349,52 @@ if (window.tbSession !== undefined) {
   {% endif %}
 
   <div class="card" style="padding:0;overflow:hidden;margin-bottom:1.5rem">
-  <table>
+  <table id="match-history-table">
     <thead><tr>
-      <th>Date</th><th>Event</th><th>Division</th><th>Opponent</th><th>Result</th>
+      <th>Opponent</th><th>Competition</th><th>Division</th><th>Result</th>
     </tr></thead>
     <tbody>
     {% for m in match_history %}
-    <tr>
-      <td style="white-space:nowrap;color:var(--muted)">{{ m.event_date or '—' }}</td>
-      <td style="font-size:.85rem">{{ m.event_title or '—' }}</td>
-      <td style="color:var(--muted);font-size:.75rem">{{ m.division or '—' }}</td>
-      <td style="font-size:.85rem">
+    <tr{% if loop.index > 10 %} class="match-hidden" style="display:none"{% endif %}>
+      <td style="font-size:.9rem;font-weight:600">
         {% if m.opponent_sc_uid %}
         <a href="{{ url_for('athlete_profile', sc_uid=m.opponent_sc_uid) }}" style="color:var(--accent);text-decoration:none">{{ m.opponent_name or '—' }}</a>
         {% elif m.opponent_name %}
         <a href="{{ url_for('search') }}?q={{ m.opponent_name | urlencode }}" style="color:var(--accent);text-decoration:none;opacity:.85">{{ m.opponent_name }}</a>
         {% else %}—{% endif %}
-        <span style="font-size:.7rem;color:var(--muted);margin-left:.3rem">({{ m.athlete_place }} vs {{ m.opp_place }})</span>
       </td>
-      <td>
-        {% if m.result == 'Win' %}
-        <span style="color:#4caf50;font-weight:700;font-size:.85rem">W</span>
-        {% else %}
-        <span style="color:#ef5350;font-weight:700;font-size:.85rem">L</span>
-        {% endif %}
+      <td style="font-size:.8rem;color:var(--muted)">
+        {% if m.event_id and m.source %}
+        <a href="{{ url_for('event_profile', source=m.source, event_id=m.event_id) }}" style="color:var(--muted);text-decoration:none;border-bottom:1px dotted var(--border)">{{ m.event_title or '—' }}</a>
+        {% else %}{{ m.event_title or '—' }}{% endif %}
+        {% if m.event_date %}<br><span style="font-size:.7rem">{{ m.event_date[:7] }}</span>{% endif %}
+      </td>
+      <td style="color:var(--muted);font-size:.75rem;max-width:180px">{{ m.division or '—' }}</td>
+      <td style="font-weight:700;font-size:.9rem">
+        {% if m.result == 'Win' %}<span style="color:#4caf50">Win</span>
+        {% else %}<span style="color:#ef5350">Loss</span>{% endif %}
       </td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
+  {% if match_history|length > 10 %}
+  <div style="padding:.75rem 1rem;border-top:1px solid var(--border);text-align:center">
+    <button onclick="toggleMatchHistory(this)" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:.85rem;font-weight:600">
+      ▼ Show all opponents ({{ match_history|length - 10 }} more)
+    </button>
+  </div>
+  <script>
+    function toggleMatchHistory(btn) {
+      var rows = document.querySelectorAll('.match-hidden');
+      var showing = rows[0].style.display !== 'none';
+      rows.forEach(function(r) { r.style.display = showing ? 'none' : ''; });
+      btn.textContent = showing
+        ? '▼ Show all opponents ({{ match_history|length - 10 }} more)'
+        : '▲ Show fewer';
+    }
+  </script>
+  {% endif %}
   </div>
   {% endif %}
 
