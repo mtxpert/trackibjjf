@@ -31,9 +31,6 @@
       <span><span class="tag tag-{{ source }}">{{ source|upper }}</span></span>
       {% if event_date %}<span>{{ event_date }}</span>{% endif %}
       <span>{{ athlete_count }} registrations{% if has_results %} · results available{% endif %}</span>
-      {% if external_url %}
-      <a href="{{ external_url }}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;margin-left:auto">View on {{ source|upper }} ↗</a>
-      {% endif %}
     </div>
   </div>
 
