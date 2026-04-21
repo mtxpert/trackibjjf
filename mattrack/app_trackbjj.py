@@ -290,22 +290,92 @@ def search():
 
 @app.route("/findme", methods=["GET", "POST"])
 def findme():
-    """Lookup page — user submits name / IBJJF id / SC id. If we find them,
-    redirect to their profile. If not, save a report for nightly review."""
+    """Auth-based lookup — user logs in with IBJJF and/or Smoothcomp to
+    auto-verify their IDs. We find them, link them in sc_ibjjf_verified,
+    and redirect to their profile. If we can't find them despite verified
+    IDs, save a report for nightly Claude review.
+    """
+    from flask import session
+
     if request.method == "GET":
-        return render_template("trackbjj/findme.html")
+        return render_template(
+            "trackbjj/findme.html",
+            verified_ibjjf_id=session.get("findme_ibjjf_id"),
+            verified_ibjjf_name=session.get("findme_ibjjf_name"),
+            verified_sc_uid=session.get("findme_sc_uid"),
+            verified_sc_email=session.get("findme_sc_email"),
+        )
 
-    name = (request.form.get("name") or "").strip()
-    ibjjf_id = (request.form.get("ibjjf_id") or "").strip()
-    sc_uid = (request.form.get("sc_uid") or "").strip()
-    email = (request.form.get("email") or "").strip()
+    action = (request.form.get("action") or "").strip()
 
-    if not (name or ibjjf_id or sc_uid):
-        return render_template("trackbjj/findme.html",
-                               error="Please enter at least one field.")
+    # --- IBJJF auth ---
+    if action == "ibjjf":
+        email = (request.form.get("email") or "").strip()
+        password = (request.form.get("password") or "").strip()
+        if not email or not password:
+            flash("Enter IBJJF email and password.", "error")
+            return redirect(url_for("findme"))
+        try:
+            athlete_id, token = ibjjf_api.login(email, password)
+            profile = ibjjf_api.get_athlete_profile(token)
+            ibjjf_name = profile.get("name") or profile.get("display_name") or ""
+        except Exception as e:
+            flash(f"IBJJF login failed: {e}", "error")
+            return redirect(url_for("findme"))
+        session["findme_ibjjf_id"] = str(athlete_id)
+        session["findme_ibjjf_name"] = ibjjf_name
+        return _findme_resolve(session)
 
-    # Priority 1: SC ID — go straight to profile if we have data
-    if sc_uid:
+    # --- Smoothcomp auth ---
+    if action == "smoothcomp":
+        email = (request.form.get("email") or "").strip()
+        password = (request.form.get("password") or "").strip()
+        if not email or not password:
+            flash("Enter Smoothcomp email and password.", "error")
+            return redirect(url_for("findme"))
+        try:
+            result = scrape_smoothcomp_verify.verify_sc_login(email, password)
+        except Exception as e:
+            flash(f"Smoothcomp login failed: {e}", "error")
+            return redirect(url_for("findme"))
+        session["findme_sc_uid"] = str(result["sc_user_id"])
+        session["findme_sc_email"] = result.get("email") or email
+        return _findme_resolve(session)
+
+    # --- Reset / clear ---
+    if action == "reset":
+        for k in ("findme_ibjjf_id", "findme_ibjjf_name",
+                  "findme_sc_uid", "findme_sc_email"):
+            session.pop(k, None)
+        return redirect(url_for("findme"))
+
+    return redirect(url_for("findme"))
+
+
+def _findme_resolve(session):
+    """After an auth step, check if we have enough info to find the athlete."""
+    from flask import session as _s
+    ibjjf_id = session.get("findme_ibjjf_id")
+    sc_uid = session.get("findme_sc_uid")
+
+    # If both: link them and go to profile
+    if ibjjf_id and sc_uid:
+        try:
+            sb.table("sc_ibjjf_verified").upsert({
+                "sc_uid": sc_uid,
+                "ibjjf_athlete_id": ibjjf_id,
+                "ibjjf_name": session.get("findme_ibjjf_name") or "",
+            }, on_conflict="sc_uid").execute()
+        except Exception as e:
+            log.warning("findme link failed: %s", e)
+        # Clear session, redirect
+        for k in ("findme_ibjjf_id", "findme_ibjjf_name",
+                  "findme_sc_uid", "findme_sc_email"):
+            session.pop(k, None)
+        return redirect(url_for("athlete_profile", sc_uid=sc_uid))
+
+    # SC alone — check if we have any tournament data for this sc_uid
+    if sc_uid and not ibjjf_id:
         try:
             sc_res = (sb.table("tournament_results")
                         .select("athlete_id")
@@ -313,50 +383,29 @@ def findme():
                         .eq("athlete_id", sc_uid)
                         .limit(1).execute())
             if sc_res.data:
-                return redirect(url_for("athlete_profile", sc_uid=sc_uid))
-        except Exception as e:
-            log.warning("findme sc lookup failed: %s", e)
+                # Found — they can view their profile; prompt to also link IBJJF
+                return redirect(url_for("findme"))  # page will show the linked state + prompt for IBJJF
+        except Exception:
+            pass
 
-    # Priority 2: IBJJF ID — find linked sc_uid via sc_ibjjf_verified
-    if ibjjf_id:
+    # IBJJF alone — look up in sc_ibjjf_verified for already-linked sc_uid
+    if ibjjf_id and not sc_uid:
         try:
             v_res = (sb.table("sc_ibjjf_verified")
                        .select("sc_uid")
                        .eq("ibjjf_athlete_id", ibjjf_id)
                        .limit(1).execute())
             if v_res.data:
-                return redirect(url_for("athlete_profile", sc_uid=v_res.data[0]["sc_uid"]))
-        except Exception as e:
-            log.warning("findme ibjjf lookup failed: %s", e)
+                # Already linked — go to that profile
+                sc = v_res.data[0]["sc_uid"]
+                for k in ("findme_ibjjf_id", "findme_ibjjf_name"):
+                    session.pop(k, None)
+                return redirect(url_for("athlete_profile", sc_uid=sc))
+        except Exception:
+            pass
 
-    # Priority 3: Name search — redirect to search results
-    if name:
-        norm = normalize(name)
-        try:
-            search_res = sb.rpc("search_athletes", {"q": norm}).execute()
-            rows = search_res.data or []
-            if rows:
-                return redirect(url_for("search", q=name))
-        except Exception as e:
-            log.warning("findme name search failed: %s", e)
-
-    # Not found — save report for nightly review
-    try:
-        sb.table("findme_reports").insert({
-            "name":       name or None,
-            "ibjjf_id":   ibjjf_id or None,
-            "sc_uid":     sc_uid or None,
-            "email":      email or None,
-            "user_agent": request.headers.get("User-Agent", "")[:500],
-            "ip":         request.headers.get("X-Forwarded-For", "").split(",")[0].strip(),
-            "status":     "pending",
-        }).execute()
-    except Exception as e:
-        log.error("findme report save failed: %s", e)
-
-    return render_template("trackbjj/findme.html",
-                           submitted=True,
-                           submitted_name=name or ibjjf_id or sc_uid)
+    # Not resolvable yet — show the page with verified-so-far state
+    return redirect(url_for("findme"))
 
 
 # ── Team / Event URL routes ────────────────────────────────────────────────────

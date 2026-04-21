@@ -3,105 +3,149 @@
 
 {% block head %}
 <style>
-  .findme-wrap { max-width: 520px; margin: 2rem auto; padding: 0 1rem; }
-  .findme-card {
+  .findme-wrap { max-width: 560px; margin: 2rem auto; padding: 0 1rem; }
+  .findme-intro {
     background: var(--card); border: 1px solid var(--border);
-    border-radius: 12px; padding: 1.5rem;
+    border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1rem;
   }
-  .findme-card h1 { font-size: 1.4rem; font-weight: 800; margin-bottom: .4rem; }
-  .findme-card p.lede { color: var(--muted); font-size: .88rem; margin-bottom: 1.2rem; }
-  .findme-field { margin-bottom: .9rem; }
-  .findme-field label {
-    display: block; font-size: .8rem; font-weight: 600;
-    color: var(--text); margin-bottom: .3rem;
+  .findme-intro h1 { font-size: 1.4rem; font-weight: 800; margin-bottom: .4rem; }
+  .findme-intro p { color: var(--muted); font-size: .88rem; line-height: 1.5; }
+
+  .findme-status { display: flex; gap: .75rem; margin-bottom: 1rem; }
+  .findme-chip {
+    flex: 1; background: var(--card); border: 2px solid var(--border);
+    border-radius: 10px; padding: .75rem 1rem; text-align: center; font-size: .82rem;
   }
-  .findme-field label .hint {
-    font-weight: 400; color: var(--muted); font-size: .75rem; margin-left: .4rem;
+  .findme-chip.verified { border-color: #27ae60; background: rgba(39,174,96,.08); }
+  .findme-chip .label { color: var(--muted); font-weight: 600; display: block; margin-bottom: .2rem; font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; }
+  .findme-chip .val { color: var(--text); font-weight: 700; font-size: .95rem; }
+  .findme-chip.verified .val::before { content: "✓ "; color: #27ae60; }
+
+  .findme-section {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1rem;
   }
-  .findme-field input {
-    width: 100%; padding: .6rem .8rem; font-size: .95rem;
+  .findme-section h2 { font-size: 1rem; font-weight: 700; margin-bottom: .25rem; display: flex; align-items: center; gap: .5rem; }
+  .findme-section p.sub { color: var(--muted); font-size: .78rem; margin-bottom: 1rem; }
+  .findme-section.done { opacity: .5; }
+
+  .field { margin-bottom: .7rem; }
+  .field input {
+    width: 100%; padding: .55rem .75rem; font-size: .9rem;
     background: var(--bg); color: var(--text);
     border: 1px solid var(--border); border-radius: 6px;
   }
-  .findme-field input:focus { outline: none; border-color: var(--accent); }
-  .findme-submit {
-    width: 100%; padding: .8rem; font-size: 1rem; font-weight: 700;
+  .field input:focus { outline: none; border-color: var(--accent); }
+  .submit-btn {
+    width: 100%; padding: .65rem; font-size: .92rem; font-weight: 700;
     background: var(--accent); color: white; border: none; border-radius: 6px;
-    cursor: pointer; margin-top: .5rem;
+    cursor: pointer;
   }
-  .findme-submit:hover { opacity: .92; }
-  .findme-submit:active { transform: translateY(1px); }
-  .findme-error {
-    background: rgba(239,83,80,.12); color: #ef5350;
-    border: 1px solid rgba(239,83,80,.3); border-radius: 6px;
-    padding: .6rem .8rem; font-size: .85rem; margin-bottom: 1rem;
+  .submit-btn:hover { opacity: .92; }
+  .submit-btn.ibjjf { background: #c0392b; }
+  .submit-btn.sc    { background: #2980b9; }
+  .submit-btn.done  { background: #27ae60; cursor: default; }
+
+  .reset-link { display: block; text-align: center; margin-top: 1rem; color: var(--muted); font-size: .8rem; }
+  .reset-link a { color: var(--muted); text-decoration: underline; }
+
+  .privacy-note {
+    font-size: .72rem; color: var(--muted); margin-top: .6rem; line-height: 1.5;
   }
-  .findme-success {
-    background: rgba(39,174,96,.12); color: #27ae60;
-    border: 1px solid rgba(39,174,96,.3); border-radius: 6px;
-    padding: .9rem 1rem; font-size: .9rem; line-height: 1.5;
-  }
-  .findme-success strong { color: #2ecc71; }
-  .findme-help {
-    margin-top: 1rem; font-size: .75rem; color: var(--muted); line-height: 1.55;
-  }
-  .findme-help a { color: var(--accent); text-decoration: none; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="findme-wrap">
-  <div class="findme-card">
-    <h1>🔎 Find Me</h1>
-    <p class="lede">
-      Can't find your profile? Enter what you know — we'll find you or add you to the database.
+  <div class="findme-intro">
+    <h1>🔎 Find Your Profile</h1>
+    <p>
+      Log in with your IBJJF and/or Smoothcomp accounts. We'll automatically verify your IDs,
+      link them to your profile, and show you your match history. We don't store your password —
+      we only use it to fetch your athlete ID.
     </p>
+  </div>
 
-    {% if submitted %}
-    <div class="findme-success">
-      <strong>Got it — thanks for helping us improve!</strong><br>
-      We couldn't find <em>{{ submitted_name }}</em> in our database yet. Our nightly review
-      will search IBJJF and Smoothcomp for you and add your profile within 24 hours.
-      Check back tomorrow by searching your name.
+  <!-- Status chips -->
+  <div class="findme-status">
+    <div class="findme-chip {% if verified_ibjjf_id %}verified{% endif %}">
+      <span class="label">IBJJF</span>
+      <span class="val">
+        {% if verified_ibjjf_id %}
+          {{ verified_ibjjf_name or verified_ibjjf_id }}
+        {% else %}not linked{% endif %}
+      </span>
     </div>
-    <div class="findme-help" style="margin-top:1.2rem">
-      <a href="/findme">← Submit another</a> &middot;
-      <a href="/search">Go to search</a>
+    <div class="findme-chip {% if verified_sc_uid %}verified{% endif %}">
+      <span class="label">Smoothcomp</span>
+      <span class="val">
+        {% if verified_sc_uid %}#{{ verified_sc_uid }}{% else %}not linked{% endif %}
+      </span>
     </div>
+  </div>
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+      {% for category, msg in msgs %}
+        <div style="background:rgba(239,83,80,.12);color:#ef5350;border:1px solid rgba(239,83,80,.3);border-radius:6px;padding:.6rem .8rem;font-size:.85rem;margin-bottom:1rem">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <!-- IBJJF auth -->
+  <div class="findme-section {% if verified_ibjjf_id %}done{% endif %}">
+    <h2>🥋 IBJJF Login</h2>
+    <p class="sub">Your email and password from ibjjf.com.</p>
+    {% if verified_ibjjf_id %}
+      <button class="submit-btn done" disabled>✓ Verified — IBJJF ID {{ verified_ibjjf_id }}</button>
     {% else %}
-
-    {% if error %}<div class="findme-error">{{ error }}</div>{% endif %}
-
-    <form method="POST" action="/findme">
-      <div class="findme-field">
-        <label>Athlete Name <span class="hint">e.g. Michael Bambic</span></label>
-        <input type="text" name="name" autocomplete="off" placeholder="Full name" autofocus>
-      </div>
-
-      <div class="findme-field">
-        <label>IBJJF Profile Number <span class="hint">optional</span></label>
-        <input type="text" name="ibjjf_id" autocomplete="off"
-               placeholder="e.g. 462510" inputmode="numeric" pattern="[0-9]*">
-      </div>
-
-      <div class="findme-field">
-        <label>Smoothcomp ID <span class="hint">optional</span></label>
-        <input type="text" name="sc_uid" autocomplete="off"
-               placeholder="e.g. 479054" inputmode="numeric" pattern="[0-9]*">
-      </div>
-
-      <button type="submit" class="findme-submit">Find My Profile</button>
-    </form>
-
-    <div class="findme-help">
-      <strong>Where to find your IDs:</strong><br>
-      • IBJJF: log in at <a href="https://ibjjf.com" target="_blank" rel="noopener">ibjjf.com</a>,
-        your profile URL ends in your ID.<br>
-      • Smoothcomp: log in at <a href="https://smoothcomp.com" target="_blank" rel="noopener">smoothcomp.com</a>,
-        your profile URL is <code>smoothcomp.com/en/profile/&lt;id&gt;</code>.<br>
-      • Providing any of the three helps — name alone works, but IDs make the lookup exact.
-    </div>
+      <form method="POST" action="/findme">
+        <input type="hidden" name="action" value="ibjjf">
+        <div class="field">
+          <input type="email" name="email" placeholder="IBJJF email" required autocomplete="email">
+        </div>
+        <div class="field">
+          <input type="password" name="password" placeholder="IBJJF password" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="submit-btn ibjjf">Log in with IBJJF</button>
+      </form>
     {% endif %}
   </div>
+
+  <!-- Smoothcomp auth -->
+  <div class="findme-section {% if verified_sc_uid %}done{% endif %}">
+    <h2>🎯 Smoothcomp Login</h2>
+    <p class="sub">Your email and password from smoothcomp.com.</p>
+    {% if verified_sc_uid %}
+      <button class="submit-btn done" disabled>✓ Verified — SC #{{ verified_sc_uid }}</button>
+    {% else %}
+      <form method="POST" action="/findme">
+        <input type="hidden" name="action" value="smoothcomp">
+        <div class="field">
+          <input type="email" name="email" placeholder="Smoothcomp email" required autocomplete="email">
+        </div>
+        <div class="field">
+          <input type="password" name="password" placeholder="Smoothcomp password" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="submit-btn sc">Log in with Smoothcomp</button>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if verified_ibjjf_id or verified_sc_uid %}
+    <p class="reset-link">
+      <a href="/findme" onclick="event.preventDefault(); document.getElementById('reset-form').submit()">Start over</a>
+    </p>
+    <form id="reset-form" method="POST" action="/findme" style="display:none">
+      <input type="hidden" name="action" value="reset">
+    </form>
+  {% endif %}
+
+  <p class="privacy-note">
+    We connect to IBJJF/Smoothcomp directly with your credentials one time to get your athlete ID.
+    We never store passwords. After logging in, you'll be redirected to your profile.
+  </p>
 </div>
 {% endblock %}
