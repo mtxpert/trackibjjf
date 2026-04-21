@@ -429,8 +429,86 @@ def supabase_upsert(rows: list[dict]) -> int:
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
+# ── Misc: generic Smoothcomp BJJ/grappling events not in a known federation ──
+_MISC_BJJ_KEYWORDS = re.compile(
+    r"\b(bjj|jiu[\s-]?jitsu|jujitsu|grappl|submission|no[\s-]?gi|nogi|"
+    r"adcc|ebi|quintet|sub\s*only|brew\s*jitsu|mma\s*grappl)\b",
+    re.IGNORECASE,
+)
+_KNOWN_SUBDOMAINS = set(SMOOTHCOMP_SUBS.keys())
+
+
+def _extract_subdomain(url: str) -> str:
+    """Return subdomain of a smoothcomp URL. '' if no subdomain (bare smoothcomp.com)."""
+    m = re.match(r"https?://([a-z0-9-]+)\.smoothcomp\.com", url or "", re.I)
+    return m.group(1).lower() if m else ""
+
+
+def scrape_smoothcomp_misc() -> list[dict]:
+    """Generic smoothcomp.com events not already captured by known federations.
+    Filters to BJJ/grappling-keyword events to avoid judo/karate/etc."""
+    url = "https://smoothcomp.com/en/events/upcoming"
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
+        r.raise_for_status()
+    except Exception as e:
+        log.warning("  [misc] fetch failed: %s", e)
+        return []
+
+    raw = _parse_events_js(r.text)
+    today = date.today()
+    rows = []
+    for e in raw:
+        try:
+            event_url = e.get("url") or ""
+            sub = _extract_subdomain(event_url)
+            # Skip if event is on a subdomain we already cover
+            if sub in _KNOWN_SUBDOMAINS:
+                continue
+            title = (e.get("title") or "").strip()
+            if not _MISC_BJJ_KEYWORDS.search(title):
+                continue
+
+            event_id = str(e.get("id") or "").strip()
+            if not event_id:
+                continue
+            start = (e.get("startdate") or "")[:10] or None
+            end = (e.get("enddate") or "")[:10] or None
+            city = (e.get("location_city") or "").strip()
+            country = (e.get("location_country_human") or "").strip()
+            country_code = (e.get("location_country") or "").strip()
+            try:
+                lat = float(e.get("location_lat") or 0) or None
+                lng = float(e.get("location_long") or 0) or None
+            except (ValueError, TypeError):
+                lat = lng = None
+            is_past = bool(end and date.fromisoformat(end) < today)
+
+            rows.append({
+                "source": "misc",
+                "event_id": event_id,
+                "name": title,
+                "start_date": start,
+                "end_date": end,
+                "location": ", ".join([b for b in (city, country) if b]),
+                "city": city,
+                "country": country,
+                "country_code": country_code,
+                "lat": lat,
+                "lng": lng,
+                "url": event_url,  # used by registrations scraper to know subdomain
+                "cover_image": e.get("cover_image") or "",
+                "has_brackets": False,
+                "is_past": is_past,
+                "registered_count": 0,
+            })
+        except Exception as ex:
+            log.warning("  [misc] skip event %s: %s", e.get("id"), ex)
+    return rows
+
+
 def _all_sources():
-    return ["ibjjf"] + [cfg["org"] for cfg in SMOOTHCOMP_SUBS.values()]
+    return ["ibjjf", "misc"] + [cfg["org"] for cfg in SMOOTHCOMP_SUBS.values()]
 
 
 def main():
@@ -463,6 +541,23 @@ def main():
         else:
             n = supabase_upsert(rows)
             per_source_report.append(("ibjjf", len(rows), n))
+            grand_upserted += n
+        grand_scraped += len(rows)
+
+    # Misc: generic Smoothcomp events on subdomains we don't explicitly cover
+    if not want or want == "misc":
+        log.info("=== misc  (generic smoothcomp.com) ===")
+        rows = scrape_smoothcomp_misc()
+        log.info("  [misc] scraped %d events", len(rows))
+        if args.dry_run:
+            for r in rows[:5]:
+                print(f"  {r['event_id']:>10}  {r['start_date']}  {r['name'][:60]}")
+            if len(rows) > 5:
+                print(f"  ...and {len(rows) - 5} more")
+            per_source_report.append(("misc", len(rows), 0))
+        else:
+            n = supabase_upsert(rows)
+            per_source_report.append(("misc", len(rows), n))
             grand_upserted += n
         grand_scraped += len(rows)
 

@@ -591,7 +591,7 @@ def api_geocode():
 
 # ── Smoothcomp-sourced orgs (data lives in tournament_results) ───────────────
 SC_ORG_KEYS = {"adcc", "naga", "compnet", "gi", "fuji", "goodfight", "newbreed",
-               "pbjjf", "united", "subchallenge", "grapplingx", "rollalot"}
+               "pbjjf", "united", "subchallenge", "grapplingx", "rollalot", "misc"}
 
 _SC_TOURNAMENTS_CACHE = {"ts": 0, "data": []}
 _SC_TOURNAMENTS_TTL = 300   # 5 minutes

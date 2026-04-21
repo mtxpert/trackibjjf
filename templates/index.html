@@ -1082,6 +1082,7 @@ const _BROWSE_ORGS = [
   { key:'grapplingx',   name:'Grappling X',  icon:'❌', color:'#f39c12', bg:'rgba(243,156,18,0.15)',  logo:'/static/org-logos/grapplingx.jpg' },
   // Row 4
   { key:'rollalot',     name:'Roll-a-Lot',   icon:'🎲', color:'#16a085', bg:'rgba(22,160,133,0.15)',  logo:'/static/org-logos/rollalot.jpg' },
+  { key:'misc',         name:'Other',        icon:'📋', color:'#7f8c8d', bg:'rgba(127,140,141,0.15)', logo:null },
 ];
 const _BROWSE_ORG_MAP = Object.fromEntries(_BROWSE_ORGS.map(o => [o.key, o]));
 const _BROWSE_LOGOS = Object.fromEntries(_BROWSE_ORGS.filter(o=>o.logo).map(o=>[o.key,o.logo]));
@@ -1641,7 +1642,7 @@ function _isNagaMode() {
 // + IBJJF (used as a fallback when the live bjjcompsystem cache is empty).
 const SC_REGISTRATIONS_SOURCES = new Set([
   'ibjjf','adcc','naga','compnet','gi','fuji','goodfight','newbreed',
-  'pbjjf','united','subchallenge','grapplingx','rollalot',
+  'pbjjf','united','subchallenge','grapplingx','rollalot','misc',
 ]);
 
 function _isScRegistrationsMode() {
