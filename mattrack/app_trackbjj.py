@@ -326,11 +326,12 @@ def findme():
         # if they're not in the top-ranked cache we scrape
         try:
             sb.table("ibjjf_athletes").upsert({
-                "ibjjf_id": str(athlete_id),
-                "name":     ibjjf_name,
-                "belt":     (profile.get("belt") or "").lower() or None,
-                "academy":  profile.get("academy") or profile.get("team") or None,
-                "gender":   profile.get("gender") or None,
+                "ibjjf_id":    str(athlete_id),
+                "name":        ibjjf_name,
+                "name_lower":  (ibjjf_name or "").lower(),
+                "belt":        (profile.get("belt") or "").lower() or None,
+                "academy":     profile.get("academy") or profile.get("team") or None,
+                "gender":      profile.get("gender") or None,
             }, on_conflict="ibjjf_id").execute()
         except Exception as e:
             log.warning("findme ibjjf_athletes upsert failed: %s", e)
