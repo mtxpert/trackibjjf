@@ -771,6 +771,42 @@ def _athlete_profile_inner(sc_uid):
             if first_name_score(first_name, row_name) >= 0.50:
                 upcoming_rows.append(dict(row, _source="ibjjf"))
 
+    # Fetch bracket-mates for each upcoming registration (everyone else in
+    # the same event + division). Batched per-(event,division) — typical
+    # athlete has 1-5 upcoming registrations.
+    for row in upcoming_rows:
+        eid = row.get("event_id")
+        div = row.get("division")
+        src = row.get("source") or "ibjjf"
+        if not (eid and div):
+            row["bracket_mates"] = []
+            continue
+        try:
+            mates_res = (sb.table("tournament_results")
+                           .select("athlete_name,athlete_display,team,athlete_id")
+                           .eq("source", src)
+                           .eq("event_id", str(eid))
+                           .eq("division", div)
+                           .eq("status", "registered")
+                           .limit(200)
+                           .execute())
+            self_name = normalize(row.get("athlete_display") or row.get("athlete_name") or "")
+            mates = []
+            for m in (mates_res.data or []):
+                mn = normalize(m.get("athlete_display") or m.get("athlete_name") or "")
+                if mn == self_name:
+                    continue
+                mates.append({
+                    "name": m.get("athlete_display") or m.get("athlete_name") or "",
+                    "team": m.get("team") or "",
+                    "sc_uid": m.get("athlete_id") or None,
+                })
+            mates.sort(key=lambda x: x["name"].lower())
+            row["bracket_mates"] = mates
+        except Exception as e:
+            log.warning("bracket-mates fetch failed: %s", e)
+            row["bracket_mates"] = []
+
     # IBJJF results
     ibjjf_rows = []
     ibjjf_verified = bool(verified_claim)
