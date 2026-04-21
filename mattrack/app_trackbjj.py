@@ -568,6 +568,29 @@ def claim_me():
 
         session["findme_ibjjf_id"] = str(athlete_id)
         session["findme_ibjjf_name"] = ibjjf_name
+        # Trust the sc_uid from intent (came from a searched profile card): if
+        # that sc_uid isn't already linked to a DIFFERENT ibjjf_id, treat it as
+        # the target for linking on this claim.
+        if intent_sc and not session.get("findme_sc_uid"):
+            try:
+                sc_existing = (sb.table("sc_ibjjf_verified")
+                                 .select("ibjjf_athlete_id")
+                                 .eq("sc_uid", str(intent_sc))
+                                 .limit(1).execute())
+            except Exception:
+                sc_existing = None
+            conflict = False
+            if sc_existing and sc_existing.data:
+                linked_ibjjf = str(sc_existing.data[0].get("ibjjf_athlete_id") or "")
+                if linked_ibjjf and linked_ibjjf != str(athlete_id):
+                    flash(
+                        "That profile is already linked to a different IBJJF account.",
+                        "error",
+                    )
+                    conflict = True
+            if conflict:
+                return redirect(url_for("claim_me"))
+            session["findme_sc_uid"] = str(intent_sc)
         return _findme_resolve(session)
 
     if action == "smoothcomp":
@@ -609,6 +632,37 @@ def claim_me():
 
         session["findme_sc_uid"] = sc_authed
         session["findme_sc_email"] = result.get("email") or email
+        # If we have an IBJJF intent (came from searched row), trust it for
+        # linking provided it isn't already bound to a different sc_uid.
+        if intent_ibjjf and not session.get("findme_ibjjf_id"):
+            try:
+                ib_existing = (sb.table("sc_ibjjf_verified")
+                                 .select("sc_uid")
+                                 .eq("ibjjf_athlete_id", str(intent_ibjjf))
+                                 .limit(1).execute())
+            except Exception:
+                ib_existing = None
+            conflict = False
+            if ib_existing and ib_existing.data:
+                linked_sc = str(ib_existing.data[0].get("sc_uid") or "")
+                if linked_sc and linked_sc != sc_authed:
+                    flash(
+                        "That IBJJF profile is already claimed on a different account.",
+                        "error",
+                    )
+                    conflict = True
+            if conflict:
+                return redirect(url_for("claim_me"))
+            session["findme_ibjjf_id"] = str(intent_ibjjf)
+            try:
+                ia_res = (sb.table("ibjjf_athletes")
+                            .select("name")
+                            .eq("ibjjf_id", str(intent_ibjjf))
+                            .limit(1).execute())
+                if ia_res.data:
+                    session["findme_ibjjf_name"] = ia_res.data[0].get("name") or ""
+            except Exception:
+                pass
         return _findme_resolve(session)
 
     if action == "reset":
