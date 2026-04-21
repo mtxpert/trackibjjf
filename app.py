@@ -593,6 +593,10 @@ _SC_TOURNAMENTS_TTL = 300   # 5 minutes
 _TOURNAMENTS_CACHE = {"ts": 0, "data": None}
 _TOURNAMENTS_TTL = 180  # 3 minutes
 
+# Per-event roster cache: (source, event_id) -> {ts, data}
+_ROSTER_CACHE = {}
+_ROSTER_TTL = 300  # 5 minutes
+
 
 def _get_db_tournaments_for_sources(sources):
     """Aggregate distinct events per (source, event_id) from tournament_results
@@ -651,63 +655,46 @@ def _get_db_tournaments_for_sources(sources):
 @app.route("/api/sc-teams/<source>/<event_id>")
 def api_sc_teams(source, event_id):
     """Return {teams, athletes, athlete_count} for a Smoothcomp-source event.
-    Queries tournament_results WHERE source=X AND event_id=Y AND status='registered'.
-
-    Also supports 'ibjjf' as a registrations fallback when the live
-    bjjcompsystem roster cache hasn't been built yet (scrape_ibjjf_registrations
-    pushes these rows nightly)."""
-    # SC_ORG_KEYS is used for tournament-list aggregation and must not include
-    # 'ibjjf' (that org comes from a separate scraper and would be duplicated).
-    # For the roster endpoint, 'ibjjf' is an allowed fallback source.
+    Uses server-side RPC get_event_roster for sub-second aggregation on large
+    events (e.g., 7K+ athletes at Brasileiro). Results cached 5 min in-memory.
+    """
     if source not in SC_ORG_KEYS and source != "ibjjf":
         return jsonify({"error": "unknown source"}), 400
+
+    cache_key = (source, event_id)
+    now = time.time()
+    cached = _ROSTER_CACHE.get(cache_key)
+    if cached and (now - cached["ts"]) < _ROSTER_TTL:
+        resp = jsonify(cached["data"])
+        resp.headers["X-Cache"] = "HIT"
+        return resp
+
     try:
         import requests as _req
         sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
         sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
-        headers = {
-            "apikey": sb_key,
-            "Authorization": f"Bearer {sb_key}",
-            "Accept": "application/json",
-        }
-        page_size = 1000
-        offset = 0
-        rows_all = []
-        while True:
-            url = (f"{sb_url}/rest/v1/tournament_results"
-                   f"?select=athlete_display,team,division"
-                   f"&source=eq.{source}"
-                   f"&event_id=eq.{event_id}"
-                   f"&status=eq.registered"
-                   f"&limit={page_size}&offset={offset}")
-            r = _req.get(url, headers=headers, timeout=10)
-            batch = r.json() if r.ok else []
-            rows_all.extend(batch)
-            if len(batch) < page_size:
-                break
-            offset += page_size
+        r = _req.post(
+            f"{sb_url}/rest/v1/rpc/get_event_roster",
+            headers={
+                "apikey": sb_key,
+                "Authorization": f"Bearer {sb_key}",
+                "Content-Type": "application/json",
+            },
+            json={"p_source": source, "p_event_id": str(event_id)},
+            timeout=15,
+        )
+        if not r.ok:
+            logger.error("get_event_roster RPC failed: %s", r.text[:200])
+            return jsonify({"teams": [], "athletes": [], "athlete_count": 0}), 502
+        data = r.json() or {}
     except Exception as e:
         logger.error("api_sc_teams failed source=%s event=%s: %s", source, event_id, e)
         return jsonify({"teams": [], "athletes": [], "athlete_count": 0, "error": str(e)}), 500
 
-    team_counts = {}
-    seen_ath = {}
-    for r in rows_all:
-        nm = (r.get("athlete_display") or "").strip()
-        tm = (r.get("team") or "").strip()
-        if tm:
-            team_counts[tm] = team_counts.get(tm, 0) + 1
-        if nm:
-            key = (nm.lower(), tm.lower())
-            if key not in seen_ath:
-                seen_ath[key] = {"name": nm, "team": tm, "division": r.get("division", "")}
-
-    teams = sorted(
-        [{"name": t, "count": c} for t, c in team_counts.items()],
-        key=lambda x: (-x["count"], x["name"].lower()),
-    )
-    athletes = sorted(seen_ath.values(), key=lambda x: x["name"].lower())
-    return jsonify({"teams": teams, "athletes": athletes, "athlete_count": len(athletes)})
+    _ROSTER_CACHE[cache_key] = {"ts": now, "data": data}
+    resp = jsonify(data)
+    resp.headers["X-Cache"] = "MISS"
+    return resp
 
 
 @app.route("/api/tournaments")
