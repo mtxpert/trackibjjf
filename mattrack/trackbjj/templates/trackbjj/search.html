@@ -78,30 +78,34 @@ function renderResults(rows) {
     const srcs = Array.isArray(r.sources) ? r.sources : (r.sources || '').split(',').filter(Boolean);
     const dots = srcs.map(s => `<span class="src-dot" style="background:${SOURCE_COLORS[s]||'#888'}" title="${s}"></span>`).join('');
     const last = r.last_seen ? r.last_seen.slice(0,10) : '';
+    const hasKey = r.athlete_id || r.ibjjf_id;
     const href = r.athlete_id
       ? `/athlete/${r.athlete_id}`
-      : (r.ibjjf_id ? `/ibjjf-athlete/${r.ibjjf_id}` : '#');
+      : (r.ibjjf_id ? `/ibjjf-athlete/${r.ibjjf_id}` : null);
 
-    // Claim button: unclaimed → CTA link; claimed → green pill.
-    // Click on the button must not bubble to the card link.
     const claimParams = new URLSearchParams();
     if (r.ibjjf_id) claimParams.set('ibjjf_id', r.ibjjf_id);
     if (r.athlete_id) claimParams.set('sc_uid', r.athlete_id);
+    if (!hasKey && r.display_name) claimParams.set('hint_name', r.display_name);
     const claimUrl = '/claim-me?' + claimParams.toString();
     const claimEl = r.claimed
       ? `<span class="claimed-pill">✓ claimed</span>`
       : `<a class="claim-btn" href="${claimUrl}" onclick="event.stopPropagation()">This is me — Claim</a>`;
 
-    return `<a class="athlete-row" href="${href}">
-      <div class="name">${r.display_name || '—'}</div>
+    const unlinkedBadge = hasKey ? '' : '<span style="font-size:.65rem;color:var(--muted);font-style:italic;margin-left:.5rem">(unlinked)</span>';
+    const inner = `
+      <div class="name">${r.display_name || '—'}${unlinkedBadge}</div>
       <div class="team">${r.team || ''}</div>
       <div class="sources">${dots}</div>
       <div class="meta">
         <span class="events-badge">${r.event_count || 0} results</span><br>
         <span style="margin-top:.2rem;display:inline-block">${last}</span><br>
         <span style="margin-top:.35rem;display:inline-block">${claimEl}</span>
-      </div>
-    </a>`;
+      </div>`;
+
+    return href
+      ? `<a class="athlete-row" href="${href}">${inner}</a>`
+      : `<div class="athlete-row" style="cursor:default">${inner}</div>`;
   }).join('') + '</div>';
 }
 

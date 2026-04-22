@@ -1438,8 +1438,12 @@ def api_search():
     for r in rows:
         sc_uid = r.get("sc_uid")
         ibjjf_id = r.get("ibjjf_id")
-        if not sc_uid and not ibjjf_id:
-            continue  # neither keyed — skip
+        display = r.get("athlete_display") or r.get("athlete_name", "")
+        # Rows with neither key are "loose" IBJJF tournament matches — keep
+        # them if they have a display name so the user can still see the
+        # aggregated history and claim it via /claim-me.
+        if not sc_uid and not ibjjf_id and not display:
+            continue
         country = r.get("country") or ""
         if country in (r"\N", "\\N", "\\\\N"):
             country = ""
@@ -1450,7 +1454,7 @@ def api_search():
             "athlete_id":   sc_uid,
             "ibjjf_id":     ibjjf_id,
             "claimed":      bool(r.get("claimed")),
-            "display_name": r.get("athlete_display") or r.get("athlete_name", ""),
+            "display_name": display,
             "team":         r.get("team") or "",
             "country":      country,
             "event_count":  r.get("result_count", 0),
