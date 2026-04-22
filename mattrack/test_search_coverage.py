@@ -233,6 +233,37 @@ def pct(x, total):
     return f"{(100*x/total):.0f}%" if total else "–"
 
 
+SOURCES_TO_TEST = [
+    "smoothcomp", "ibjjf", "ajp", "uaejjf", "adcc",
+    "gi", "naga", "sjjif", "fuji", "newbreed",
+    "compnet", "grapplingx", "united", "subchallenge",
+    "pbjjf", "goodfight", "rollalot",
+]
+
+
+def top_n_per_source(source: str, n: int = 15):
+    """Top-N athletes by row count in a given source, grouping by lowered name
+    (many sources store athlete_id as the literal string '\\N' so athlete_id is
+    not a reliable identifier)."""
+    sql = f"""
+    SELECT
+      MAX(athlete_name) AS athlete_name,
+      lower(athlete_name) AS name_norm,
+      MAX(team) AS team,
+      COUNT(*) AS rows,
+      MAX(event_date) AS last_seen
+    FROM tournament_results
+    WHERE source = '{source}'
+      AND athlete_name IS NOT NULL
+      AND length(trim(athlete_name)) > 2
+    GROUP BY lower(athlete_name)
+    ORDER BY rows DESC
+    LIMIT {n};
+    """
+    rows = _exec_sql(sql)
+    return rows
+
+
 def main():
     print("=" * 78)
     print("TEST: Top 3 IBJJF Adult Black Belts per (gender × gi/nogi × weight) — findable?")
@@ -312,11 +343,52 @@ def main():
 
     print()
     print("=" * 78)
+    print("TEST: Per-source — top 15 athletes by row count findable via search")
+    print("=" * 78)
+    per_source = {}
+    src_total_hits = 0
+    src_total_fixtures = 0
+    for source in SOURCES_TO_TEST:
+        try:
+            fixtures = top_n_per_source(source, 15)
+        except Exception as e:
+            print(f"\n  {source}: fetch failed ({e})")
+            continue
+        if not fixtures:
+            print(f"\n  {source}: no fixtures")
+            continue
+        print(f"\n  {source}  ({len(fixtures)} fixtures, most-active athletes):")
+        h, t = 0, 0
+        for f in fixtures:
+            name = f.get("athlete_name") or ""
+            if not name:
+                continue
+            t += 1
+            src_total_fixtures += 1
+            results = run_search(name)
+            ok = any(name_matches(name, r.get("athlete_display") or "") for r in results
+                     if isinstance(r, dict))
+            if ok:
+                h += 1
+                src_total_hits += 1
+            marker = "PASS" if ok else "FAIL"
+            team = (f.get("team") or "")[:22]
+            print(f"    [{marker}] {name[:32]:32s} ({f.get('rows',0):>3} rows, {team:22s}) → {len(results)} hits")
+        per_source[source] = (h, t)
+
+    print()
+    print("  per-source coverage:")
+    for src, (h, t) in per_source.items():
+        print(f"    {src:16s}  {h:>2}/{t:<2}  ({pct(h,t)})")
+
+    print()
+    print("=" * 78)
     print(f"SUMMARY")
     print("=" * 78)
     print(f"  IBJJF top black belts:  {ibjjf_hits}/{ibjjf_total}  ({pct(ibjjf_hits, ibjjf_total)})")
     print(f"  ADCC USA gold medalists: {adcc_hits}/{adcc_total} ({pct(adcc_hits, adcc_total)})")
-    failures = (ibjjf_total - ibjjf_hits) + (adcc_total - adcc_hits)
+    print(f"  Per-source top-15:      {src_total_hits}/{src_total_fixtures} ({pct(src_total_hits, src_total_fixtures)})")
+    failures = (ibjjf_total - ibjjf_hits) + (adcc_total - adcc_hits) + (src_total_fixtures - src_total_hits)
     print(f"  TOTAL FAILURES: {failures}")
     return 1 if failures else 0
 
