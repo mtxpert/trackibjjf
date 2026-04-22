@@ -52,24 +52,44 @@ def name_matches(want: str, candidate: str) -> bool:
     return a in b or b in a
 
 
-def top_ibjjf_black_belts(n=3):
-    res = (sb.table("ibjjf_athletes")
-             .select("ibjjf_id,name,academy,points")
-             .eq("belt", "black")
-             .eq("ranking_category", "adult")
-             .order("points", desc=True, nullsfirst=False)
-             .limit(15)
-             .execute())
-    seen = set()
-    out = []
-    for row in (res.data or []):
-        key = normalize(row["name"])
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(row)
-        if len(out) >= n:
-            break
+IBJJF_CATEGORIES = [
+    ("male",   "gi"),
+    ("male",   "nogi"),
+    ("female", "gi"),
+    ("female", "nogi"),
+]
+
+
+def top_ibjjf_per_category(n=3):
+    """Top N adult black belts in each (gender, gi/nogi) combo.
+
+    NB: ibjjf_athletes stores points per (gender, gi_nogi) but NOT per weight
+    class — weight rankings would require hitting ibjjf.com live per weight
+    slug (see ibjjf_rankings.fetch_rank). This sticks to our local cache and
+    covers the 4 main ranking buckets, 3 athletes each = 12 fixtures.
+    """
+    out = {}
+    for gender, gi_nogi in IBJJF_CATEGORIES:
+        res = (sb.table("ibjjf_athletes")
+                 .select("ibjjf_id,name,academy,points,gi_nogi,gender")
+                 .eq("belt", "black")
+                 .eq("ranking_category", "adult")
+                 .eq("gender", gender)
+                 .eq("gi_nogi", gi_nogi)
+                 .order("points", desc=True, nullsfirst=False)
+                 .limit(15)
+                 .execute())
+        seen = set()
+        picks = []
+        for row in (res.data or []):
+            key = normalize(row["name"])
+            if key in seen:
+                continue
+            seen.add(key)
+            picks.append(row)
+            if len(picks) >= n:
+                break
+        out[(gender, gi_nogi)] = picks
     return out
 
 
@@ -132,27 +152,39 @@ def pct(x, total):
 
 def main():
     print("=" * 78)
-    print("TEST: Top IBJJF Adult Black Belts — findable by name?")
+    print("TEST: Top 3 IBJJF Adult Black Belts per (gender × gi/nogi) — findable?")
     print("=" * 78)
     ibjjf_hits = 0
     ibjjf_total = 0
-    for a in top_ibjjf_black_belts(3):
-        ibjjf_total += 1
-        name = a["name"]
-        results = run_search(name)
-        found_by_id = any(str(r.get("ibjjf_id") or "") == str(a["ibjjf_id"]) for r in results)
-        found_by_name = any(name_matches(name, r.get("athlete_display") or "") for r in results)
-        ok = found_by_id or found_by_name
-        if ok:
-            ibjjf_hits += 1
-        marker = "PASS" if ok else "FAIL"
-        pts = f"{a.get('points') or 0:.0f} pts"
-        print(f"  [{marker}] {name:45s} ({a['ibjjf_id']}, {pts}) → {len(results)} hits"
-              + (f" (id match)" if found_by_id else ("" if not found_by_name else " (name match)")))
-        if not ok:
-            print(f"         ↳ top results: "
-                  + ", ".join(f"{r.get('athlete_display') or '?'}"
-                              for r in results[:3] if isinstance(r, dict)))
+    per_bucket = {}
+    for (gender, gi_nogi), picks in top_ibjjf_per_category(3).items():
+        bucket_label = f"{gender.title()} {gi_nogi.upper()}"
+        print(f"\n  {bucket_label}:")
+        h, t = 0, 0
+        for a in picks:
+            ibjjf_total += 1
+            t += 1
+            name = a["name"]
+            results = run_search(name)
+            found_by_id = any(str(r.get("ibjjf_id") or "") == str(a["ibjjf_id"]) for r in results)
+            found_by_name = any(name_matches(name, r.get("athlete_display") or "") for r in results)
+            ok = found_by_id or found_by_name
+            if ok:
+                ibjjf_hits += 1
+                h += 1
+            marker = "PASS" if ok else "FAIL"
+            pts = f"{a.get('points') or 0:.0f} pts"
+            tag = " (id match)" if found_by_id else (" (name match)" if found_by_name else "")
+            print(f"    [{marker}] {name[:40]:40s} ({a['ibjjf_id']:14s}, {pts:>10s}) → {len(results)} hits{tag}")
+            if not ok:
+                print(f"           ↳ top results: "
+                      + ", ".join(f"{r.get('athlete_display') or '?'}"
+                                  for r in results[:3] if isinstance(r, dict)))
+        per_bucket[bucket_label] = (h, t)
+    print()
+    print("  per-bucket coverage:")
+    for label, (h, t) in per_bucket.items():
+        print(f"    {label:18s}  {h}/{t}  ({pct(h,t)})")
 
     print()
     print("=" * 78)
