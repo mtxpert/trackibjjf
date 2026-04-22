@@ -1083,6 +1083,21 @@ def _athlete_profile_inner(sc_uid):
                      .limit(20)
                      .execute())
         candidates = cand_res.data or []
+        # Exclude IBJJF athletes already claimed by a DIFFERENT sc_uid — their
+        # data belongs to whoever verified them, not an anonymous name-alike.
+        if candidates:
+            try:
+                cand_ids = [str(c["ibjjf_id"]) for c in candidates if c.get("ibjjf_id") is not None]
+                v_res = (sb.table("sc_ibjjf_verified")
+                           .select("ibjjf_athlete_id,sc_uid")
+                           .in_("ibjjf_athlete_id", cand_ids)
+                           .execute())
+                taken = {str(vr["ibjjf_athlete_id"]) for vr in (v_res.data or [])
+                         if str(vr.get("sc_uid") or "") != str(sc_uid)}
+                if taken:
+                    candidates = [c for c in candidates if str(c["ibjjf_id"]) not in taken]
+            except Exception as e:
+                log.warning("fuzzy-match claim exclusion failed: %s", e)
         best_score = 0.0
         for c in candidates:
             cname = normalize(c["name"] or "")
@@ -1098,13 +1113,32 @@ def _athlete_profile_inner(sc_uid):
     upcoming_rows = []
     if last_name:
         reg_res = (sb.table("tournament_results")
-                    .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,status,event_id")
+                    .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,status,event_id,ibjjf_athlete_id")
                     .eq("source", "ibjjf")
                     .eq("status", "registered")
                     .ilike("athlete_name", f"%{last_name}%")
                     .order("event_date")
                     .execute())
-        for row in (reg_res.data or []):
+        reg_rows = reg_res.data or []
+        # Exclude registrations whose ibjjf_athlete_id belongs to a different claimed sc_uid.
+        if reg_rows:
+            tagged_ids = {str(r["ibjjf_athlete_id"]) for r in reg_rows
+                          if r.get("ibjjf_athlete_id") is not None}
+            taken = set()
+            if tagged_ids:
+                try:
+                    v_res = (sb.table("sc_ibjjf_verified")
+                               .select("ibjjf_athlete_id,sc_uid")
+                               .in_("ibjjf_athlete_id", list(tagged_ids))
+                               .execute())
+                    taken = {str(vr["ibjjf_athlete_id"]) for vr in (v_res.data or [])
+                             if str(vr.get("sc_uid") or "") != str(sc_uid)}
+                except Exception as e:
+                    log.warning("upcoming-reg claim exclusion failed: %s", e)
+            if taken:
+                reg_rows = [r for r in reg_rows
+                            if str(r.get("ibjjf_athlete_id") or "") not in taken]
+        for row in reg_rows:
             row_name = normalize(row.get("athlete_display") or row.get("athlete_name") or "")
             if first_name_score(first_name, row_name) >= 0.50:
                 upcoming_rows.append(dict(row, _source="ibjjf"))
@@ -1180,13 +1214,33 @@ def _athlete_profile_inner(sc_uid):
 
     if not ibjjf_rows and last_name:
         fb_res = (sb.table("tournament_results")
-                   .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,event_id")
+                   .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,event_id,ibjjf_athlete_id")
                    .eq("source", "ibjjf")
                    .ilike("athlete_name", f"%{last_name}%")
                    .or_("status.is.null,status.neq.registered")
                    .order("event_date")
                    .execute())
-        for row in (fb_res.data or []):
+        fb_rows = fb_res.data or []
+        # Strip any rows whose ibjjf_athlete_id is already claimed by a
+        # different sc_uid — those belong to the verified owner.
+        if fb_rows:
+            tagged_ids = {str(r["ibjjf_athlete_id"]) for r in fb_rows
+                          if r.get("ibjjf_athlete_id") is not None}
+            taken = set()
+            if tagged_ids:
+                try:
+                    v_res = (sb.table("sc_ibjjf_verified")
+                               .select("ibjjf_athlete_id,sc_uid")
+                               .in_("ibjjf_athlete_id", list(tagged_ids))
+                               .execute())
+                    taken = {str(vr["ibjjf_athlete_id"]) for vr in (v_res.data or [])
+                             if str(vr.get("sc_uid") or "") != str(sc_uid)}
+                except Exception as e:
+                    log.warning("fallback IBJJF claim exclusion failed: %s", e)
+            if taken:
+                fb_rows = [r for r in fb_rows
+                           if str(r.get("ibjjf_athlete_id") or "") not in taken]
+        for row in fb_rows:
             row_fp = parse_division(row.get("division") or "")
             if not age_matches(fp.get("age"), row_fp.get("age")):
                 continue
