@@ -59,28 +59,111 @@ IBJJF_CATEGORIES = [
     ("female", "nogi"),
 ]
 
+WEIGHT_ORDER = [
+    "rooster", "light-feather", "feather", "light",
+    "middle", "medium-heavy", "heavy", "super-heavy", "ultra-heavy",
+]
+
+
+def _exec_sql(query: str) -> list:
+    """Execute SQL via Supabase Management API (read-only SELECTs here)."""
+    import requests as _req
+    pat = os.environ.get("SUPABASE_PAT", "")
+    ref = os.environ.get("SUPABASE_PROJECT_REF", "kzqvfuqxtbrhlgphyntb")
+    if not pat:
+        raise RuntimeError("SUPABASE_PAT env var required for per-weight bucketing")
+    r = _req.post(
+        f"https://api.supabase.com/v1/projects/{ref}/database/query",
+        json={"query": query},
+        headers={"Authorization": f"Bearer {pat}", "User-Agent": "trackbjj-tests/1.0"},
+        timeout=60,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def top_ibjjf_per_weight(n_per_bucket=3, per_category_pool=500):
+    """Top N adult black belts by (gender × gi/nogi × main weight class).
+
+    ibjjf_athletes has no weight column, so we derive each athlete's main
+    weight from the divisions they've competed in (tournament_results rows
+    matching their ibjjf_athlete_id). Runs one query per (gender × gi_nogi)
+    so that lower-scoring-but-still-top categories (e.g., Female NoGi) get
+    fair representation instead of being crowded out by overall top-ranked.
+    """
+    buckets = {}
+    for gender, gi_nogi in IBJJF_CATEGORIES:
+        # Only 437/941k tournament_results rows have ibjjf_athlete_id populated
+        # — so we join on lowercased name (via name_lower on ibjjf_athletes) rather
+        # than ibjjf_athlete_id.
+        sql = f"""
+        WITH pool AS (
+          SELECT ibjjf_id, name, name_lower, gender, gi_nogi, points
+          FROM ibjjf_athletes
+          WHERE belt = 'black' AND ranking_category = 'adult'
+            AND gender = '{gender}' AND gi_nogi = '{gi_nogi}'
+            AND points IS NOT NULL
+          ORDER BY points DESC NULLS LAST
+          LIMIT {per_category_pool}
+        ),
+        divs AS (
+          SELECT p.ibjjf_id,
+            CASE
+              WHEN tr.division ILIKE '%light feather%'  OR tr.division ILIKE '%lightfeather%'  OR tr.division ILIKE '%galo-pluma%' THEN 'light-feather'
+              WHEN tr.division ILIKE '%medium heavy%'   OR tr.division ILIKE '%mediumheavy%'   OR tr.division ILIKE '%meio pesado%' THEN 'medium-heavy'
+              WHEN tr.division ILIKE '%super heavy%'    OR tr.division ILIKE '%superheavy%'    OR tr.division ILIKE '%super pesado%' THEN 'super-heavy'
+              WHEN tr.division ILIKE '%ultra heavy%'    OR tr.division ILIKE '%ultraheavy%'    OR tr.division ILIKE '%pesadissimo%' THEN 'ultra-heavy'
+              WHEN tr.division ILIKE '%rooster%'        OR tr.division ILIKE '%galo%'          THEN 'rooster'
+              WHEN tr.division ILIKE '%feather%'        OR tr.division ILIKE '%pluma%'         THEN 'feather'
+              WHEN tr.division ILIKE '%middle%'         OR tr.division ILIKE '%medio%'         THEN 'middle'
+              WHEN tr.division ILIKE '%heavy%'          OR tr.division ILIKE '%pesado%'        THEN 'heavy'
+              WHEN tr.division ILIKE '%light%'          OR tr.division ILIKE '%leve%'          THEN 'light'
+              ELSE NULL
+            END AS weight
+          FROM tournament_results tr
+          INNER JOIN pool p ON lower(tr.athlete_name) = p.name_lower
+          WHERE tr.source = 'ibjjf'
+        ),
+        main AS (
+          SELECT ibjjf_id, weight,
+                 ROW_NUMBER() OVER (PARTITION BY ibjjf_id ORDER BY COUNT(*) DESC) AS rn
+          FROM divs
+          WHERE weight IS NOT NULL
+          GROUP BY ibjjf_id, weight
+        ),
+        ranked AS (
+          SELECT p.ibjjf_id, p.name, p.gender, p.gi_nogi, p.points, m.weight,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY m.weight
+                   ORDER BY p.points DESC NULLS LAST
+                 ) AS rank_in_bucket
+          FROM pool p
+          INNER JOIN main m ON m.ibjjf_id = p.ibjjf_id AND m.rn = 1
+        )
+        SELECT ibjjf_id, name, gender, gi_nogi, points, weight, rank_in_bucket
+        FROM ranked
+        WHERE rank_in_bucket <= {n_per_bucket}
+        ORDER BY weight, rank_in_bucket;
+        """
+        rows = _exec_sql(sql)
+        for r in rows:
+            key = (r["gender"], r["gi_nogi"], r["weight"])
+            buckets.setdefault(key, []).append(r)
+    return buckets
+
 
 def top_ibjjf_per_category(n=3):
-    """Top N adult black belts in each (gender, gi/nogi) combo.
-
-    NB: ibjjf_athletes stores points per (gender, gi_nogi) but NOT per weight
-    class — weight rankings would require hitting ibjjf.com live per weight
-    slug (see ibjjf_rankings.fetch_rank). This sticks to our local cache and
-    covers the 4 main ranking buckets, 3 athletes each = 12 fixtures.
-    """
+    """Fallback bucket-by-(gender × gi_nogi) — kept for comparison."""
     out = {}
     for gender, gi_nogi in IBJJF_CATEGORIES:
         res = (sb.table("ibjjf_athletes")
                  .select("ibjjf_id,name,academy,points,gi_nogi,gender")
-                 .eq("belt", "black")
-                 .eq("ranking_category", "adult")
-                 .eq("gender", gender)
-                 .eq("gi_nogi", gi_nogi)
+                 .eq("belt", "black").eq("ranking_category", "adult")
+                 .eq("gender", gender).eq("gi_nogi", gi_nogi)
                  .order("points", desc=True, nullsfirst=False)
                  .limit(15)
                  .execute())
-        seen = set()
-        picks = []
+        seen, picks = set(), []
         for row in (res.data or []):
             key = normalize(row["name"])
             if key in seen:
@@ -152,16 +235,26 @@ def pct(x, total):
 
 def main():
     print("=" * 78)
-    print("TEST: Top 3 IBJJF Adult Black Belts per (gender × gi/nogi) — findable?")
+    print("TEST: Top 3 IBJJF Adult Black Belts per (gender × gi/nogi × weight) — findable?")
     print("=" * 78)
     ibjjf_hits = 0
     ibjjf_total = 0
     per_bucket = {}
-    for (gender, gi_nogi), picks in top_ibjjf_per_category(3).items():
-        bucket_label = f"{gender.title()} {gi_nogi.upper()}"
+    buckets = top_ibjjf_per_weight(3, per_category_pool=500)
+
+    def weight_sort(weight):
+        try:
+            return WEIGHT_ORDER.index(weight)
+        except ValueError:
+            return 99
+
+    ordered_keys = sorted(buckets.keys(), key=lambda k: (k[0], k[1], weight_sort(k[2])))
+    for key in ordered_keys:
+        gender, gi_nogi, weight = key
+        bucket_label = f"{gender.title()} {gi_nogi.upper()} / {weight}"
         print(f"\n  {bucket_label}:")
         h, t = 0, 0
-        for a in picks:
+        for a in buckets[key]:
             ibjjf_total += 1
             t += 1
             name = a["name"]
@@ -175,16 +268,17 @@ def main():
             marker = "PASS" if ok else "FAIL"
             pts = f"{a.get('points') or 0:.0f} pts"
             tag = " (id match)" if found_by_id else (" (name match)" if found_by_name else "")
-            print(f"    [{marker}] {name[:40]:40s} ({a['ibjjf_id']:14s}, {pts:>10s}) → {len(results)} hits{tag}")
+            print(f"    [{marker}] #{a['rank_in_bucket']} {name[:38]:38s} ({str(a['ibjjf_id'])[:16]:16s}, {pts:>9s}) → {len(results)} hits{tag}")
             if not ok:
-                print(f"           ↳ top results: "
-                      + ", ".join(f"{r.get('athlete_display') or '?'}"
-                                  for r in results[:3] if isinstance(r, dict)))
+                tops = ", ".join(f"{r.get('athlete_display') or '?'}"
+                                 for r in results[:3] if isinstance(r, dict))
+                print(f"           ↳ top results: {tops}")
         per_bucket[bucket_label] = (h, t)
+
     print()
     print("  per-bucket coverage:")
     for label, (h, t) in per_bucket.items():
-        print(f"    {label:18s}  {h}/{t}  ({pct(h,t)})")
+        print(f"    {label:38s}  {h}/{t}  ({pct(h,t)})")
 
     print()
     print("=" * 78)
