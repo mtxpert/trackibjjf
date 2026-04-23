@@ -242,9 +242,10 @@ SOURCES_TO_TEST = [
 
 
 def top_n_per_source(source: str, n: int = 15):
-    """Top-N athletes by row count in a given source, grouping by lowered name
-    (many sources store athlete_id as the literal string '\\N' so athlete_id is
-    not a reliable identifier)."""
+    """Top-N *real* athletes by row count in a given source. Skips known
+    placeholder names (from scrape_utils.is_placeholder_name — 'unknown user',
+    'winner not determined', etc.) so the fixture pool isn't dominated by
+    scraper artifacts."""
     sql = f"""
     SELECT
       MAX(athlete_name) AS athlete_name,
@@ -256,6 +257,13 @@ def top_n_per_source(source: str, n: int = 15):
     WHERE source = '{source}'
       AND athlete_name IS NOT NULL
       AND length(trim(athlete_name)) > 2
+      AND lower(athlete_name) NOT LIKE '%unknown user%'
+      AND lower(athlete_name) NOT LIKE '%winner not determined%'
+      AND lower(athlete_name) NOT LIKE '%not defined%'
+      AND lower(athlete_name) NOT LIKE '%no athlete%'
+      AND lower(athlete_name) NOT LIKE '%forfeit%'
+      AND lower(athlete_name) NOT LIKE '%disqualified%'
+      AND lower(trim(athlete_name)) NOT IN ('bye', 'tbd', 'n/a', 'na', 'null', '-', 'undefined')
     GROUP BY lower(athlete_name)
     ORDER BY rows DESC
     LIMIT {n};
