@@ -1281,6 +1281,56 @@ def _athlete_profile_inner(sc_uid):
                    .execute())
         ibjjf_rows = ir_res.data or []
 
+    # Strict name-match pull: any IBJJF row whose athlete_name is an exact
+    # superset of this SC profile's display_name (token-level). Catches the
+    # athlete's career history across belt changes — e.g., Roiter Lima (SC)
+    # matches his 45 'Roiter Lima Silva Junior' IBJJF rows spanning Juvenile
+    # Blue (2016) through Adult Black (2026). Belt filter doesn't apply here
+    # because the name match is already a strong signal.
+    sc_norm = norm_display.strip()
+    sc_tokens = set(sc_norm.split())
+    if len(sc_tokens) >= 2:
+        try:
+            nm_res = (sb.table("tournament_results")
+                       .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,event_id,ibjjf_athlete_id")
+                       .eq("source", "ibjjf")
+                       .ilike("athlete_name", f"{sc_norm}%")
+                       .or_("status.is.null,status.neq.registered")
+                       .order("event_date")
+                       .limit(300)
+                       .execute())
+            # Filter to exact-superset token match so we don't pick up
+            # 'roiter lima silva junior' for an SC named 'roiter' alone,
+            # and exclude rows tagged to a different sc_uid via verified claim.
+            taken_ibjjf_ids = set()
+            if nm_res.data:
+                tagged = {str(r["ibjjf_athlete_id"]) for r in nm_res.data
+                          if r.get("ibjjf_athlete_id") is not None}
+                if tagged:
+                    try:
+                        v_res = (sb.table("sc_ibjjf_verified")
+                                   .select("ibjjf_athlete_id,sc_uid")
+                                   .in_("ibjjf_athlete_id", list(tagged))
+                                   .execute())
+                        taken_ibjjf_ids = {str(vr["ibjjf_athlete_id"])
+                                           for vr in (v_res.data or [])
+                                           if str(vr.get("sc_uid") or "") != str(sc_uid)}
+                    except Exception:
+                        pass
+            for row in (nm_res.data or []):
+                row_name = normalize(row.get("athlete_name") or "")
+                row_tokens = set(row_name.split())
+                if not sc_tokens.issubset(row_tokens):
+                    continue
+                if str(row.get("ibjjf_athlete_id") or "") in taken_ibjjf_ids:
+                    continue
+                key = (row.get("event_id"), row.get("division"), row.get("placement"))
+                if not any((r.get("event_id"), r.get("division"), r.get("placement")) == key
+                           for r in ibjjf_rows):
+                    ibjjf_rows.append(row)
+        except Exception as e:
+            log.warning("name-match IBJJF pull failed: %s", e)
+
     # Explicit cross-source links: IBJJF rows tagged with this sc_uid
     # (backfilled manually or by nightly agent for athletes whose IBJJF results
     # don't have ibjjf_athlete_id populated but we know they belong to this SC profile)
@@ -1582,22 +1632,60 @@ def api_search():
     # Normalize to consistent shape for the frontend.
     # Includes IBJJF-only athletes (no sc_uid) — they're rendered with a
     # "Claim" CTA on the search card.
-    out = []
+    # First pass: find SC-keyed rows and remember their normalized display
+    # name tokens so we can merge compatible loose-IBJJF aggregates into them.
+    sc_token_map = []
     for r in rows:
+        if r.get("sc_uid"):
+            n = normalize(r.get("athlete_display") or r.get("athlete_name") or "")
+            if n:
+                sc_token_map.append((r, set(n.split())))
+
+    out = []
+    merged_loose = set()  # indexes of loose rows merged into SC cards
+    for idx, r in enumerate(rows):
         sc_uid = r.get("sc_uid")
         ibjjf_id = r.get("ibjjf_id")
         display = r.get("athlete_display") or r.get("athlete_name", "")
         # Rows with neither key are "loose" IBJJF tournament matches — keep
         # them if they have a display name so the user can still see the
-        # aggregated history and claim it via /claim-me.
+        # aggregated history and claim it via /claim-me. If the loose row's
+        # name is a token-superset of a SC-keyed row's name, merge it into
+        # that SC card so the user sees ONE result instead of two.
+        if not sc_uid and not ibjjf_id and display:
+            loose_tokens = set(normalize(display).split())
+            for sc_row, sc_tokens in sc_token_map:
+                if sc_tokens and sc_tokens.issubset(loose_tokens):
+                    sc_row.setdefault("_merged_loose_count", 0)
+                    sc_row["_merged_loose_count"] += r.get("result_count") or 0
+                    sc_row.setdefault("_merged_loose_sources", set()).update(r.get("sources") or [])
+                    sc_row["_merged_loose_last_seen"] = max(
+                        sc_row.get("_merged_loose_last_seen") or "",
+                        r.get("last_seen") or "",
+                    )
+                    merged_loose.add(idx)
+                    break
         if not sc_uid and not ibjjf_id and not display:
+            continue
+        # Skip loose rows that got merged into a SC card above.
+        if idx in merged_loose:
             continue
         country = r.get("country") or ""
         if country in (r"\N", "\\N", "\\\\N"):
             country = ""
-        sources = r.get("sources") or []
-        if isinstance(sources, str):
-            sources = [s.strip() for s in sources.split(",") if s.strip()]
+        sources = list(r.get("sources") or [])
+        if isinstance(r.get("sources"), str):
+            sources = [s.strip() for s in r.get("sources").split(",") if s.strip()]
+        event_count = r.get("result_count", 0) or 0
+        last_seen = r.get("last_seen", "")
+        # Fold in merged loose-IBJJF totals for SC cards.
+        if r.get("_merged_loose_count"):
+            event_count += r["_merged_loose_count"]
+            for s in r.get("_merged_loose_sources", []):
+                if s not in sources:
+                    sources.append(s)
+            if r.get("_merged_loose_last_seen") and r["_merged_loose_last_seen"] > last_seen:
+                last_seen = r["_merged_loose_last_seen"]
         out.append({
             "athlete_id":   sc_uid,
             "ibjjf_id":     ibjjf_id,
@@ -1605,8 +1693,8 @@ def api_search():
             "display_name": display,
             "team":         r.get("team") or "",
             "country":      country,
-            "event_count":  r.get("result_count", 0),
-            "last_seen":    r.get("last_seen", ""),
+            "event_count":  event_count,
+            "last_seen":    last_seen,
             "sources":      sources,
         })
     return jsonify(out)
