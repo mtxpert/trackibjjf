@@ -144,6 +144,31 @@ AGE_RANK  = {"adult": 0, "m1": 1, "m2": 2, "m3": 3, "m4": 4, "m5": 5, "m6": 6, "
 BELT_RANK = {"white": 0, "blue": 1, "purple": 2, "brown": 3, "black": 4}
 
 
+WEIGHT_BUCKETS = {
+    # Match LONGEST keys first (light feather before light, super heavy before heavy, etc.)
+    "galo":          0, "rooster":        0,
+    "pluma":         1, "galo-pluma":     1, "galo pluma": 1,
+    "light feather": 1, "lightfeather":   1, "light-feather": 1,
+    "feather":       2,
+    "super heavy":   7, "superheavy":     7, "super-heavy":  7, "super pesado": 7,
+    "ultra heavy":   8, "ultraheavy":     8, "ultra-heavy":  8, "pesadissimo":  8,
+    "medium heavy":  5, "mediumheavy":    5, "medium-heavy": 5, "meio pesado":  5,
+    "heavy":         6, "pesado":         6,
+    "middle":        4, "medio":          4, "médio":        4,
+    "light":         3, "leve":           3,
+    "open class":    9, "openclass":      9, "absolute":     9, "open weight":  9,
+}
+
+
+def _extract_weight_bucket(d: str) -> int | None:
+    """Pick the weight-class bucket, preferring longer keys so 'super heavy'
+    wins over 'heavy' and 'light feather' wins over 'light' or 'feather'."""
+    for key in sorted(WEIGHT_BUCKETS, key=len, reverse=True):
+        if key in d:
+            return WEIGHT_BUCKETS[key]
+    return None
+
+
 def parse_division(div: str) -> dict:
     if not div:
         return {}
@@ -151,19 +176,32 @@ def parse_division(div: str) -> dict:
     belt   = next((v for k, v in BELT_MAP.items() if k in d), None)
     age    = next((v for k, v in AGE_MAP.items()  if k in d), None)
     gender = "female" if re.search(r"\bfem|\bwom|\bf\b", d) else "male"
-    return {"belt": belt, "age": age, "gender": gender}
+    weight = _extract_weight_bucket(d)
+    return {"belt": belt, "age": age, "gender": gender, "weight": weight}
 
 
 def athlete_fingerprint(divisions: list) -> dict:
-    belts, ages, genders = [], [], []
+    belts, ages, genders, weights = [], [], [], []
     for div in divisions:
         fp = parse_division(div)
         if fp.get("belt"):  belts.append(fp["belt"])
         if fp.get("age"):   ages.append(fp["age"])
+        if fp.get("weight") is not None: weights.append(fp["weight"])
         genders.append(fp.get("gender", "male"))
     def mode(lst): return max(set(lst), key=lst.count) if lst else None
     highest_belt = max(belts, key=lambda b: BELT_RANK.get(b, -1)) if belts else None
-    return {"belt": highest_belt, "age": mode(ages), "gender": mode(genders)}
+    return {"belt": highest_belt, "age": mode(ages), "gender": mode(genders), "weight": mode(weights)}
+
+
+def weight_matches(fp_weight, row_weight, tolerance: int = 2) -> bool:
+    """Return True if the weight buckets are within `tolerance` (or either is
+    unknown). Open Class / Absolute (bucket 9) always matches since champions
+    frequently enter absolute brackets across weights."""
+    if fp_weight is None or row_weight is None:
+        return True
+    if fp_weight == 9 or row_weight == 9:
+        return True
+    return abs(fp_weight - row_weight) <= tolerance
 
 
 def age_matches(athlete_age: str, div_age: str) -> bool:
@@ -1175,16 +1213,16 @@ def _athlete_profile_inner(sc_uid):
             row_name = normalize(row.get("athlete_display") or row.get("athlete_name") or "")
             if first_name_score(first_name, row_name) < 0.70:
                 continue
-            # Belt filter — the bracket must plausibly belong to THIS athlete.
-            # Otherwise a different "Roiter Lima" (White Master 1) leaks into
-            # a Black Adult's upcoming bracket.
+            # Belt + age + weight filter — the bracket must plausibly belong
+            # to THIS athlete. Otherwise a different same-name athlete leaks
+            # (e.g., a White Master 1 bracket on a Black Adult's profile).
             row_fp = parse_division(row.get("division") or "")
-            if fp.get("belt") and row_fp.get("belt"):
-                if not belt_matches(fp["belt"], row_fp["belt"]):
-                    continue
-            if fp.get("age") and row_fp.get("age"):
-                if not age_matches(fp["age"], row_fp["age"]):
-                    continue
+            if fp.get("belt") and row_fp.get("belt") and not belt_matches(fp["belt"], row_fp["belt"]):
+                continue
+            if fp.get("age") and row_fp.get("age") and not age_matches(fp["age"], row_fp["age"]):
+                continue
+            if not weight_matches(fp.get("weight"), row_fp.get("weight")):
+                continue
             upcoming_rows.append(dict(row, _source="ibjjf"))
 
     # Fetch bracket-mates for each upcoming registration (everyone else in
@@ -1292,8 +1330,10 @@ def _athlete_profile_inner(sc_uid):
                 continue
             if not belt_matches(fp.get("belt"), row_fp.get("belt")):
                 continue
+            if not weight_matches(fp.get("weight"), row_fp.get("weight")):
+                continue
             row_name = normalize(row.get("athlete_display") or row.get("athlete_name") or "")
-            if first_name_score(first_name, row_name) < 0.50:
+            if first_name_score(first_name, row_name) < 0.70:
                 continue
             ibjjf_rows.append(row)
 
