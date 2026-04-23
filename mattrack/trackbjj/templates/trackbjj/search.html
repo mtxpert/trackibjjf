@@ -16,12 +16,19 @@
   }
 
   .results-list { display: flex; flex-direction: column; gap: .75rem; }
+  /* Row wrapper (non-clickable container) + clickable card link + sibling
+     claim column. Avoids nested-anchor HTML (Claim anchor inside card
+     anchor) which browsers auto-split into two rows. */
   .athlete-row {
     display: flex; align-items: center; gap: 1rem; padding: .9rem 1.1rem;
     background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-    text-decoration: none; color: inherit; transition: border-color .15s;
+    transition: border-color .15s;
   }
   .athlete-row:hover { border-color: var(--accent); }
+  .athlete-row-link {
+    display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 0;
+    text-decoration: none; color: inherit;
+  }
   .athlete-row .name { font-weight: 700; font-size: 1rem; flex: 1; }
   .athlete-row .team { color: var(--muted); font-size: .85rem; }
   .athlete-row .meta { font-size: .8rem; color: var(--muted); text-align: right; white-space: nowrap; }
@@ -29,6 +36,7 @@
     background: var(--gray); color: var(--accent); font-size: .75rem; font-weight: 700;
     padding: .2rem .6rem; border-radius: 4px;
   }
+  .athlete-row .claim-col { flex-shrink: 0; }
   .no-results { color: var(--muted); text-align: center; padding: 3rem 0; }
   .loading { color: var(--muted); text-align: center; padding: 2rem 0; }
   .sources { display: flex; gap: .3rem; flex-wrap: wrap; }
@@ -90,22 +98,30 @@ function renderResults(rows) {
     const claimUrl = '/claim-me?' + claimParams.toString();
     const claimEl = r.claimed
       ? `<span class="claimed-pill">✓ claimed</span>`
-      : `<a class="claim-btn" href="${claimUrl}" onclick="event.stopPropagation()">This is me — Claim</a>`;
+      : `<a class="claim-btn" href="${claimUrl}">This is me — Claim</a>`;
 
     const unlinkedBadge = hasKey ? '' : '<span style="font-size:.65rem;color:var(--muted);font-style:italic;margin-left:.5rem">(unlinked)</span>';
-    const inner = `
-      <div class="name">${r.display_name || '—'}${unlinkedBadge}</div>
-      <div class="team">${r.team || ''}</div>
-      <div class="sources">${dots}</div>
-      <div class="meta">
-        <span class="events-badge">${r.event_count || 0} results</span><br>
-        <span style="margin-top:.2rem;display:inline-block">${last}</span><br>
-        <span style="margin-top:.35rem;display:inline-block">${claimEl}</span>
-      </div>`;
 
-    return href
-      ? `<a class="athlete-row" href="${href}">${inner}</a>`
-      : `<div class="athlete-row" style="cursor:default">${inner}</div>`;
+    // Row structure: sibling <a> card + <div> meta-column, wrapped in a
+    // non-clickable container. HTML forbids nested <a> tags — browsers
+    // auto-close the outer <a> when they see a nested Claim anchor, which
+    // rendered the card as TWO split .athlete-row elements. Keeping the
+    // Claim button OUTSIDE the card anchor fixes it.
+    const cardOpen  = href ? `<a class="athlete-row-link" href="${href}">` : '<div class="athlete-row-link" style="cursor:default">';
+    const cardClose = href ? '</a>' : '</div>';
+    return `
+      <div class="athlete-row">
+        ${cardOpen}
+          <div class="name">${r.display_name || '—'}${unlinkedBadge}</div>
+          <div class="team">${r.team || ''}</div>
+          <div class="sources">${dots}</div>
+          <div class="meta">
+            <span class="events-badge">${r.event_count || 0} results</span><br>
+            <span style="margin-top:.2rem;display:inline-block">${last}</span>
+          </div>
+        ${cardClose}
+        <div class="claim-col">${claimEl}</div>
+      </div>`;
   }).join('') + '</div>';
 }
 
