@@ -1088,6 +1088,11 @@ def _athlete_profile_inner(sc_uid):
     # the team lookup below (stops another "Roiter Lima" White-Belt Master 1
     # registration from overwriting the Black-Belt Adult's team).
     fp = athlete_fingerprint([r["division"] for r in sc_rows if r["division"]])
+    # Also defined once here so both upcoming_rows and the fallback query
+    # below can gate on it — no signal means we can't fuzzy-match safely.
+    fp_has_signal = (fp.get("belt") is not None
+                     or fp.get("age") is not None
+                     or fp.get("weight") is not None)
 
     def _date_int(d):
         try:
@@ -1299,9 +1304,6 @@ def _athlete_profile_inner(sc_uid):
     # Skip fuzzy fallback when we have no fingerprint at all — without belt,
     # age, OR weight signals, any name-match would scoop up every other
     # Tyler Walker in the DB and stamp their IBJJF rows on a kid's profile.
-    fp_has_signal = (fp.get("belt") is not None
-                     or fp.get("age") is not None
-                     or fp.get("weight") is not None)
     if not ibjjf_rows and last_name and fp_has_signal:
         fb_res = (sb.table("tournament_results")
                    .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,event_id,ibjjf_athlete_id")
