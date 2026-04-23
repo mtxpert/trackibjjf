@@ -1180,9 +1180,11 @@ def _athlete_profile_inner(sc_uid):
                 best_score = score
                 ibjjf_match = dict(c)
 
-    # Upcoming IBJJF registrations matched by name
+    # Upcoming IBJJF registrations matched by name — only run if we have
+    # enough of a fingerprint to filter by. Otherwise every Tyler Walker's
+    # upcoming brackets would appear on a kid-Tyler-Walker's profile.
     upcoming_rows = []
-    if last_name:
+    if last_name and fp_has_signal:
         reg_res = (sb.table("tournament_results")
                     .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,status,event_id,ibjjf_athlete_id")
                     .eq("source", "ibjjf")
@@ -1294,7 +1296,13 @@ def _athlete_profile_inner(sc_uid):
     except Exception as e:
         log.warning("explicit IBJJF link query failed: %s", e)
 
-    if not ibjjf_rows and last_name:
+    # Skip fuzzy fallback when we have no fingerprint at all — without belt,
+    # age, OR weight signals, any name-match would scoop up every other
+    # Tyler Walker in the DB and stamp their IBJJF rows on a kid's profile.
+    fp_has_signal = (fp.get("belt") is not None
+                     or fp.get("age") is not None
+                     or fp.get("weight") is not None)
+    if not ibjjf_rows and last_name and fp_has_signal:
         fb_res = (sb.table("tournament_results")
                    .select("athlete_name,athlete_display,team,event_date,event_title,division,placement,source,event_id,ibjjf_athlete_id")
                    .eq("source", "ibjjf")
