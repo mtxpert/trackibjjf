@@ -100,6 +100,14 @@ def normalize(s: str) -> str:
 # ── Division fingerprinting ─────────────────────────────────────────────────────
 
 BELT_MAP = {
+    # Kids-tier colored belts (IBJJF + common youth systems). Mapped to their
+    # own bucket values so belt_matches properly separates them from adult
+    # belts — black vs yellow must NOT be treated as "missing/permissive".
+    "yellow": "yellow", "amarela": "yellow", "amarelo": "yellow",
+    "orange": "orange", "laranja": "orange",
+    "green":  "green",  "verde":   "green",
+    "grey":   "gray",   "gray":    "gray",   "cinza":   "gray",
+    # Adult belts
     "white": "white", "beginner": "white",
     "blue": "blue", "intermediate": None,
     "purple": "purple", "brown": "brown",
@@ -110,6 +118,13 @@ BELT_MAP = {
 }
 
 AGE_MAP = {
+    # Youth age brackets — IBJJF has Pee Wee / Mighty Mite / Peewee / Teen /
+    # Juvenile. Mapped to 'youth' so they don't cross-match an adult
+    # fingerprint via None-permissive age_matches.
+    "pee wee": "youth", "peewee": "youth",
+    "mighty mite": "youth",
+    "kids": "youth", "juvenile": "youth", "teen": "youth",
+    "menor": "youth", "infantil": "youth",
     "adult": "adult", "adults": "adult",
     "master 1": "m1", "master1": "m1", "masters (30": "m1",
     "master 2": "m2", "master2": "m2", "masters (35": "m2",
@@ -120,7 +135,12 @@ AGE_MAP = {
     "master 7": "m7", "master7": "m7", "masters (60": "m7",
 }
 
+# Deliberately does NOT include 'youth' — age_matches compares ranks and
+# returns False when either side is outside this map, so youth rows are
+# cleanly rejected when fingerprint is adult/master and vice-versa.
 AGE_RANK  = {"adult": 0, "m1": 1, "m2": 2, "m3": 3, "m4": 4, "m5": 5, "m6": 6, "m7": 7}
+# Same pattern — only adult belts get ranks, so kids colors (yellow, orange,
+# green, gray) register as rank=-1 and fail belt_matches against any adult belt.
 BELT_RANK = {"white": 0, "blue": 1, "purple": 2, "brown": 3, "black": 4}
 
 
