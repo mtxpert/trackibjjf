@@ -1026,29 +1026,42 @@ def _athlete_profile_inner(sc_uid):
     last_name  = parts[-1] if parts else ""
     first_name = parts[0]  if parts else ""
 
-    # Team from most recent registration, then most recent result
-    team_res = (sb.table("tournament_results")
-                 .select("team,status,event_date")
-                 .ilike("athlete_name", f"%{last_name}%")
-                 .not_.is_("team", "null")
-                 .order("event_date", desc=True)
-                 .limit(50)
-                 .execute())
-    team_rows_raw = team_res.data or []
-    # Prefer 'registered' status for most current team
+    # Build fingerprint from SC divisions FIRST — we need it to belt-filter
+    # the team lookup below (stops another "Roiter Lima" White-Belt Master 1
+    # registration from overwriting the Black-Belt Adult's team).
+    fp = athlete_fingerprint([r["division"] for r in sc_rows if r["division"]])
+
     def _date_int(d):
         try:
             return int((d or "0000-00-00").replace("-", ""))
         except (ValueError, AttributeError):
             return 0
+
+    # Team from most recent registration/result. Pulls by last_name, then
+    # drops rows whose division belt doesn't match the SC fingerprint so
+    # same-name, different-belt people don't pollute the team display.
+    team_res = (sb.table("tournament_results")
+                 .select("team,status,event_date,division,athlete_name")
+                 .ilike("athlete_name", f"%{last_name}%")
+                 .not_.is_("team", "null")
+                 .order("event_date", desc=True)
+                 .limit(80)
+                 .execute())
+    team_rows_raw = []
+    for r in (team_res.data or []):
+        row_name = normalize(r.get("athlete_name") or "")
+        if first_name_score(first_name, row_name) < 0.70:
+            continue
+        if fp.get("belt"):
+            row_fp = parse_division(r.get("division") or "")
+            if row_fp.get("belt") and not belt_matches(fp["belt"], row_fp["belt"]):
+                continue
+        team_rows_raw.append(r)
     team_rows_raw.sort(key=lambda r: (0 if r.get("status") == "registered" else 1,
                                       -_date_int(r.get("event_date"))))
     team = team_rows_raw[0]["team"] if team_rows_raw else next(
         (r["team"] for r in sc_rows if r["team"]), "Unknown"
     )
-
-    # Build fingerprint from SC divisions
-    fp = athlete_fingerprint([r["division"] for r in sc_rows if r["division"]])
 
     # Check for manually verified claim first
     verified_res = (sb.table("sc_ibjjf_verified")
@@ -1140,8 +1153,19 @@ def _athlete_profile_inner(sc_uid):
                             if str(r.get("ibjjf_athlete_id") or "") not in taken]
         for row in reg_rows:
             row_name = normalize(row.get("athlete_display") or row.get("athlete_name") or "")
-            if first_name_score(first_name, row_name) >= 0.50:
-                upcoming_rows.append(dict(row, _source="ibjjf"))
+            if first_name_score(first_name, row_name) < 0.70:
+                continue
+            # Belt filter — the bracket must plausibly belong to THIS athlete.
+            # Otherwise a different "Roiter Lima" (White Master 1) leaks into
+            # a Black Adult's upcoming bracket.
+            row_fp = parse_division(row.get("division") or "")
+            if fp.get("belt") and row_fp.get("belt"):
+                if not belt_matches(fp["belt"], row_fp["belt"]):
+                    continue
+            if fp.get("age") and row_fp.get("age"):
+                if not age_matches(fp["age"], row_fp["age"]):
+                    continue
+            upcoming_rows.append(dict(row, _source="ibjjf"))
 
     # Fetch bracket-mates for each upcoming registration (everyone else in
     # the same event + division). Batched per-(event,division) — typical
