@@ -2569,6 +2569,16 @@ function _setFinalResultsMode() {
   if (bar) bar.style.display = '';
 }
 
+// Known team / event social handles for auto-tagging in share copy.
+// Add more as we learn them — keys are lowercased team names (or
+// substring matches on event titles for events).
+const TEAM_HANDLES = {
+  "gracie barra lawrenceville": "@graciebarralawrenceville",
+};
+const EVENT_HANDLES = [
+  { match: /tap cancer out/i, tag: "@tapcancerout" },
+];
+
 function shareResults() {
   try {
     const watched = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
@@ -2579,7 +2589,11 @@ function shareResults() {
       : '';
 
     const team = watched.map(a => a.team).find(t => t) || '';
-    const lines = team ? [`${team}\n`, `🏆 ${tourney}${date}\n`] : [`🏆 ${tourney}${date}\n`];
+    const teamTag = TEAM_HANDLES[team.toLowerCase()] || '';
+    const eventTag = (EVENT_HANDLES.find(e => e.match.test(tourney)) || {}).tag || '';
+    const teamHeader = team ? (teamTag ? `${team} (${teamTag})\n` : `${team}\n`) : '';
+    const eventHeader = `🏆 ${tourney}${eventTag ? ' (' + eventTag + ')' : ''}${date}\n`;
+    const lines = teamHeader ? [teamHeader, eventHeader] : [eventHeader];
     const placed = watched.filter(a => a.placement);
     const elim   = watched.filter(a => a.eliminated && !a.placement);
 
@@ -2601,6 +2615,11 @@ function shareResults() {
         lines.push(`   ${a.name}${div}`);
       }
     }
+    // Trailing tag line so platforms that strip mid-text mentions still
+    // surface them (Instagram, X) — and gives the team a clean handle row
+    // they can edit out if they post somewhere that doesn't use it.
+    const tagLine = [teamTag, eventTag].filter(Boolean).join(' ');
+    if (tagLine) lines.push(`\n${tagLine}`);
     lines.push('\nTracked with MatTrack · mattrack.net');
 
     const text = lines.join('\n');
