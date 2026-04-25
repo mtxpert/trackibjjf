@@ -2616,10 +2616,11 @@ function shareResults() {
       }
     }
     // Trailing tag line so platforms that strip mid-text mentions still
-    // surface them (Instagram, X) — and gives the team a clean handle row
-    // they can edit out if they post somewhere that doesn't use it.
-    const tagLine = [teamTag, eventTag].filter(Boolean).join(' ');
-    if (tagLine) lines.push(`\n${tagLine}`);
+    // surface them (Instagram, X). Always tag @mattrack.bjj so when any
+    // team/coach copy-pastes the result we get attribution + reach.
+    const MATTRACK_IG = '@mattrack.bjj';
+    const tagLine = [teamTag, eventTag, MATTRACK_IG].filter(Boolean).join(' ');
+    lines.push(`\n${tagLine}`);
     lines.push('\nTracked with MatTrack · mattrack.net');
 
     const text = lines.join('\n');
