@@ -155,14 +155,31 @@ def _query_user_row(user_id: str, fields: str = "plan,sub_status") -> dict:
         return {}
 
 
-def get_user_plan(user_id: str) -> str:
+# Owner / staff emails that always get the individual plan, regardless of
+# what's in public.users (DB lookups can fail or fall back to 'free' on a
+# transient error, and these accounts shouldn't see a paywall ever).
+OWNER_EMAILS = frozenset({
+    "mbambic@gmail.com",
+    "chrisbambic@gmail.com",
+    "tbambic@gmail.com",
+})
+
+
+def _owner_email(user: dict) -> str:
+    return (user.get("email") or "").strip().lower() if user else ""
+
+
+def get_user_plan(user_id: str, email: str = "") -> str:
     """
     Look up the plan for *user_id* in ``public.users``.
 
     Returns one of ``'free'``, ``'individual'``, ``'gym'``, ``'affiliate'``.
     Falls back to ``'free'`` on any error (DB unavailable, user not found,
-    unexpected schema, etc.).
+    unexpected schema, etc.) — except for OWNER_EMAILS, which always return
+    'individual' so owners/staff are never paywalled.
     """
+    if email and email.strip().lower() in OWNER_EMAILS:
+        return "individual"
     try:
         data = _query_user_row(user_id, "plan")
         if not data:
@@ -176,13 +193,16 @@ def get_user_plan(user_id: str) -> str:
         return "free"
 
 
-def is_plan_active(user_id: str) -> bool:
+def is_plan_active(user_id: str, email: str = "") -> bool:
     """
     Return ``True`` if *user_id* has an active paid subscription.
 
     Active means ``plan != 'free'`` **and** ``sub_status == 'active'``.
     Returns ``False`` on any error or if the user is on the free tier.
+    OWNER_EMAILS are always active.
     """
+    if email and email.strip().lower() in OWNER_EMAILS:
+        return True
     try:
         data = _query_user_row(user_id, "plan,sub_status")
         if not data:

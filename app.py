@@ -1501,14 +1501,15 @@ def api_auth_me():
     if not user:
         logger.info("/api/auth/me → unauthenticated (has_token=%s)", has_token)
         return jsonify({"plan": "free", "authenticated": False})
-    plan = get_user_plan(user["sub"])
-    logger.info("/api/auth/me → user=%s plan=%s", user.get("email", user["sub"][:8]), plan)
+    email = user.get("email", "")
+    plan = get_user_plan(user["sub"], email=email)
+    logger.info("/api/auth/me → user=%s plan=%s", email or user["sub"][:8], plan)
     return jsonify({
         "authenticated": True,
         "user_id": user["sub"],
-        "email": user.get("email", ""),
+        "email": email,
         "plan": plan,
-        "active": is_plan_active(user["sub"]),
+        "active": is_plan_active(user["sub"], email=email),
     })
 
 

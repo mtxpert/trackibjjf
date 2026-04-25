@@ -245,12 +245,13 @@ def api_auth_me():
         user = get_user_from_token(request)
         if not user:
             return jsonify({"plan": "free", "authenticated": False})
-        plan = get_user_plan(user["sub"])
+        email = user.get("email", "")
+        plan = get_user_plan(user["sub"], email=email)
         return jsonify({
             "authenticated": True,
-            "email": user.get("email", ""),
+            "email": email,
             "plan": plan,
-            "active": is_plan_active(user["sub"]),
+            "active": is_plan_active(user["sub"], email=email),
         })
     except Exception as e:
         log.error("api_auth_me error: %s", e, exc_info=True)
