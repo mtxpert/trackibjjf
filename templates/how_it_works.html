@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How MatTrack Works — Blueprint</title>
+  <meta name="description" content="A living blueprint for mattrack.net and trackbjj.net — data sources, scrapers, schemas, and live status.">
+  <style>
+    :root {
+      --red: #c0392b;
+      --bg: #0f0f1a;
+      --card: #1e1e30;
+      --gray: #2d2d44;
+      --text: #f0f0f0;
+      --muted: #777799;
+      --border: #333355;
+      --green: #27ae60;
+      --yellow: #f39c12;
+      --blue: #2980b9;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+      font-size: 15px; line-height: 1.55;
+    }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 28px 22px 80px; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 28px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
+    }
+    .topbar a { color: var(--muted); text-decoration: none; font-size: 0.85rem; }
+    .topbar a:hover { color: var(--text); }
+    .brand { font-weight: 800; font-size: 1.15rem; letter-spacing: -0.3px; }
+
+    h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.6px; margin: 0 0 12px; }
+    h2 { font-size: 1.35rem; font-weight: 700; margin: 32px 0 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    h3 { font-size: 1.05rem; font-weight: 700; margin: 22px 0 8px; color: var(--text); }
+    p { margin: 0 0 12px; color: #d8d8e8; }
+    ul, ol { margin: 0 0 14px 22px; color: #d8d8e8; }
+    li { margin-bottom: 4px; }
+    a { color: #8aa8ff; }
+    code {
+      background: var(--gray); padding: 1px 6px; border-radius: 4px;
+      font-size: 0.85em; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    pre {
+      background: var(--gray); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px; overflow-x: auto;
+      font-size: 0.85rem; margin: 0 0 14px;
+    }
+    pre code { background: transparent; padding: 0; }
+    table {
+      width: 100%; border-collapse: collapse; margin: 0 0 18px;
+      font-size: 0.88rem;
+    }
+    th, td {
+      text-align: left; padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted); font-weight: 600; font-size: 0.78rem;
+      text-transform: uppercase; letter-spacing: 0.6px;
+      background: var(--card);
+    }
+    tr:hover td { background: rgba(99, 102, 241, 0.05); }
+    blockquote {
+      border-left: 3px solid var(--yellow); background: rgba(243, 156, 18, 0.06);
+      padding: 10px 14px; margin: 0 0 14px; color: #d8d8e8;
+      border-radius: 0 8px 8px 0;
+    }
+    hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
+
+    /* Live status footer */
+    .live-status {
+      margin-top: 36px; padding: 22px;
+      background: linear-gradient(135deg, rgba(39, 174, 96, 0.06), rgba(41, 128, 185, 0.06));
+      border: 1px solid var(--border); border-radius: 14px;
+    }
+    .live-status h2 { border-top: none; margin: 0 0 14px; padding-top: 0; }
+    .live-status-title {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.3px;
+      color: var(--muted); margin-bottom: 16px;
+    }
+    .live-pulse {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }
+    .live-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px;
+    }
+    .live-card {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+      padding: 14px;
+    }
+    .live-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+    .live-value { font-size: 1.45rem; font-weight: 800; letter-spacing: -0.4px; }
+    .live-sub { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+    .cron-list { margin: 14px 0 0; padding: 0; list-style: none; font-size: 0.85rem; }
+    .cron-list li {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 0; border-bottom: 1px solid var(--border);
+    }
+    .cron-list li:last-child { border-bottom: none; }
+    .cron-name { font-weight: 600; color: var(--text); }
+    .cron-time { color: var(--muted); font-size: 0.78rem; }
+    .cron-status-ok { color: var(--green); font-size: 0.78rem; }
+    .cron-status-stale { color: var(--yellow); font-size: 0.78rem; }
+    .cron-status-down { color: var(--red); font-size: 0.78rem; }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 1.55rem; }
+      h2 { font-size: 1.15rem; }
+      table { font-size: 0.8rem; }
+      th, td { padding: 6px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">MatTrack — Blueprint</div>
+      <a href="/">← Back to MatTrack</a>
+    </div>
+
+    <article id="content">
+      {{ body_html | safe }}
+    </article>
+
+    <section class="live-status">
+      <div class="live-status-title">
+        <span class="live-pulse"></span> Live Status — pulled at {{ generated_at }}
+      </div>
+
+      <div class="live-grid">
+        <div class="live-card">
+          <div class="live-label">Tournaments tracked</div>
+          <div class="live-value">{{ counts.tournament_events }}</div>
+          <div class="live-sub">events in DB</div>
+        </div>
+        <div class="live-card">
+          <div class="live-label">Brackets captured</div>
+          <div class="live-value">{{ counts.bracket_finals }}</div>
+          <div class="live-sub">divisions w/ state</div>
+        </div>
+        <div class="live-card">
+          <div class="live-label">Athlete results</div>
+          <div class="live-value">{{ counts.tournament_results }}</div>
+          <div class="live-sub">cross-source rows</div>
+        </div>
+        <div class="live-card">
+          <div class="live-label">IBJJF athletes</div>
+          <div class="live-value">{{ counts.ibjjf_athletes }}</div>
+          <div class="live-sub">official directory</div>
+        </div>
+        <div class="live-card">
+          <div class="live-label">Verified claims</div>
+          <div class="live-value">{{ counts.sc_ibjjf_verified }}</div>
+          <div class="live-sub">linked profiles</div>
+        </div>
+        <div class="live-card">
+          <div class="live-label">Findme reports</div>
+          <div class="live-value">{{ counts.findme_pending }}</div>
+          <div class="live-sub">pending triage</div>
+        </div>
+      </div>
+
+      <h3 style="margin-top: 24px;">Cron jobs</h3>
+      <ul class="cron-list">
+        {% for c in crons %}
+        <li>
+          <div>
+            <div class="cron-name">{{ c.name }}</div>
+            <div class="cron-time">{{ c.schedule }}</div>
+          </div>
+          <div class="{{ c.status_class }}">
+            {{ c.last_run_human }}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+  </div>
+</body>
+</html>

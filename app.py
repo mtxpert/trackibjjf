@@ -2033,6 +2033,119 @@ def api_billing_portal():
         return jsonify({"error": "Failed to open billing portal"}), 500
 
 
+_HOW_IT_WORKS_CACHE: dict = {}   # {ts, html, counts, crons}
+
+@app.route("/how-it-works")
+def how_it_works():
+    """Living blueprint — markdown source rendered with live status footer."""
+    cache = _HOW_IT_WORKS_CACHE
+    if cache.get("ts") and time.time() - cache["ts"] < 60:
+        body_html = cache["body_html"]
+        counts    = cache["counts"]
+        crons     = cache["crons"]
+    else:
+        # 1. Render the markdown source
+        try:
+            import markdown as _md
+            md_path = os.path.join(os.path.dirname(__file__), "HOW_IT_WORKS.md")
+            md_text = open(md_path, encoding="utf-8").read()
+            body_html = _md.markdown(md_text, extensions=["tables", "fenced_code"])
+        except Exception as e:
+            logger.error("how-it-works render failed: %s", e)
+            body_html = "<p>Blueprint markdown could not be loaded.</p>"
+
+        # 2. Pull live counts from Supabase (HEAD with count=exact is cheap — no rows returned)
+        counts = {}
+        sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+        sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+        if sb_url and sb_key:
+            count_targets = [
+                ("tournament_events",   ""),
+                ("bracket_finals",      ""),
+                ("tournament_results",  ""),
+                ("ibjjf_athletes",      ""),
+                ("sc_ibjjf_verified",   ""),
+                ("findme_pending",      "findme_reports?status=eq.pending"),
+            ]
+            for label, override in count_targets:
+                path = override or f"{label}?select=*"
+                try:
+                    r = requests.head(
+                        f"{sb_url}/rest/v1/{path}",
+                        headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}",
+                                 "Prefer": "count=exact"},
+                        timeout=5,
+                    )
+                    rng = r.headers.get("Content-Range", "")
+                    counts[label] = rng.split("/")[-1] if "/" in rng else "—"
+                except Exception:
+                    counts[label] = "—"
+        else:
+            counts = {k: "—" for k in
+                      ["tournament_events","bracket_finals","tournament_results",
+                       "ibjjf_athletes","sc_ibjjf_verified","findme_pending"]}
+
+        # 3. Pull cron last-run from Render API
+        crons = []
+        rk = os.environ.get("RENDER_API_KEY", "")
+        cron_ids = [
+            ("scrape-tournament-list-nightly",     "crn-d7hob5iqqhas738lg65g", "0 7 * * * (3am ET daily)"),
+            ("scrape-ibjjf-registrations-nightly", "crn-d7hob858nd3s73caca5g", "30 7 * * * (3:30am ET daily)"),
+            ("scrape-sc-registrations-nightly",    "crn-d7hob957vvec739enklg", "0 8 * * * (4am ET daily)"),
+            ("live-bracket-scraper",               "crn-d7hob83eo5us73djaj70", "*/30 12-23,0-3 * * * (every 30m, 8am-11pm ET)"),
+        ]
+        if rk:
+            for name, cid, schedule in cron_ids:
+                last_run_human = "—"
+                status_class = "cron-status-down"
+                try:
+                    r = requests.get(
+                        f"https://api.render.com/v1/services/{cid}",
+                        headers={"Authorization": f"Bearer {rk}"},
+                        timeout=5,
+                    )
+                    if r.ok:
+                        last_run = (r.json().get("serviceDetails") or {}).get("lastSuccessfulRunAt", "")
+                        if last_run:
+                            try:
+                                last_dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+                                age = datetime.now(tz=last_dt.tzinfo) - last_dt
+                                hrs = age.total_seconds() / 3600
+                                if hrs < 1:
+                                    last_run_human = f"ran {int(age.total_seconds()/60)}m ago"
+                                    status_class = "cron-status-ok"
+                                elif hrs < 25:
+                                    last_run_human = f"ran {hrs:.1f}h ago"
+                                    status_class = "cron-status-ok"
+                                else:
+                                    last_run_human = f"last run {int(hrs/24)}d ago"
+                                    status_class = "cron-status-stale"
+                            except Exception:
+                                last_run_human = last_run[:10]
+                                status_class = "cron-status-stale"
+                except Exception:
+                    pass
+                crons.append({"name": name, "schedule": schedule,
+                              "last_run_human": last_run_human, "status_class": status_class})
+        else:
+            for name, cid, schedule in cron_ids:
+                crons.append({"name": name, "schedule": schedule,
+                              "last_run_human": "RENDER_API_KEY unset", "status_class": "cron-status-down"})
+
+        cache["ts"] = time.time()
+        cache["body_html"] = body_html
+        cache["counts"] = counts
+        cache["crons"] = crons
+
+    return _no_cache(make_response(render_template(
+        "how_it_works.html",
+        body_html=body_html,
+        counts=counts,
+        crons=crons,
+        generated_at=datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %I:%M %p ET"),
+    )))
+
+
 @app.route("/manifest.json")
 def serve_manifest():
     return send_file("static/manifest.json", mimetype="application/manifest+json")

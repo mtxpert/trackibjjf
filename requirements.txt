@@ -11,3 +11,4 @@ python-jose[cryptography]
 flask-limiter
 pywebpush
 Pillow
+markdown
