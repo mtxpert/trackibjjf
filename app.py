@@ -1259,6 +1259,25 @@ def api_refresh():
     # directly (no live re-fetch needed) so the Watch screen on misc/gi/
     # fuji/adcc/etc. events shows fight times + placements.
     src_hint = (data.get("source") or "").strip().lower()
+    # Fall back: if frontend didn't include source (older cached JS on the
+    # client), look it up in tournament_events. This is what unblocks event
+    # day for users whose service-worker cache is stale.
+    if not src_hint:
+        try:
+            import requests as _req
+            sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+            sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+            r = _req.get(
+                f"{sb_url}/rest/v1/tournament_events"
+                f"?select=source&event_id=eq.{tournament_id}&limit=1",
+                headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"},
+                timeout=4,
+            )
+            rows = r.json() if r.ok else []
+            if rows:
+                src_hint = (rows[0].get("source") or "").lower()
+        except Exception:
+            pass
     if src_hint and src_hint in (SC_ORG_KEYS - {"naga", "compnet"}):
         return _bracket_finals_refresh(tournament_id, tournament_name, athletes, src_hint)
 
