@@ -602,7 +602,11 @@ _TOURNAMENTS_TTL = 180  # 3 minutes
 
 # Per-event roster cache: (source, event_id) -> {ts, data}
 _ROSTER_CACHE = {}
-_ROSTER_TTL = 300  # 5 minutes
+# 6 hours on event days — the underlying RPC is fast (~200ms) but the first
+# cold call after expiry occasionally stretches to 30+ seconds when paired
+# with a cold worker, and during a live event that lag freezes the team
+# tile list. Long TTL is safe: live brackets come from a separate path.
+_ROSTER_TTL = 21600  # 6 hours
 
 
 def _get_db_tournaments_for_sources(sources):
