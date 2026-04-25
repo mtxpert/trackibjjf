@@ -1175,7 +1175,8 @@ def api_pick_statuses(tournament_id):
                         rec["fight_time"]     = next_fight.get("time", "")
                         rec["fight_time_utc"] = next_fight.get("time_utc", "")
                         rec["mat_name"]       = next_fight.get("mat", "")
-                # Eliminated if both their finished fights show them as loser and no seeded next
+                # 2 losses with no upcoming → usually eliminated. Skip in
+                # small round-robin brackets where 2 losses = 3rd place.
                 if not results_final and "fight_time" not in rec:
                     losses = sum(1 for f in fights
                                  if f.get("state") == "finished"
@@ -1183,7 +1184,7 @@ def api_pick_statuses(tournament_id):
                                  and (f.get("winner") or "").lower() != nm
                                  and any(nm in (c.get("name") or "").lower()
                                          for c in (f.get("competitors") or [])))
-                    if losses >= 2:
+                    if losses >= 2 and len(fights) > 3:
                         rec["eliminated"] = True
                 statuses[nm] = rec
         return jsonify({"statuses": statuses})
@@ -1457,14 +1458,24 @@ def _bracket_finals_refresh(tournament_id, tournament_name, athletes, source):
             elif results_final:
                 a["eliminated"] = True
             else:
-                # Two losses with no upcoming → eliminated
+                # 2 losses with no upcoming usually = eliminated, but in a
+                # small round-robin (e.g., 3-person bracket where everyone
+                # plays everyone) 2 losses actually = 3rd place / bronze.
+                # Only flag eliminated if results_final OR bracket is large
+                # enough that a 2-loss exit means no medal.
+                total_fights = len(fights)
                 losses = sum(1 for f in fights
                              if f.get("state") == "finished"
                              and not f.get("is_bye")
                              and (f.get("winner") or "").lower() != nm_key
                              and any(nm_key in (c.get("name") or "").lower()
                                      for c in (f.get("competitors") or [])))
-                a["eliminated"] = losses >= 2 and not a.get("fight_time")
+                small_round_robin = total_fights <= 3
+                a["eliminated"] = (
+                    losses >= 2
+                    and not a.get("fight_time")
+                    and not small_round_robin
+                )
         else:
             a["placement"] = None
             a["eliminated"] = False
