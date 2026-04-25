@@ -2570,41 +2570,77 @@ function _setFinalResultsMode() {
 }
 
 function shareResults() {
-  const watched = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
-  const placementLabel = { '1': '🥇 Gold', '2': '🥈 Silver', '3': '🥉 Bronze' };
-  const tourney = selectedTournament?.name || '';
-  const date    = selectedTournament?.start
-    ? ` — ${_fmtTourneyDate(selectedTournament.start, selectedTournament.end)}`
-    : '';
+  try {
+    const watched = allAthletes.filter(a => selectedKeys.has(a.name.toLowerCase()));
+    const placementLabel = { '1': '🥇 Gold', '2': '🥈 Silver', '3': '🥉 Bronze' };
+    const tourney = selectedTournament?.name || '';
+    const date    = selectedTournament?.start
+      ? ` — ${_fmtTourneyDate(selectedTournament.start, selectedTournament.end)}`
+      : '';
 
-  const team = watched.map(a => a.team).find(t => t) || '';
-  const lines = team ? [`${team}\n`, `🏆 ${tourney}${date}\n`] : [`🏆 ${tourney}${date}\n`];
-  const placed = watched.filter(a => a.placement);
-  const elim   = watched.filter(a => a.eliminated && !a.placement);
+    const team = watched.map(a => a.team).find(t => t) || '';
+    const lines = team ? [`${team}\n`, `🏆 ${tourney}${date}\n`] : [`🏆 ${tourney}${date}\n`];
+    const placed = watched.filter(a => a.placement);
+    const elim   = watched.filter(a => a.eliminated && !a.placement);
 
-  placed.sort((a,b) => (a.placement||'9').localeCompare(b.placement||'9'));
-  for (const a of placed) {
-    const medal = placementLabel[a.placement] || `#${a.placement}`;
-    const div   = a.division ? ` | ${a.division}` : '';
-    lines.push(`${medal}  ${a.name}${div}`);
-  }
-  if (elim.length) {
-    lines.push('');
-    lines.push('🥋 Competed and represented with heart:');
-    for (const a of elim) {
-      const div = a.division ? ` | ${a.division}` : '';
-      lines.push(`   ${a.name}${div}`);
+    // Cast to String — backend now returns placement as integer for SC
+    // events; raw number has no localeCompare and the previous version
+    // silently threw, breaking the whole copy.
+    placed.sort((a,b) => String(a.placement || '9').localeCompare(String(b.placement || '9')));
+    for (const a of placed) {
+      const key = String(a.placement);
+      const medal = placementLabel[key] || `#${key}`;
+      const div   = a.division ? ` | ${a.division}` : '';
+      lines.push(`${medal}  ${a.name}${div}`);
     }
-  }
-  lines.push('\nTracked with MatTrack · mattrack.net');
+    if (elim.length) {
+      lines.push('');
+      lines.push('🥋 Competed and represented with heart:');
+      for (const a of elim) {
+        const div = a.division ? ` | ${a.division}` : '';
+        lines.push(`   ${a.name}${div}`);
+      }
+    }
+    lines.push('\nTracked with MatTrack · mattrack.net');
 
-  const text = lines.join('\n');
-  navigator.clipboard.writeText(text).then(() => {
+    const text = lines.join('\n');
+    // navigator.clipboard requires a secure context AND a user gesture.
+    // Use it when available, fall back to a manual textarea+select+copy
+    // path for iOS in-app browsers / Facebook webview / older Safari.
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text)
+        .then(() => showToast('Results copied!'))
+        .catch(() => _copyFallback(text));
+    } else {
+      _copyFallback(text);
+    }
+  } catch (e) {
+    showToast('Copy failed — long-press the results to copy manually');
+    console.error('[share] error', e);
+  }
+}
+
+function _copyFallback(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.top = '0';
+  ta.style.left = '0';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+  if (ok) {
     showToast('Results copied!');
-  }).catch(() => {
-    // Fallback: show in a modal-like alert
+  } else {
+    // Last resort: show prompt with the text. Works on macOS, blocked
+    // on iOS Safari but provides a visible string to long-press.
     prompt('Copy results:', text);
-  });
+  }
 }
 
 function showChangesBanner(changes) {
