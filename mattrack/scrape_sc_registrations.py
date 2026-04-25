@@ -102,19 +102,33 @@ def get_upcoming_events(subdomain: str, fed_id: int) -> list[dict]:
 
 
 def scrape_registrations(subdomain: str, org: str, event: dict) -> list[dict]:
+    """Scrape participants for an SC event.
+
+    Uses the POST /en/event/<id>/participants endpoint (with CSRF) which
+    returns ALL registrations including unapproved ones. The older
+    GET /participants-new only returned approved entries — students at
+    clubs that require coach approval (e.g., Gracie Barra Lawrenceville
+    kids) were invisible to us until the coach manually approved them in
+    Smoothcomp.
+    """
     event_id = event["id"]
-    base = f"https://{subdomain}.smoothcomp.com"
+    # Bare smoothcomp.com is required for the POST /participants endpoint —
+    # www.smoothcomp.com 302-redirects POST to bare and the body is dropped,
+    # so federation-affiliated events use a real subdomain (ajpbjj, naga,
+    # etc.) and 'misc' events use bare.
+    base = "https://smoothcomp.com" if subdomain in ("www", "", None) else f"https://{subdomain}.smoothcomp.com"
     log.info("  Scraping event %s: %s", event_id, event["title"][:50])
 
     sess = requests.Session()
     sess.headers.update(HEADERS)
 
-    # Load event page for cookies + CSRF
+    # Load participants page (not the event landing) — its session cookies
+    # and CSRF token are what the POST endpoint validates against.
     try:
-        r = sess.get(f"{base}/en/event/{event_id}", timeout=(10, 20))
+        r = sess.get(f"{base}/en/event/{event_id}/participants", timeout=(10, 20))
         r.raise_for_status()
     except Exception as e:
-        log.warning("  Event page %s failed: %s", event_id, e)
+        log.warning("  Participants page %s failed: %s", event_id, e)
         return []
 
     csrf = ""
@@ -122,71 +136,89 @@ def scrape_registrations(subdomain: str, org: str, event: dict) -> list[dict]:
     if m:
         csrf = m.group(1)
 
+    try:
+        r2 = sess.post(
+            f"{base}/en/event/{event_id}/participants",
+            data={"_token": csrf, "show_unapproved": "1"},
+            headers={
+                "X-Requested-With": "XMLHttpRequest",
+                "X-CSRF-TOKEN": csrf,
+                "Accept": "application/json",
+            },
+            timeout=(10, 30),
+        )
+        r2.raise_for_status()
+        data = r2.json()
+    except requests.exceptions.Timeout:
+        log.warning("  Event %s timed out", event_id)
+        return []
+    except Exception as e:
+        log.warning("  Event %s fetch failed: %s", event_id, e)
+        return []
+
+    # Build category-value-id → name map from the categories tree so we can
+    # synthesize a readable division string per registration.
+    cat_value_names = {}
+    cats = data.get("categories") or {}
+    if isinstance(cats, dict):
+        for entry in cats.values():
+            entry_cats = (entry or {}).get("categories") or []
+            for cat in entry_cats:
+                for v in cat.get("values") or []:
+                    if v.get("id") is not None:
+                        cat_value_names[v["id"]] = v.get("name") or v.get("title") or ""
+
     rows = []
-    page = 1
-    last_page = 1
+    for group in data.get("participants", []):
+        if not isinstance(group, dict):
+            continue
+        group_division = group.get("name") or ""
+        for reg in (group.get("registrations") or []):
+            if not isinstance(reg, dict):
+                continue
+            first = (reg.get("firstname") or "").strip()
+            middle = (reg.get("middle_name") or "").strip()
+            last = (reg.get("lastname") or "").strip()
+            name = " ".join(p for p in (first, middle, last) if p).strip()
+            if not name:
+                continue
 
-    while page <= last_page:
-        try:
-            r2 = sess.get(
-                f"{base}/en/event/{event_id}/participants-new?page={page}",
-                headers={
-                    "X-Requested-With": "XMLHttpRequest",
-                    "X-CSRF-TOKEN": csrf,
-                    "Accept": "application/json",
-                },
-                timeout=(5, 15),
-            )
-            r2.raise_for_status()
-            data = r2.json()
-        except requests.exceptions.Timeout:
-            log.warning("  Page %d timed out for event %s, skipping rest", page, event_id)
-            break
-        except Exception as e:
-            log.warning("  Page %d fetch failed for event %s: %s", page, event_id, e)
-            break
+            club_name = reg.get("clubName") or ""
+            affil = reg.get("affiliationName") or ""
+            team_field = reg.get("teamName") or ""
+            # Prefer affiliation > teamName > club, matching how SC shows it
+            team = affil or team_field or club_name
 
-        last_page = data.get("last_page", 1)
+            # Build a division string from the registration's category values
+            # if the group name doesn't already encode them.
+            division = group_division
+            if not division:
+                parts = []
+                for c in (reg.get("categories") or []):
+                    nm = cat_value_names.get(c.get("category_value_id"))
+                    if nm:
+                        parts.append(nm)
+                if parts:
+                    division = " / ".join(parts)
 
-        for group in data.get("data", []):
-            division = group.get("name", "")
-            regs = group.get("registrations", [])
-            if isinstance(regs, dict):
-                regs = list(regs.values())
-            for reg in regs:
-                if not isinstance(reg, dict):
-                    continue
-                user = reg.get("user") or {}
-                club = reg.get("club") or {}
-                name = user.get("name", "").strip()
-                if not name:
-                    continue
+            rows.append({
+                "event_id": event_id,
+                "event_title": event["title"],
+                "event_date": event["start"],
+                "source": org,
+                "division": division,
+                "athlete_name": name.lower(),
+                "athlete_display": name,
+                "team": team,
+                "placement": None,
+                "status": "registered",
+                "athlete_id": None,
+                "country": reg.get("cn") or "",
+                "country_code": reg.get("cn") or "",
+            })
 
-                team = reg.get("team") or club.get("name") or ""
-                country_code = user.get("country") or ""
-
-                rows.append({
-                    "event_id": event_id,
-                    "event_title": event["title"],
-                    "event_date": event["start"],
-                    "source": org,
-                    "division": division,
-                    "athlete_name": name.lower(),
-                    "athlete_display": name,
-                    "team": team,
-                    "placement": None,
-                    "status": "registered",
-                    "athlete_id": None,
-                    "country": country_code,
-                    "country_code": country_code,
-                })
-
-        page += 1
-        if page <= last_page:
-            time.sleep(0.3)
-
-    log.info("  Event %s (%s): %d registrations across %d pages",
-             event_id, event["title"][:50], len(rows), last_page)
+    log.info("  Event %s (%s): %d registrations (incl. unapproved)",
+             event_id, event["title"][:50], len(rows))
     return rows
 
 
