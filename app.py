@@ -659,6 +659,56 @@ def _get_db_tournaments_for_sources(sources):
     return list(events.values())
 
 
+def _build_roster_from_db(source: str, event_id: str, school_name: str) -> list:
+    """Return per-division-entry athlete records for a school at an event,
+    pulling from tournament_results (status='registered'). Shape matches
+    what scraper_naga.build_naga_roster returns so the rest of the
+    pick/watch flow doesn't care which path produced the rows.
+
+    Match is case-insensitive on team. Empty/None team rows are excluded.
+    """
+    import requests as _req
+    sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    if not sb_url or not sb_key:
+        return []
+    needle = (school_name or "").strip().lower()
+    if not needle:
+        return []
+    headers = {"apikey": sb_key, "Authorization": f"Bearer {sb_key}",
+               "Accept": "application/json"}
+    # team ILIKE %needle% — broad enough to handle 'Gracie Barra Lawrenceville'
+    # vs 'GB Lawrenceville' typo but tight enough to avoid '%a%' matching all rows.
+    url = (f"{sb_url}/rest/v1/tournament_results"
+           f"?select=athlete_display,athlete_name,team,division,event_title,event_date,event_id,source"
+           f"&source=eq.{source}"
+           f"&event_id=eq.{event_id}"
+           f"&status=eq.registered"
+           f"&team=ilike.*{requests.utils.quote(needle, safe='')}*"
+           f"&limit=2000")
+    try:
+        r = _req.get(url, headers=headers, timeout=10)
+        rows = r.json() if r.ok else []
+    except Exception:
+        rows = []
+    out = []
+    for row in rows:
+        name = row.get("athlete_display") or row.get("athlete_name") or ""
+        if not name.strip():
+            continue
+        out.append({
+            "name":         name,
+            "team":         row.get("team") or "",
+            "division":     row.get("division") or "",
+            "category_id":  None,
+            "tournament_id": str(row.get("event_id") or event_id),
+            "event_title":  row.get("event_title") or "",
+            "event_date":   row.get("event_date") or "",
+            "source":       row.get("source") or source,
+        })
+    return out
+
+
 @app.route("/api/sc-teams/<source>/<event_id>")
 def api_sc_teams(source, event_id):
     """Return {teams, athletes, athlete_count} for a Smoothcomp-source event.
@@ -952,22 +1002,44 @@ def api_search():
     tournament_id = data.get("tournament_id", "").strip()
     school_name   = data.get("school_name", "").strip()
     tournament_name = data.get("tournament_name", "").strip()
+    source        = (data.get("source") or "").strip().lower()
 
     if not tournament_id or not school_name:
         return jsonify({"error": "tournament_id and school_name are required"}), 400
 
     job_id = f"{tournament_id}_{school_name.replace(' ', '_')}_{int(time.time())}"
 
-    # ── NAGA / CompNet / Smoothcomp path ─────────────────────────────────────
-    if _is_naga_tournament(tournament_id):
+    # ── DB-backed roster for any SC-style source already in tournament_results
+    # (misc, gi, fuji, goodfight, newbreed, pbjjf, united, subchallenge,
+    # grapplingx, rollalot, adcc + ibjjf when status='registered'). NAGA and
+    # CompNet still go through the live scraper below to support cases where
+    # the org-managed event hasn't been indexed yet.
+    if source in (SC_ORG_KEYS - {"naga", "compnet"}) or source == "ibjjf":
+        athletes = _build_roster_from_db(source, tournament_id, school_name)
+        if athletes:
+            _jobs[job_id] = {
+                "status":      "done",
+                "progress":    len(athletes),
+                "total":       len(athletes),
+                "current_cat": f"{source.upper()} · {len(athletes)} division entries",
+                "athletes":    athletes,
+                "from_cache":  True,
+                "source":      source,
+            }
+            return jsonify({"job_id": job_id})
+        return jsonify({"error": "school_not_found",
+                        "message": f"No athletes found for '{school_name}' in this event"}), 404
+
+    # ── NAGA / CompNet / Smoothcomp path (live scrape) ───────────────────────
+    if _is_naga_tournament(tournament_id) or source in {"naga", "compnet"}:
         from scraper_naga import build_naga_roster
-        subdomain = _naga_subdomain(tournament_name)
-        source    = _subdomain_to_source(subdomain)
+        subdomain = source if source in {"naga", "compnet"} else _naga_subdomain(tournament_name)
+        src       = _subdomain_to_source(subdomain)
         athletes  = build_naga_roster(tournament_id, school_name, subdomain)
         for a in athletes:
-            a["source"] = source
+            a["source"] = src
         if athletes:
-            label = "CompNet" if source == "compnet" else "NAGA"
+            label = "CompNet" if src == "compnet" else "NAGA"
             _jobs[job_id] = {
                 "status":      "done",
                 "progress":    len(athletes),
@@ -975,7 +1047,7 @@ def api_search():
                 "current_cat": f"{label} · {len(athletes)} division entries",
                 "athletes":    athletes,
                 "from_cache":  False,
-                "source":      source,
+                "source":      src,
             }
             return jsonify({"job_id": job_id})
         return jsonify({"error": "school_not_found", "message": f"No athletes found for '{school_name}'"}), 404

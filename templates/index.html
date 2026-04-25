@@ -2042,6 +2042,7 @@ async function startSearch() {
         tournament_id:   selectedTournament.id,
         tournament_name: selectedTournament.name || '',
         school_name:     school,
+        source:          selectedTournament.source || '',
       }),
     });
     const data = await r.json();
