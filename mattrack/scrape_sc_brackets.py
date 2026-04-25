@@ -82,6 +82,10 @@ SUBDOMAINS = {
 }
 
 ORG_TO_SUBDOMAIN = {cfg["org"]: sub for sub, cfg in SUBDOMAINS.items()}
+# 'misc' source events live on bare smoothcomp.com — subdomain "" triggers
+# _base("") to use the unprefixed host (added so charity / one-off events
+# like Tap Cancer Out get bracket scrapes alongside federation events).
+ORG_TO_SUBDOMAIN["misc"] = ""
 
 
 # ── HTTP helpers ────────────────────────────────────────────────────────────
