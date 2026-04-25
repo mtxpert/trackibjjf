@@ -347,7 +347,73 @@ def main():
 
         time.sleep(1)
 
+    # ── Misc / one-off SC events (hosted on bare smoothcomp.com, no fed
+    # subdomain) — pulled from tournament_events where source='misc' and
+    # start_date is within the lookback window. Otherwise these events
+    # land in the DB metadata but their rosters never get scraped, and
+    # mattrack.net shows 0 athletes for charity/local opens like Tap
+    # Cancer Out the day they happen.
+    if not args.sub:  # only on full runs
+        misc_lookback_days = args.days or 7
+        misc_events = _fetch_misc_upcoming(misc_lookback_days)
+        log.info("=== misc (bare smoothcomp.com, %d upcoming events) ===", len(misc_events))
+        for ev in misc_events:
+            pool = ThreadPoolExecutor(max_workers=1)
+            fut = pool.submit(scrape_registrations, "www", "misc", ev)
+            try:
+                rows = fut.result(timeout=120)
+            except TimeoutError:
+                log.warning("  Misc event %s timed out, skipping", ev["id"])
+                rows = []
+            except Exception as e:
+                log.warning("  Misc event %s error: %s", ev["id"], e)
+                rows = []
+            pool.shutdown(wait=False)
+            total_events += 1
+            if args.dry_run:
+                total_regs += len(rows)
+            else:
+                n = supabase_upsert(rows, "misc", ev["id"])
+                total_regs += n
+                log.info("  Saved %d rows for misc event %s", n, ev["id"])
+            time.sleep(0.5)
+
     log.info("Done. Total: %d registrations across %d events", total_regs, total_events)
+
+
+def _fetch_misc_upcoming(within_days: int) -> list[dict]:
+    """Return upcoming events from tournament_events where source='misc' and
+    start_date is in [today, today + within_days]."""
+    if not SUPABASE_KEY:
+        return []
+    today = date.today()
+    cutoff = (today + timedelta(days=within_days)).isoformat()
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Accept": "application/json",
+    }
+    url = (f"{SUPABASE_URL}/rest/v1/tournament_events"
+           f"?select=event_id,name,start_date,end_date,location"
+           f"&source=eq.misc"
+           f"&start_date=gte.{today.isoformat()}"
+           f"&start_date=lte.{cutoff}"
+           f"&order=start_date.asc"
+           f"&limit=200")
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        rows = r.json() or []
+    except Exception as e:
+        log.warning("misc event fetch failed: %s", e)
+        return []
+    return [{
+        "id": str(row["event_id"]),
+        "title": row.get("name") or f"Event {row['event_id']}",
+        "start": row.get("start_date") or "",
+        "end": row.get("end_date") or "",
+        "location": row.get("location") or "",
+    } for row in rows]
 
 
 if __name__ == "__main__":
