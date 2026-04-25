@@ -2213,6 +2213,7 @@ async function refreshPickStatuses() {
       body: JSON.stringify({
         tournament_id:   selectedTournament.id,
         tournament_name: selectedTournament.name,
+        source:          selectedTournament.source || '',
         athletes:        allAthletes
       })
     });

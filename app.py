@@ -1101,18 +1101,94 @@ def api_bracket(tournament_id, category_id):
 @app.route("/api/pick-statuses/<tournament_id>")
 def api_pick_statuses(tournament_id):
     """Return placement/eliminated/fight_time keyed by athlete name (lowercase).
-    Used for pick-screen preview only — no payment limit since it's just browsing."""
+    Used for pick-screen preview only — no payment limit since it's just browsing.
+
+    Two paths:
+      - IBJJF events: read the roster_cache (legacy)
+      - SC-source events (misc, naga, compnet, gi, ...): scan all
+        bracket_finals rows for this tournament and pull state out of state_json
+    """
     from scraper import load_roster_cache
     from watcher import load_state
 
-    cache = load_roster_cache(tournament_id)
-    if not cache:
-        return jsonify({"statuses": {}})
-
     tournament_name = request.args.get("name", "")
     tz_name = _tournament_tz(tournament_name)
+    requested_names = [n.lower() for n in request.args.getlist("name")
+                        if n and not n.startswith("Tap")]  # filter event-name pollution
+    # If names came in differently (e.g., comma-joined), broaden the parse.
+    if not requested_names:
+        raw = request.args.get("athletes", "")
+        if raw:
+            requested_names = [n.strip().lower() for n in raw.split(",") if n.strip()]
+
     statuses = {}
 
+    # ── SC-source path: read bracket_finals state_json directly ──────────────
+    cache = load_roster_cache(tournament_id) or {}
+    is_ibjjf_path = bool(cache.get("athletes"))
+    if not is_ibjjf_path:
+        try:
+            sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+            sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+            url = (f"{sb_url}/rest/v1/bracket_finals"
+                   f"?select=division,state_json"
+                   f"&tournament_id=eq.{tournament_id}"
+                   f"&limit=500")
+            import requests as _req
+            r = _req.get(url, headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"}, timeout=8)
+            brackets = r.json() if r.ok else []
+        except Exception:
+            brackets = []
+        for b in brackets:
+            sj = b.get("state_json") or {}
+            results_final = bool(sj.get("results_final"))
+            ranking = sj.get("ranking") or []
+            fights = sj.get("fights") or []
+            # Build a name → record per athlete that appears anywhere in this bracket.
+            seen_in_bracket = set()
+            for fight in fights:
+                for comp in (fight.get("competitors") or []):
+                    nm = (comp.get("name") or "").lower()
+                    if nm:
+                        seen_in_bracket.add(nm)
+            for rank in ranking:
+                nm = (rank.get("name") or "").lower()
+                if nm:
+                    seen_in_bracket.add(nm)
+            for nm in seen_in_bracket:
+                rec = statuses.get(nm) or {}
+                # Placement (only if final)
+                if results_final:
+                    placed = next((str(r.get("pos")) for r in ranking
+                                   if (r.get("name") or "").lower() == nm), None)
+                    if placed:
+                        rec["placement"] = int(placed) if placed.isdigit() else None
+                    rec["eliminated"] = not placed
+                # Next/upcoming fight for this athlete
+                if not results_final:
+                    next_fight = next((f for f in fights
+                                       if f.get("state") == "seeded"
+                                       and not f.get("is_bye")
+                                       and any(nm in (c.get("name") or "").lower()
+                                               for c in (f.get("competitors") or []))), None)
+                    if next_fight:
+                        rec["fight_time"]     = next_fight.get("time", "")
+                        rec["fight_time_utc"] = next_fight.get("time_utc", "")
+                        rec["mat_name"]       = next_fight.get("mat", "")
+                # Eliminated if both their finished fights show them as loser and no seeded next
+                if not results_final and "fight_time" not in rec:
+                    losses = sum(1 for f in fights
+                                 if f.get("state") == "finished"
+                                 and not f.get("is_bye")
+                                 and (f.get("winner") or "").lower() != nm
+                                 and any(nm in (c.get("name") or "").lower()
+                                         for c in (f.get("competitors") or [])))
+                    if losses >= 2:
+                        rec["eliminated"] = True
+                statuses[nm] = rec
+        return jsonify({"statuses": statuses})
+
+    # ── IBJJF legacy path ────────────────────────────────────────────────────
     for a in cache.get("athletes", []):
         cid = a.get("category_id", "")
         if not cid:
@@ -1171,12 +1247,20 @@ def api_refresh():
     if not _os.environ.get("DEV_BYPASS_AUTH"):
         from auth import get_user_from_token, is_plan_active
         _user = get_user_from_token(request)
-        _paid = _user and is_plan_active(_user["sub"])
+        _paid = _user and is_plan_active(_user["sub"], email=_user.get("email", ""))
         if not _paid and len(data.get("athletes", [])) > 1:
             return jsonify({"error": "limit_reached", "plan_required": "individual"}), 402
 
     if not tournament_id or not athletes:
         return jsonify({"error": "tournament_id and athletes required"}), 400
+
+    # ── SC-source refresh: bracket_finals already has the live state via
+    # the live-bracket-scraper cron + my misc-aware bracket scrape. Read it
+    # directly (no live re-fetch needed) so the Watch screen on misc/gi/
+    # fuji/adcc/etc. events shows fight times + placements.
+    src_hint = (data.get("source") or "").strip().lower()
+    if src_hint and src_hint in (SC_ORG_KEYS - {"naga", "compnet"}):
+        return _bracket_finals_refresh(tournament_id, tournament_name, athletes, src_hint)
 
     # ── NAGA / Smoothcomp refresh path ───────────────────────────────────────
     if _is_naga_tournament(tournament_id):
@@ -1258,6 +1342,117 @@ def api_refresh():
             _brackets[cid]["changes"] = []
 
     return jsonify({"updated": updated, "changes": all_changes})
+
+
+def _bracket_finals_refresh(tournament_id, tournament_name, athletes, source):
+    """Refresh path for SC-source events whose bracket data lives in
+    bracket_finals (populated by scrape_sc_brackets nightly + day-of cron).
+
+    Matches each athlete by name (first+last token-compare) against every
+    bracket's state_json — pulls placement, fight_time, mat, opponent,
+    eliminated status. Returns the same {updated, changes} shape the
+    frontend expects from _naga_refresh.
+    """
+    import requests as _req
+    sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    try:
+        url = (f"{sb_url}/rest/v1/bracket_finals"
+               f"?select=division,state_json"
+               f"&tournament_id=eq.{tournament_id}"
+               f"&limit=500")
+        r = _req.get(url, headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"}, timeout=8)
+        brackets = r.json() if r.ok else []
+    except Exception:
+        brackets = []
+
+    def _name_key(s):
+        toks = (s or "").lower().split()
+        if len(toks) >= 2:
+            return f"{toks[0]} {toks[-1]}"
+        return (s or "").lower()
+
+    updated = []
+    changes = []
+    for ath in athletes:
+        a = dict(ath)
+        nm_full = (a.get("name") or "").lower()
+        nm_key = _name_key(a.get("name") or "")
+
+        # Clear stale fight info
+        for k in ("fight_time", "fight_time_utc", "mat", "fight_num", "mat_name",
+                  "placement", "eliminated", "next_opponent"):
+            a.pop(k, None)
+
+        # Find this athlete in any bracket
+        matched_bracket = None
+        for b in brackets:
+            sj = b.get("state_json") or {}
+            for f in (sj.get("fights") or []):
+                if any(nm_key in (c.get("name") or "").lower()
+                       for c in (f.get("competitors") or [])):
+                    matched_bracket = sj
+                    break
+            if matched_bracket:
+                break
+            for r in (sj.get("ranking") or []):
+                if nm_key in (r.get("name") or "").lower():
+                    matched_bracket = sj
+                    break
+            if matched_bracket:
+                break
+
+        if matched_bracket:
+            sj = matched_bracket
+            results_final = bool(sj.get("results_final"))
+            ranking = sj.get("ranking") or []
+            fights = sj.get("fights") or []
+
+            # Placement from ranking
+            placement = next((r.get("pos") for r in ranking
+                              if nm_key in (r.get("name") or "").lower()), None)
+            if placement:
+                a["placement"] = int(placement) if str(placement).isdigit() else placement
+
+            # Next/upcoming fight (state seeded, not bye, not completed)
+            for f in fights:
+                if f.get("completed") or f.get("is_bye"):
+                    continue
+                if f.get("state") == "finished":
+                    continue
+                comps = f.get("competitors") or []
+                if any(nm_key in (c.get("name") or "").lower() for c in comps):
+                    a["mat"]            = f.get("mat", "")
+                    a["mat_name"]       = f.get("mat", "")
+                    a["fight_time"]     = f.get("time", "")
+                    a["fight_time_utc"] = f.get("time_utc", "")
+                    a["fight_num"]      = f.get("fight_num", "")
+                    opp = next((c.get("name") for c in comps
+                                if nm_key not in (c.get("name") or "").lower()), "")
+                    if opp:
+                        a["next_opponent"] = opp
+                    break
+
+            if a.get("placement"):
+                a["eliminated"] = False
+            elif results_final:
+                a["eliminated"] = True
+            else:
+                # Two losses with no upcoming → eliminated
+                losses = sum(1 for f in fights
+                             if f.get("state") == "finished"
+                             and not f.get("is_bye")
+                             and (f.get("winner") or "").lower() != nm_key
+                             and any(nm_key in (c.get("name") or "").lower()
+                                     for c in (f.get("competitors") or [])))
+                a["eliminated"] = losses >= 2 and not a.get("fight_time")
+        else:
+            a["placement"] = None
+            a["eliminated"] = False
+
+        updated.append(a)
+
+    return jsonify({"updated": updated, "changes": changes})
 
 
 def _naga_refresh(tournament_id, tournament_name, athletes):
