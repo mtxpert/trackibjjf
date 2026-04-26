@@ -2067,13 +2067,16 @@ def how_it_works():
                 ("sc_ibjjf_verified",   ""),
                 ("findme_pending",      "findme_reports?status=eq.pending"),
             ]
+            # tournament_results is huge (4.8M+) — count=exact times out, use planned (estimated)
+            estimated_tables = {"tournament_results"}
             for label, override in count_targets:
                 path = override or f"{label}?select=*"
+                count_pref = "count=planned" if label in estimated_tables else "count=exact"
                 try:
                     r = requests.head(
                         f"{sb_url}/rest/v1/{path}",
                         headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}",
-                                 "Prefer": "count=exact"},
+                                 "Prefer": count_pref},
                         timeout=5,
                     )
                     rng = r.headers.get("Content-Range", "")
