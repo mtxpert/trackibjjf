@@ -486,11 +486,10 @@ def upsert_bracket(state: dict, dry_run: bool = False) -> bool:
                     resp.status_code, state["category_id"], resp.text[:200])
         return False
 
-    # Flatten ranking + fights into fighter_results / tournament_results so
-    # placements feed search, profiles, and head-to-head queries.
-    fr_rows, tr_rows = _flatten_results(state)
-    _post("fighter_results", fr_rows,
-          on_conflict="athlete_name,tournament_id,category_id,placement")
+    # Flatten ranking + fights into tournament_results so placements feed
+    # search, profiles, and head-to-head. (fighter_results has no readers
+    # in the app and lacks a usable unique constraint — skip it.)
+    _, tr_rows = _flatten_results(state)
     _post("tournament_results", tr_rows,
           on_conflict="source,event_id,division,placement,athlete_name")
     return True
