@@ -2107,9 +2107,24 @@ def how_it_works():
                         headers={"Authorization": f"Bearer {rk}"},
                         timeout=5,
                     )
+                    last_run = ""
                     if r.ok:
                         last_run = (r.json().get("serviceDetails") or {}).get("lastSuccessfulRunAt", "")
-                        if last_run:
+                    # Fallback: nightly crons often have null lastSuccessfulRunAt — pull
+                    # the most recent cron_job_run_ended timestamp from the events feed.
+                    if not last_run:
+                        ev = requests.get(
+                            f"https://api.render.com/v1/services/{cid}/events?limit=20",
+                            headers={"Authorization": f"Bearer {rk}"},
+                            timeout=5,
+                        )
+                        if ev.ok:
+                            for entry in ev.json():
+                                e = entry.get("event") or entry
+                                if e.get("type") == "cron_job_run_ended":
+                                    last_run = e.get("timestamp", "")
+                                    break
+                    if last_run:
                             try:
                                 last_dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
                                 age = datetime.now(tz=last_dt.tzinfo) - last_dt
