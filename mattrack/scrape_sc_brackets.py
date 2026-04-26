@@ -326,6 +326,130 @@ def build_state(event_id: str, bracket: dict, subdomain: str, source: str,
 
 # ── Supabase upsert ─────────────────────────────────────────────────────────
 
+def _flatten_results(state: dict) -> tuple[list[dict], list[dict]]:
+    """Build fighter_results + tournament_results rows from a bracket state.
+    Mirrors the logic in results.save_bracket_final so SC brackets feed the
+    flat history tables — not just bracket_finals JSONB.
+    """
+    tournament_id   = state["tournament_id"]
+    tournament_name = state["tournament_name"]
+    category_id     = state["category_id"]
+    division        = state["division"]
+    src             = state["source"]
+    ranking         = state.get("ranking", []) or []
+    fights          = state.get("fights", []) or []
+    event_date      = state.get("event_date") or None
+
+    # Build name → display, name → team from all fight competitors
+    name_display: dict[str, str] = {}
+    name_team:    dict[str, str] = {}
+    for f in fights:
+        for c in f.get("competitors", []) or []:
+            raw = (c.get("name") or "").strip()
+            if raw and raw.lower() not in ("bye", ""):
+                key = raw.lower()
+                name_display.setdefault(key, raw)
+                name_team.setdefault(key, c.get("team", "") or "")
+
+    # 'misc' is recorded under tournament_results.source = 'smoothcomp' (not 'misc'),
+    # so head-to-head queries hit a single SC bucket. IBJJF uses its own source.
+    tr_source = "ibjjf" if src == "ibjjf" else "smoothcomp"
+
+    fr_rows: list[dict] = []
+    tr_rows: list[dict] = []
+    placed: set[str] = set()
+
+    for r in ranking:
+        nm = (r.get("name") or "").strip()
+        if not nm:
+            continue
+        key = nm.lower()
+        placed.add(key)
+        display = name_display.get(key, nm)
+        team    = name_team.get(key, "")
+        pos_raw = r.get("pos")
+        try:
+            placement_int = int(str(pos_raw))
+        except (TypeError, ValueError):
+            placement_int = None
+
+        fr_rows.append({
+            "athlete_name":    key,
+            "athlete_display": display,
+            "team":            team,
+            "tournament_id":   tournament_id,
+            "tournament_name": tournament_name,
+            "category_id":     category_id,
+            "division":        division,
+            "source":          src,
+            "placement":       str(placement_int) if placement_int is not None else "eliminated",
+            "event_date":      event_date,
+        })
+        tr_rows.append({
+            "source":          tr_source,
+            "event_id":        tournament_id,
+            "event_title":     tournament_name,
+            "event_date":      event_date,
+            "division":        division,
+            "placement":       placement_int,
+            "athlete_name":    key,
+            "athlete_display": display,
+            "team":            team,
+        })
+
+    # Anyone who fought but didn't place = eliminated
+    for key, display in name_display.items():
+        if key in placed:
+            continue
+        team = name_team.get(key, "")
+        fr_rows.append({
+            "athlete_name":    key,
+            "athlete_display": display,
+            "team":            team,
+            "tournament_id":   tournament_id,
+            "tournament_name": tournament_name,
+            "category_id":     category_id,
+            "division":        division,
+            "source":          src,
+            "placement":       "eliminated",
+            "event_date":      event_date,
+        })
+        tr_rows.append({
+            "source":          tr_source,
+            "event_id":        tournament_id,
+            "event_title":     tournament_name,
+            "event_date":      event_date,
+            "division":        division,
+            "placement":       None,
+            "athlete_name":    key,
+            "athlete_display": display,
+            "team":            team,
+        })
+
+    return fr_rows, tr_rows
+
+
+def _post(table: str, rows: list[dict], on_conflict: str) -> bool:
+    if not rows:
+        return True
+    resp = requests.post(
+        f"{SUPABASE_URL}/rest/v1/{table}",
+        params={"on_conflict": on_conflict},
+        headers={
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+        },
+        json=rows,
+        timeout=45,
+    )
+    if resp.status_code in (200, 201, 204):
+        return True
+    log.warning("  %s upsert failed %s: %s", table, resp.status_code, resp.text[:200])
+    return False
+
+
 def upsert_bracket(state: dict, dry_run: bool = False) -> bool:
     if not state:
         return False
@@ -357,11 +481,19 @@ def upsert_bracket(state: dict, dry_run: bool = False) -> bool:
         json=[row],
         timeout=30,
     )
-    if resp.status_code in (200, 201, 204):
-        return True
-    log.warning("  Upsert failed %s for bracket %s: %s",
-                resp.status_code, state["category_id"], resp.text[:200])
-    return False
+    if resp.status_code not in (200, 201, 204):
+        log.warning("  bracket_finals upsert failed %s for %s: %s",
+                    resp.status_code, state["category_id"], resp.text[:200])
+        return False
+
+    # Flatten ranking + fights into fighter_results / tournament_results so
+    # placements feed search, profiles, and head-to-head queries.
+    fr_rows, tr_rows = _flatten_results(state)
+    _post("fighter_results", fr_rows,
+          on_conflict="athlete_name,tournament_id,category_id,placement")
+    _post("tournament_results", tr_rows,
+          on_conflict="source,event_id,division,placement,athlete_name")
+    return True
 
 
 # ── Per-event driver ────────────────────────────────────────────────────────
