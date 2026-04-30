@@ -155,14 +155,26 @@ def _query_user_row(user_id: str, fields: str = "plan,sub_status") -> dict:
         return {}
 
 
-def get_user_plan(user_id: str) -> str:
-    """
-    Look up the plan for *user_id* in ``public.users``.
+# BETA: site is free for any authenticated user. The DB lookup logic below is
+# preserved (commented out) so re-enabling paid plans is a one-block revert.
+BETA_FREE_FOR_AUTHED = True
 
-    Returns one of ``'free'``, ``'individual'``, ``'gym'``, ``'affiliate'``.
-    Falls back to ``'free'`` on any error (DB unavailable, user not found,
-    unexpected schema, etc.).
+OWNER_EMAILS = frozenset({
+    "mbambic@gmail.com",
+    "chrisbambic@gmail.com",
+    "tbambic@gmail.com",
+})
+
+
+def get_user_plan(user_id: str, email: str = "") -> str:
     """
+    Beta mode: any authenticated user is treated as 'individual'. Anonymous
+    callers (no user_id) still get 'free'.
+    """
+    if email and email.strip().lower() in OWNER_EMAILS:
+        return "individual"
+    if BETA_FREE_FOR_AUTHED and user_id:
+        return "individual"
     try:
         data = _query_user_row(user_id, "plan")
         if not data:
@@ -176,13 +188,14 @@ def get_user_plan(user_id: str) -> str:
         return "free"
 
 
-def is_plan_active(user_id: str) -> bool:
+def is_plan_active(user_id: str, email: str = "") -> bool:
     """
-    Return ``True`` if *user_id* has an active paid subscription.
-
-    Active means ``plan != 'free'`` **and** ``sub_status == 'active'``.
-    Returns ``False`` on any error or if the user is on the free tier.
+    Beta mode: any authenticated user is active. Anonymous callers are not.
     """
+    if email and email.strip().lower() in OWNER_EMAILS:
+        return True
+    if BETA_FREE_FOR_AUTHED and user_id:
+        return True
     try:
         data = _query_user_row(user_id, "plan,sub_status")
         if not data:

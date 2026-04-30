@@ -169,16 +169,20 @@ def _owner_email(user: dict) -> str:
     return (user.get("email") or "").strip().lower() if user else ""
 
 
+# BETA: site is free for any authenticated user. The DB lookup logic below is
+# preserved (commented out) so re-enabling paid plans is a one-block revert.
+BETA_FREE_FOR_AUTHED = True
+
+
 def get_user_plan(user_id: str, email: str = "") -> str:
     """
-    Look up the plan for *user_id* in ``public.users``.
-
-    Returns one of ``'free'``, ``'individual'``, ``'gym'``, ``'affiliate'``.
-    Falls back to ``'free'`` on any error (DB unavailable, user not found,
-    unexpected schema, etc.) — except for OWNER_EMAILS, which always return
-    'individual' so owners/staff are never paywalled.
+    Beta mode: any authenticated user is treated as 'individual'. Anonymous
+    callers (no user_id) still get 'free'. Owners are unconditionally
+    'individual' as before.
     """
     if email and email.strip().lower() in OWNER_EMAILS:
+        return "individual"
+    if BETA_FREE_FOR_AUTHED and user_id:
         return "individual"
     try:
         data = _query_user_row(user_id, "plan")
@@ -195,13 +199,11 @@ def get_user_plan(user_id: str, email: str = "") -> str:
 
 def is_plan_active(user_id: str, email: str = "") -> bool:
     """
-    Return ``True`` if *user_id* has an active paid subscription.
-
-    Active means ``plan != 'free'`` **and** ``sub_status == 'active'``.
-    Returns ``False`` on any error or if the user is on the free tier.
-    OWNER_EMAILS are always active.
+    Beta mode: any authenticated user is active. Anonymous callers are not.
     """
     if email and email.strip().lower() in OWNER_EMAILS:
+        return True
+    if BETA_FREE_FOR_AUTHED and user_id:
         return True
     try:
         data = _query_user_row(user_id, "plan,sub_status")

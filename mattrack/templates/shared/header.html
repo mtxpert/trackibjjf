@@ -172,6 +172,23 @@
 </header>
 {% endif %}
 
+{# ── Beta banner (free while in beta) ─────────────────────────────────────── #}
+<div id="beta-banner" style="display:none;background:#243b22;border-bottom:1px solid #355c33;color:#cfeac0;padding:6px 12px;font-size:.78rem;text-align:center;line-height:1.4">
+  <strong style="color:#fff">Free while in beta</strong>
+  <span style="opacity:.85">— paid plans coming later, we'll give plenty of notice.</span>
+  <a href="#" onclick="event.preventDefault();document.getElementById('beta-banner').style.display='none';try{localStorage.setItem('beta_banner_dismissed','1')}catch(_){}" style="color:#cfeac0;margin-left:8px;text-decoration:underline;opacity:.7">dismiss</a>
+</div>
+<script>
+(function(){
+  try{
+    if(localStorage.getItem('beta_banner_dismissed') !== '1'){
+      var el = document.getElementById('beta-banner');
+      if(el) el.style.display = 'block';
+    }
+  }catch(_){}
+})();
+</script>
+
 {#
   include_modals — set to false if the host template provides its own modals (default: true)
   include_js     — set to false if the host template provides its own auth JS  (default: true)
