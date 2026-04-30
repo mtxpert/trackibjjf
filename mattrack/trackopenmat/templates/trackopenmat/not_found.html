@@ -1,0 +1,11 @@
+{% extends "trackopenmat/base.html" %}
+{% block title %}Not Found — TrackOpenMat{% endblock %}
+{% block body %}
+<div class="container">
+  <div class="empty-state">
+    <h3>School not found</h3>
+    <p>We don't have a school with slug "<code>{{ slug }}</code>" on file.</p>
+    <p style="margin-top: 1rem;"><a class="btn-outline" href="/">← Home</a> <a class="btn-outline" href="/search">Search schools →</a></p>
+  </div>
+</div>
+{% endblock %}

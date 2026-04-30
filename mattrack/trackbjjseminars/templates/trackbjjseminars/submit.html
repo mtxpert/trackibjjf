@@ -1,0 +1,103 @@
+{% extends "trackbjjseminars/base.html" %}
+{% block title %}Submit a Seminar — TrackBJJSeminars{% endblock %}
+
+{% block head %}
+<style>
+  .form-grid { display: grid; gap: 1rem; max-width: 720px; margin: 0 auto; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .form-row.full { grid-template-columns: 1fr; }
+  .form-grid label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .3rem; text-transform: uppercase; letter-spacing: .04em; }
+  .form-grid input, .form-grid textarea, .form-grid select { width: 100%; box-sizing: border-box;
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: .55rem .8rem; border-radius: 6px; font-size: .9rem; font-family: inherit; outline: none; }
+  .form-grid input:focus, .form-grid textarea:focus, .form-grid select:focus { border-color: var(--accent); }
+  .form-grid textarea { min-height: 100px; resize: vertical; }
+  .submit-bar { display: flex; gap: .5rem; align-items: center; margin-top: 1rem; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="section-title">Submit a Seminar</div>
+  <div class="card" style="max-width: 720px; margin: 0 auto;">
+    <p class="muted" style="margin-bottom: 1rem;">All submissions are reviewed before being listed publicly. You must be signed in to submit.</p>
+    <form class="form-grid" id="seminar-form">
+      <div class="form-row full">
+        <div><label>Title *</label><input type="text" name="title" required placeholder="e.g., Marcelo Garcia Guard Seminar"></div>
+      </div>
+      <div class="form-row">
+        <div><label>Instructor name *</label><input type="text" name="instructor_name" required></div>
+        <div><label>Instructor URL</label><input type="url" name="instructor_url" placeholder="https://…"></div>
+      </div>
+      <div class="form-row">
+        <div><label>Date *</label><input type="date" name="event_date" required></div>
+        <div><label>Start time</label><input type="time" name="start_time"></div>
+      </div>
+      <div class="form-row">
+        <div><label>End time</label><input type="time" name="end_time"></div>
+        <div><label>Duration (hours)</label><input type="number" name="duration_hours" step="0.5" min="0.5"></div>
+      </div>
+      <div class="form-row">
+        <div><label>Venue name</label><input type="text" name="venue_name"></div>
+        <div><label>City *</label><input type="text" name="city" required></div>
+      </div>
+      <div class="form-row">
+        <div><label>State / Province</label><input type="text" name="state_province"></div>
+        <div><label>Country</label><input type="text" name="country" placeholder="USA"></div>
+      </div>
+      <div class="form-row full">
+        <div><label>Address</label><input type="text" name="address_line1"></div>
+      </div>
+      <div class="form-row">
+        <div><label>Format</label><select name="gi_or_nogi"><option value="">—</option><option>Gi</option><option>No-Gi</option><option>Both</option></select></div>
+        <div><label>Skill level</label><select name="skill_level"><option value="">All levels</option><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>All levels</option></select></div>
+      </div>
+      <div class="form-row">
+        <div><label>Cost (USD)</label><input type="number" name="cost_usd" step="0.01" min="0"></div>
+        <div><label>Spots available</label><input type="number" name="spots_available" min="1"></div>
+      </div>
+      <div class="form-row full">
+        <div><label>Registration URL</label><input type="url" name="registration_url" placeholder="https://…"></div>
+      </div>
+      <div class="form-row full">
+        <div><label>Host school slug</label><input type="text" name="host_school" placeholder="e.g., gracie-barra-tampa"></div>
+      </div>
+      <div class="form-row full">
+        <div><label>Description</label><textarea name="description" placeholder="What will the seminar cover?"></textarea></div>
+      </div>
+      <div class="submit-bar">
+        <button type="submit" class="btn-go">Submit for review</button>
+        <a class="btn-outline" href="/">Cancel</a>
+        <span id="status" class="muted" style="margin-left: .5rem;"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.getElementById('seminar-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const status = document.getElementById('status');
+  const session = window.tbSession;
+  if (!session) { status.textContent = ''; openModal('modal-login'); return; }
+  const fd = new FormData(e.target);
+  const body = {};
+  for (const [k, v] of fd.entries()) { if (v !== '') body[k] = v; }
+  status.textContent = 'Submitting…';
+  try {
+    const r = await fetch('/api/seminars', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer ' + session.access_token},
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      status.textContent = '✓ Submitted! Redirecting…';
+      setTimeout(() => location.href = '/seminar/' + d.slug, 800);
+    } else {
+      status.textContent = '✗ ' + (d.error || 'Submission failed');
+    }
+  } catch(err) { status.textContent = '✗ network error'; }
+});
+</script>
+{% endblock %}

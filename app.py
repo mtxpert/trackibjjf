@@ -1,5 +1,5 @@
 """
-MatTrack — Tournament Tracker
+TrackMat — Tournament Tracker
 Scalable architecture:
   - Roster cache: one Playwright scrape per tournament serves all users
   - Client-side filtering: search is a JS .filter(), zero server load
@@ -134,7 +134,7 @@ def _naga_subdomain(tournament_name=""):
 
 
 def _subdomain_to_source(subdomain: str) -> str:
-    """Map Smoothcomp subdomain to MatTrack source string."""
+    """Map Smoothcomp subdomain to TrackMat source string."""
     return "compnet" if subdomain == "compnet" else "naga"
 
 # ── Shared bracket watcher ────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ def _send_push_notifications(category_id: str, division: str, changes: list) -> 
         import json as _json
 
         vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
-        vapid_email   = os.environ.get("VAPID_EMAIL", "mailto:info@mattrack.net")
+        vapid_email   = os.environ.get("VAPID_EMAIL", "mailto:info@trackmat.net")
         if not vapid_private:
             return
 
@@ -175,7 +175,7 @@ def _send_push_notifications(category_id: str, division: str, changes: list) -> 
         notable = [c for c in changes if any(k in c for k in ("Mat", "FINISHED", "COMPLETE", "time:"))]
         body = notable[0] if notable else changes[0]
         short_div = division.split(" ")[:4]
-        title = "🥋 " + " ".join(short_div) if division else "🥋 MatTrack"
+        title = "🥋 " + " ".join(short_div) if division else "🥋 TrackMat"
 
         payload = _json.dumps({"title": title, "body": body, "tag": f"cat-{category_id}", "url": "/"})
 
@@ -578,7 +578,7 @@ def api_geocode():
         resp = requests.get(
             "https://nominatim.openstreetmap.org/search",
             params={"q": q, "format": "json", "limit": 1},
-            headers={"User-Agent": "MatTrack/1.0"},
+            headers={"User-Agent": "TrackMat/1.0"},
             timeout=5,
         )
         data = resp.json()
@@ -1841,7 +1841,7 @@ drop.addEventListener('click', () => { const inp = document.createElement('input
 
 @app.route("/debug/logos")
 def debug_logos():
-    """Dev-only MatTrack logo gallery."""
+    """Dev-only TrackMat logo gallery."""
     import glob as _glob
     logos_dir = "/mnt/c/Users/mtxpert/claude/mattrack-social/logos"
     files = sorted(_glob.glob(f"{logos_dir}/*.png"))
@@ -1854,7 +1854,7 @@ def debug_logos():
     )
     return Response(
         f'<!DOCTYPE html><html><body style="background:#111;color:#eee;font-family:sans-serif;padding:20px">'
-        f'<h1 style="text-align:center">MatTrack Logo Options</h1>{imgs}</body></html>',
+        f'<h1 style="text-align:center">TrackMat Logo Options</h1>{imgs}</body></html>',
         mimetype="text/html",
     )
 
@@ -2184,7 +2184,7 @@ def auth_relay():
     html = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head><body>
 <script>
-var TRUSTED=['https://www.mattrack.net','https://mattrack.net','https://www.trackbjj.net','https://trackbjj.net'];
+var TRUSTED=['https://www.trackmat.net','https://trackmat.net','https://www.trackbjj.net','https://trackbjj.net','https://www.trackopenmat.net','https://trackopenmat.net','https://www.trackbjjseminars.net','https://trackbjjseminars.net'];
 var SB_KEY='sb-kzqvfuqxtbrhlgphyntb-auth-token';
 window.addEventListener('message',function(e){
   if(!TRUSTED.includes(e.origin))return;

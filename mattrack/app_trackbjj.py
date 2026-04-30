@@ -2,7 +2,7 @@
 trackbjj.net — BJJ Athlete Repository
 Runs locally on port 5951, accessible at http://172.23.93.61:5951
 
-Companion to mattrack.net (port 5950). Shares the same Supabase DB.
+Companion to trackmat.net (port 5950). Shares the same Supabase DB.
 """
 
 import difflib
@@ -62,7 +62,7 @@ def _base_url(port):
     return f"http://{host}:{port}"
 
 
-MATTRACK_PROD_URL  = os.environ.get("MATTRACK_URL",  "https://www.mattrack.net")
+MATTRACK_PROD_URL  = os.environ.get("MATTRACK_URL",  "https://www.trackmat.net")
 TRACKBJJ_PROD_URL  = os.environ.get("TRACKBJJ_URL",  "https://www.trackbjj.net")
 
 
@@ -83,7 +83,8 @@ def inject_urls():
         site_subtitle="BJJ Athlete Repository",
         site_url=site_url,
         site_icon="",
-        sibling_name="MatTrack",
+        site_key="trackbjj",
+        sibling_name="TrackMat",
         sibling_url=sibling_url,
         header_home_fn="",
         show_lang=True,
@@ -1797,7 +1798,7 @@ def auth_relay():
     html = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head><body>
 <script>
-var TRUSTED=['https://www.mattrack.net','https://mattrack.net','https://www.trackbjj.net','https://trackbjj.net'];
+var TRUSTED=['https://www.trackmat.net','https://trackmat.net','https://www.trackbjj.net','https://trackbjj.net','https://www.trackopenmat.net','https://trackopenmat.net','https://www.trackbjjseminars.net','https://trackbjjseminars.net'];
 var SB_KEY='sb-kzqvfuqxtbrhlgphyntb-auth-token';
 window.addEventListener('message',function(e){
   if(!TRUSTED.includes(e.origin))return;

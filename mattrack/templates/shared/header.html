@@ -1,17 +1,26 @@
 {#
-  shared/header.html — canonical header for mattrack.net and trackbjj.net
+  shared/header.html — canonical header for trackmat.net and trackbjj.net
   Include with: {% include 'shared/header.html' %}
 
   Required context variables (set via context_processor or template vars):
-    site_name       — "MatTrack" | "TrackBJJ"
+    site_name       — "TrackMat" | "TrackBJJ" | "TrackOpenMat" | "TrackSeminars"
     site_subtitle   — subtitle string
-    site_url        — root URL of this site (e.g. https://www.mattrack.net)
+    site_url        — root URL of this site
     site_icon       — emoji prefix, e.g. "🥋" (empty string to omit)
-    sibling_name    — "TrackBJJ" | "MatTrack"
-    sibling_url     — root URL of the other site
+    site_key        — one of: 'trackmat' | 'trackbjj' | 'openmat' | 'seminars'
+    sibling_name    — (legacy/optional) primary sibling name
+    sibling_url     — (legacy/optional) primary sibling url
     header_home_fn  — JS function to call when logo is clicked, e.g. "goHome()" (empty = plain link)
     show_lang       — True to show the 🌐 language picker
 #}
+
+{% set _ALL_SITES = [
+  {'key':'trackmat',  'name':'TrackMat',     'url':'https://www.trackmat.net',         'icon':'🥋', 'sub':'Tournament Tracker'},
+  {'key':'trackbjj',  'name':'TrackBJJ',     'url':'https://www.trackbjj.net',         'icon':'🥇', 'sub':'BJJ Athlete Repository'},
+  {'key':'openmat',   'name':'TrackOpenMat', 'url':'https://www.trackopenmat.net',     'icon':'🏠', 'sub':'School & Open Mat Directory'},
+  {'key':'seminars',  'name':'TrackSeminars','url':'https://www.trackbjjseminars.net', 'icon':'📅', 'sub':'BJJ Seminars'}
+] %}
+{% set _siblings = _ALL_SITES | rejectattr('key', 'equalto', site_key|default('')) | list %}
 
 {# ── Shared chrome CSS ─────────────────────────────────────────────────────── #}
 <style>
@@ -31,13 +40,32 @@
 .site-header .logo-name  { font-size: 1.1rem; font-weight: 700; letter-spacing: .01em; display: block; }
 .site-header .logo-sub   { font-size: .72rem; font-weight: 400; opacity: .85; display: block; margin-top: 1px; }
 
-/* Sibling link */
-.sibling-link {
-  font-size: .75rem; color: rgba(255,255,255,.8); text-decoration: none;
-  border: 1px solid rgba(255,255,255,.35); padding: .2rem .55rem;
-  border-radius: 4px; white-space: nowrap;
+/* Sibling switcher */
+.sibling-picker { position: relative; }
+.sibling-btn {
+  background: rgba(255,255,255,.18); border: none; border-radius: 20px;
+  padding: 5px 11px; font-size: .8rem; cursor: pointer; color: white;
+  display: flex; align-items: center; gap: 5px; white-space: nowrap;
 }
-.sibling-link:hover { color: #fff; border-color: #fff; }
+.sibling-btn:hover { background: rgba(255,255,255,.26); }
+.sibling-dropdown {
+  display: none; position: absolute; right: 0; top: calc(100% + 6px);
+  background: var(--card, #1e1e30); border: 1px solid var(--border, #333355);
+  border-radius: 12px; overflow: hidden; z-index: 200; min-width: 220px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.sibling-dropdown.open { display: block; }
+.sibling-option {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; cursor: pointer; font-size: .85rem;
+  border-bottom: 1px solid var(--border, #333355);
+  color: var(--text, #f0f0f0); text-decoration: none;
+}
+.sibling-option:last-child { border-bottom: none; }
+.sibling-option:hover { background: var(--gray, #2d2d44); }
+.sibling-option .sib-icon { font-size: 1.2rem; }
+.sibling-option .sib-name { font-weight: 600; }
+.sibling-option .sib-sub  { font-size: .7rem; color: var(--muted, #777799); display: block; margin-top: 1px; }
 
 /* User pill */
 .user-pill {
@@ -160,8 +188,18 @@
     <div class="lang-dropdown" id="lang-dropdown"></div>
   </div>
   {% endif %}
-  <a class="sibling-link" href="{{ sibling_url }}" target="_blank"
-     onclick="event.stopPropagation(); _openSiblingWithSession('{{ sibling_url }}', event)">↗ {{ sibling_name }}</a>
+  <div class="sibling-picker" onclick="event.stopPropagation()">
+    <button class="sibling-btn" onclick="toggleSiblings()">↗ <span style="font-size:.7rem;opacity:.85">Sites</span></button>
+    <div class="sibling-dropdown" id="sibling-dropdown">
+      {% for sib in _siblings %}
+      <a class="sibling-option" href="{{ sib.url }}" target="_blank"
+         onclick="event.stopPropagation(); _openSiblingWithSession('{{ sib.url }}', event)">
+        <span class="sib-icon">{{ sib.icon }}</span>
+        <span><span class="sib-name">{{ sib.name }}</span><span class="sib-sub">{{ sib.sub }}</span></span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
   <div id="user-pill" class="user-pill" onclick="event.stopPropagation(); authPillClick()">
     <span id="pill-label">Sign In</span>
     <span class="pill-plan free" id="pill-plan-badge" style="display:none">FREE</span>
@@ -200,7 +238,7 @@
   <div class="modal-sheet">
     <button class="btn-modal-close" onclick="closeModal('modal-login')">✕</button>
     <div class="modal-title">Sign in to {{ site_name }}</div>
-    <div class="modal-sub">One account works on both MatTrack and TrackBJJ.</div>
+    <div class="modal-sub">One account works on both TrackMat and TrackBJJ.</div>
     <button class="btn-google" onclick="signInWithGoogle()">
       <svg width="18" height="18" viewBox="0 0 24 24">
         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -507,13 +545,29 @@ function _openSiblingWithSession(baseUrl, e) {
   }
 }
 
+const _ALL_TRACK_SITES = [
+  'https://www.trackmat.net',
+  'https://www.trackbjj.net',
+  'https://www.trackopenmat.net',
+  'https://www.trackbjjseminars.net'
+];
+
 function _fetchSiblingSession() {
-  const SIBLING = window.location.hostname.includes('trackbjj')
-    ? 'https://www.mattrack.net'
-    : 'https://www.trackbjj.net';
+  // Try each sibling that isn't the current host; first to return a session wins
+  const here = window.location.hostname.replace(/^www\./, '');
+  const siblings = _ALL_TRACK_SITES.filter(u => !u.includes(here));
+  return _trySiblings(siblings, 0);
+}
+
+function _trySiblings(list, i) {
+  if (i >= list.length) return Promise.resolve(null);
+  return _trySibling(list[i]).then(s => s || _trySiblings(list, i + 1));
+}
+
+function _trySibling(url) {
   return new Promise(function(resolve) {
     var iframe = document.createElement('iframe');
-    iframe.src = SIBLING + '/auth-relay';
+    iframe.src = url + '/auth-relay';
     iframe.style.cssText = 'position:fixed;width:1px;height:1px;top:-9999px;left:-9999px;border:none;opacity:0;';
     document.body.appendChild(iframe);
     var done = false;
@@ -525,17 +579,27 @@ function _fetchSiblingSession() {
       resolve(val);
     }
     function handler(e) {
-      var allowed = [SIBLING, SIBLING.replace('www.', '')];
+      var allowed = [url, url.replace('www.', '')];
       if (!allowed.includes(e.origin)) return;
       if (e.data && e.data.type === 'session-response') finish(e.data.session);
     }
-    var timer = setTimeout(function() { finish(null); }, 4000);
+    var timer = setTimeout(function() { finish(null); }, 2500);
     window.addEventListener('message', handler);
     iframe.onload = function() {
-      iframe.contentWindow.postMessage({type: 'get-session'}, SIBLING);
+      iframe.contentWindow.postMessage({type: 'get-session'}, url);
     };
   });
 }
+
+// ── Sibling dropdown ─────────────────────────────────────────────────────────
+function toggleSiblings() {
+  const dd = document.getElementById('sibling-dropdown');
+  if (!dd) return;
+  dd.classList.toggle('open');
+}
+document.addEventListener('click', () => {
+  document.getElementById('sibling-dropdown')?.classList.remove('open');
+});
 
 // ── Language picker ───────────────────────────────────────────────────────────
 {% if show_lang %}

@@ -1,0 +1,36 @@
+{% extends "trackopenmat/base.html" %}
+{% block title %}Claim — TrackOpenMat{% endblock %}
+
+{% block body %}
+<div class="container" style="max-width: 600px;">
+  <div class="section-title">Claim School</div>
+  <div class="card">
+    <p style="margin-bottom: 1rem;">You're claiming ownership of <strong>{{ slug }}</strong>.</p>
+    <p style="margin-bottom: 1rem;" class="muted">Sign in first, then submit your claim. We'll verify ownership manually before granting edit access.</p>
+    <button class="btn-go" id="btn-submit">Submit claim</button>
+    <a class="btn-outline" href="/school/{{ slug }}" style="margin-left: .5rem;">← Back to school</a>
+    <div id="status" class="muted" style="margin-top: 1rem;"></div>
+  </div>
+</div>
+
+<script>
+document.getElementById('btn-submit').addEventListener('click', async () => {
+  const status = document.getElementById('status');
+  const session = window.tbSession;
+  if (!session) { openModal('modal-login'); return; }
+  status.textContent = 'Submitting…';
+  try {
+    const r = await fetch('/api/claim/{{ slug }}', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer ' + session.access_token},
+    });
+    const d = await r.json();
+    if (d.ok) {
+      status.textContent = '✓ Claim submitted. We\'ll review and confirm via email.';
+    } else {
+      status.textContent = '✗ ' + (d.error || 'Claim failed');
+    }
+  } catch(e) { status.textContent = '✗ error submitting claim'; }
+});
+</script>
+{% endblock %}

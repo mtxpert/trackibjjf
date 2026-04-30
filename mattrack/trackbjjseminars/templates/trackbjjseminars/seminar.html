@@ -1,0 +1,68 @@
+{% extends "trackbjjseminars/base.html" %}
+{% block title %}{{ seminar.title }} — TrackBJJSeminars{% endblock %}
+
+{% block head %}
+<style>
+  .seminar-header { padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+  .seminar-header h1 { font-size: 1.7rem; font-weight: 700; margin-bottom: .4rem; }
+  .seminar-header .when { font-size: 1.05rem; color: var(--accent); font-weight: 600; margin-bottom: .35rem; }
+  .seminar-header .meta { color: var(--muted); font-size: .9rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+  .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .info-grid .info-item { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: .85rem 1rem; }
+  .info-grid .lbl { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .3rem; }
+  .info-grid .val { font-size: .95rem; }
+  .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .desc-block { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem; white-space: pre-wrap; line-height: 1.55; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="seminar-header">
+    <h1>{{ seminar.title }}{% if not seminar.approved %} <span class="pill">pending review</span>{% endif %}</h1>
+    <div class="when">
+      {{ seminar.event_date }}{% if seminar.start_time %} · {{ seminar.start_time[:5] }}{% endif %}{% if seminar.end_time %}–{{ seminar.end_time[:5] }}{% endif %}
+    </div>
+    <div class="meta">
+      {% if seminar.instructor_name %}<span>👤 {{ seminar.instructor_name }}</span>{% endif %}
+      {% if seminar.city %}<span>📍 {{ seminar.city }}{% if seminar.state_province %}, {{ seminar.state_province }}{% endif %}{% if seminar.country %} · {{ seminar.country }}{% endif %}</span>{% endif %}
+      {% if seminar.cost_usd %}<span class="pill">${{ seminar.cost_usd }}</span>{% endif %}
+    </div>
+  </div>
+
+  <div class="actions">
+    {% if seminar.registration_url %}<a class="btn-go" href="{{ seminar.registration_url }}" target="_blank" rel="noopener">→ Register</a>{% endif %}
+    {% if seminar.host_school %}<a class="btn-outline" href="/school/{{ seminar.host_school }}" onclick="this.href='https://www.trackopenmat.net{{ '/' }}school/{{ seminar.host_school }}'">🏠 Host School</a>{% endif %}
+    {% if seminar.instructor_url %}<a class="btn-outline" href="{{ seminar.instructor_url }}" target="_blank" rel="noopener">👤 Instructor</a>{% endif %}
+  </div>
+
+  {% if seminar.description %}
+  <div class="desc-block">{{ seminar.description }}</div>
+  {% endif %}
+
+  <div class="info-grid">
+    {% if seminar.venue_name %}
+    <div class="info-item"><div class="lbl">Venue</div><div class="val">{{ seminar.venue_name }}</div></div>
+    {% endif %}
+    {% if seminar.address_line1 %}
+    <div class="info-item"><div class="lbl">Address</div><div class="val">{{ seminar.address_line1 }}{% if seminar.address_line2 %}<br>{{ seminar.address_line2 }}{% endif %}</div></div>
+    {% endif %}
+    {% if seminar.gi_or_nogi %}
+    <div class="info-item"><div class="lbl">Format</div><div class="val">{{ seminar.gi_or_nogi }}</div></div>
+    {% endif %}
+    {% if seminar.skill_level %}
+    <div class="info-item"><div class="lbl">Level</div><div class="val">{{ seminar.skill_level }}</div></div>
+    {% endif %}
+    {% if seminar.duration_hours %}
+    <div class="info-item"><div class="lbl">Duration</div><div class="val">{{ seminar.duration_hours }} hrs</div></div>
+    {% endif %}
+    {% if seminar.spots_available %}
+    <div class="info-item"><div class="lbl">Spots</div><div class="val">{{ seminar.spots_available }}</div></div>
+    {% endif %}
+  </div>
+
+  <div style="margin-top: 2rem; text-align: center;">
+    <a class="btn-outline" href="/">← Back to all seminars</a>
+  </div>
+</div>
+{% endblock %}

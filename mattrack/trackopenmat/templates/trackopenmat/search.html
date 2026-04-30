@@ -1,0 +1,65 @@
+{% extends "trackopenmat/base.html" %}
+{% block title %}Search — TrackOpenMat{% endblock %}
+
+{% block head %}
+<style>
+  .search-bar { display: flex; gap: .5rem; max-width: 600px; margin: 0 auto 2rem; }
+  .search-bar input { flex: 1; background: var(--card); border: 1px solid var(--border);
+    color: var(--text); padding: .65rem 1rem; border-radius: 8px; font-size: .95rem; outline: none; }
+  .search-bar input:focus { border-color: var(--accent); }
+  .school-row { display: flex; justify-content: space-between; align-items: center;
+    padding: .85rem 1rem; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .school-row:hover { background: var(--gray); }
+  .school-row .name { font-weight: 600; }
+  .school-row .loc { font-size: .8rem; color: var(--muted); }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="section-title">Search Schools</div>
+  <div class="search-bar">
+    <input id="q" type="text" value="{{ q }}" placeholder="School name or city…" autocomplete="off">
+    <button class="btn-go" id="btn-search">Search</button>
+  </div>
+  <div id="status" class="muted" style="margin-bottom:1rem"></div>
+  <div id="results" class="card" style="padding:0; overflow:hidden"></div>
+</div>
+
+<script>
+const inp    = document.getElementById('q');
+const btn    = document.getElementById('btn-search');
+const stat   = document.getElementById('status');
+const out    = document.getElementById('results');
+
+async function load() {
+  const q = inp.value.trim();
+  stat.textContent = 'Searching…';
+  out.innerHTML = '';
+  try {
+    const r = await fetch('/api/schools?limit=100&q=' + encodeURIComponent(q));
+    const d = await r.json();
+    const rows = d.schools || [];
+    if (!rows.length) { stat.textContent = 'No schools found.'; return; }
+    stat.textContent = rows.length + ' school' + (rows.length === 1 ? '' : 's') + ' found.';
+    out.innerHTML = rows.map(s => `
+      <div class="school-row" onclick="location.href='/school/${encodeURIComponent(s.team_slug)}'">
+        <div>
+          <div class="name">${escapeHtml(s.display_name)}${s.claimed ? ' <span class="pill pill-green">claimed</span>' : ''}</div>
+          <div class="loc">${escapeHtml(s.city || '')}${s.state_province ? ', ' + escapeHtml(s.state_province) : ''}${s.country ? ' · ' + escapeHtml(s.country) : ''}</div>
+        </div>
+        <div class="muted">→</div>
+      </div>
+    `).join('');
+  } catch (e) { stat.textContent = '✗ search failed'; }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+btn.addEventListener('click', load);
+inp.addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+if (inp.value.trim()) load();
+</script>
+{% endblock %}

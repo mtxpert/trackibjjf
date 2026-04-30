@@ -1,0 +1,102 @@
+{% extends "trackopenmat/base.html" %}
+{% block title %}{{ school.display_name }} — TrackOpenMat{% endblock %}
+
+{% block head %}
+<style>
+  .school-header { padding: 1.5rem 0 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+  .school-header h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: .35rem; }
+  .school-header .meta { color: var(--muted); font-size: .9rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+  .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .info-grid .info-item { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: .85rem 1rem; }
+  .info-grid .lbl { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .3rem; }
+  .info-grid .val { font-size: .95rem; }
+  .schedule-day { padding: .85rem 1rem; border-bottom: 1px solid var(--border); }
+  .schedule-day:last-child { border-bottom: none; }
+  .schedule-day .day-name { font-weight: 700; font-size: .8rem; text-transform: uppercase; letter-spacing: .07em; color: var(--accent); margin-bottom: .35rem; }
+  .schedule-day .class-row { font-size: .9rem; padding: .25rem 0; }
+  .schedule-day .class-row .time { display: inline-block; min-width: 95px; color: var(--muted); }
+  .schedule-day .class-row .type { font-weight: 600; }
+  .schedule-day .empty { color: var(--muted); font-size: .85rem; font-style: italic; }
+  .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="school-header">
+    <h1>{{ school.display_name }}{% if school.claimed %} <span class="pill pill-green">claimed</span>{% endif %}</h1>
+    <div class="meta">
+      {% if school.city %}<span>📍 {{ school.city }}{% if school.state_province %}, {{ school.state_province }}{% endif %}{% if school.country %} · {{ school.country }}{% endif %}</span>{% endif %}
+      {% if school.head_instructor_name %}<span>👤 {{ school.head_instructor_name }}</span>{% endif %}
+      {% if school.school_type %}<span class="pill">{{ school.school_type }}</span>{% endif %}
+    </div>
+  </div>
+
+  <div class="actions">
+    {% if not school.claimed %}
+    <a class="btn-go" href="/claim/{{ school.team_slug }}">✓ Claim this school</a>
+    {% endif %}
+    {% if school.website %}<a class="btn-outline" href="{{ school.website }}" target="_blank" rel="noopener">🌐 Website</a>{% endif %}
+    {% if school.instagram_handle %}<a class="btn-outline" href="https://instagram.com/{{ school.instagram_handle }}" target="_blank" rel="noopener">📷 Instagram</a>{% endif %}
+    {% if school.phone %}<a class="btn-outline" href="tel:{{ school.phone }}">📞 {{ school.phone }}</a>{% endif %}
+  </div>
+
+  {% if school.description %}
+  <div class="card" style="margin-bottom: 1.5rem;">{{ school.description }}</div>
+  {% endif %}
+
+  {% if school.address_line1 or school.email %}
+  <div class="info-grid">
+    {% if school.address_line1 %}
+    <div class="info-item">
+      <div class="lbl">Address</div>
+      <div class="val">{{ school.address_line1 }}{% if school.address_line2 %}<br>{{ school.address_line2 }}{% endif %}</div>
+    </div>
+    {% endif %}
+    {% if school.email %}
+    <div class="info-item">
+      <div class="lbl">Email</div>
+      <div class="val"><a href="mailto:{{ school.email }}">{{ school.email }}</a></div>
+    </div>
+    {% endif %}
+    {% if school.accepts_dropins %}
+    <div class="info-item">
+      <div class="lbl">Drop-ins</div>
+      <div class="val">Welcome{% if school.dropin_fee_usd %} · ${{ school.dropin_fee_usd }}{% endif %}</div>
+    </div>
+    {% endif %}
+    {% if school.founded_year %}
+    <div class="info-item">
+      <div class="lbl">Founded</div>
+      <div class="val">{{ school.founded_year }}</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="section-title">Class Schedule</div>
+  <div class="card" style="padding: 0;">
+    {% for d in schedule %}
+    <div class="schedule-day">
+      <div class="day-name">{{ d.day }}</div>
+      {% if d.classes %}
+        {% for c in d.classes %}
+        <div class="class-row">
+          <span class="time">{{ c.start_time[:5] }}{% if c.end_time %}–{{ c.end_time[:5] }}{% endif %}</span>
+          <span class="type">{{ c.class_type }}</span>
+          <span class="muted">· {{ c.level }}{% if c.coach_name %} · {{ c.coach_name }}{% endif %}</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty">No classes listed.</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if school.etiquette_md %}
+  <div class="section-title">House Rules</div>
+  <div class="card">{{ school.etiquette_md }}</div>
+  {% endif %}
+</div>
+{% endblock %}

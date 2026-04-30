@@ -1,0 +1,89 @@
+{% extends "trackopenmat/base.html" %}
+{% block title %}Open Mats — TrackOpenMat{% endblock %}
+
+{% block head %}
+<style>
+  .filter-row { display: flex; gap: .5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .filter-row input, .filter-row select { background: var(--card); border: 1px solid var(--border);
+    color: var(--text); padding: .55rem .85rem; border-radius: 6px; font-size: .9rem; outline: none; }
+  .day-group { margin-bottom: 1.5rem; }
+  .day-group h3 { font-size: .85rem; font-weight: 700; color: var(--accent);
+    text-transform: uppercase; letter-spacing: .08em; margin-bottom: .5rem; padding: .5rem; border-bottom: 1px solid var(--border); }
+  .om-row { display: flex; justify-content: space-between; padding: .75rem 1rem;
+    border-bottom: 1px solid var(--border); cursor: pointer; }
+  .om-row:hover { background: var(--gray); }
+  .om-row .school { font-weight: 600; }
+  .om-row .meta { font-size: .8rem; color: var(--muted); }
+  .om-row .time { font-size: .9rem; color: var(--accent); font-weight: 600; min-width: 90px; text-align: right; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="section-title">Open Mats</div>
+  <div class="filter-row">
+    <input id="city-filter" type="text" placeholder="Filter by city…" autocomplete="off">
+    <select id="day-filter">
+      <option value="">All days</option>
+      <option value="0">Sunday</option><option value="1">Monday</option>
+      <option value="2">Tuesday</option><option value="3">Wednesday</option>
+      <option value="4">Thursday</option><option value="5">Friday</option>
+      <option value="6">Saturday</option>
+    </select>
+  </div>
+  <div id="status" class="muted" style="margin-bottom:1rem">Loading…</div>
+  <div id="results"></div>
+</div>
+
+<script>
+const cityFilter = document.getElementById('city-filter');
+const dayFilter  = document.getElementById('day-filter');
+const status     = document.getElementById('status');
+const out        = document.getElementById('results');
+
+let DATA = [];
+
+async function loadData() {
+  try {
+    const r = await fetch('/api/openmats');
+    const d = await r.json();
+    DATA = d.openmats || [];
+    render();
+  } catch(e) { status.textContent = '✗ failed to load open mats'; }
+}
+
+function render() {
+  const cityQ = cityFilter.value.trim().toLowerCase();
+  const dayQ  = dayFilter.value;
+  const filtered = DATA.filter(o => {
+    if (dayQ && String(o.day_idx) !== dayQ) return false;
+    if (cityQ && !(o.city || '').toLowerCase().includes(cityQ)) return false;
+    return true;
+  });
+  if (!filtered.length) { status.textContent = 'No open mats match.'; out.innerHTML = ''; return; }
+  status.textContent = filtered.length + ' open mat' + (filtered.length === 1 ? '' : 's');
+  const byDay = {};
+  filtered.forEach(o => { (byDay[o.day_idx] = byDay[o.day_idx] || []).push(o); });
+  out.innerHTML = Object.keys(byDay).sort().map(idx => {
+    const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][idx];
+    return '<div class="day-group"><h3>' + dayName + '</h3><div class="card" style="padding:0">' +
+      byDay[idx].map(o =>
+        '<div class="om-row" onclick="location.href=\'/school/' + encodeURIComponent(o.school_slug) + '\'">' +
+          '<div>' +
+            '<div class="school">' + esc(o.school_name) + '</div>' +
+            '<div class="meta">' + esc(o.city || '') + (o.state ? ', ' + esc(o.state) : '') + (o.notes ? ' · ' + esc(o.notes) : '') + '</div>' +
+          '</div>' +
+          '<div class="time">' + (o.start_time||'').slice(0,5) + (o.end_time ? '–' + o.end_time.slice(0,5) : '') + '</div>' +
+        '</div>'
+      ).join('') +
+    '</div></div>';
+  }).join('');
+}
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+cityFilter.addEventListener('input', render);
+dayFilter.addEventListener('change', render);
+loadData();
+</script>
+{% endblock %}

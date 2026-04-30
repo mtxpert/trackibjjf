@@ -1,0 +1,82 @@
+{% extends "trackbjjseminars/base.html" %}
+{% block title %}TrackBJJSeminars — One-Time BJJ Seminars & Workshops{% endblock %}
+
+{% block head %}
+<style>
+  .hero { padding: 3rem 0 2rem; text-align: center; }
+  .hero h1 { font-size: 2.2rem; font-weight: 800; margin-bottom: .6rem; }
+  .hero .tag { color: var(--muted); font-size: 1rem; margin-bottom: 1.6rem; }
+  .search-big { max-width: 560px; margin: 0 auto 2rem; display: flex; gap: .5rem; }
+  .search-big input { flex: 1; background: var(--card); border: 1px solid var(--border);
+    color: var(--text); padding: .8rem 1rem; border-radius: 8px; font-size: 1rem; outline: none; }
+  .search-big input:focus { border-color: var(--accent); }
+  .stats-row { display: flex; gap: 1.5rem; justify-content: center; margin-bottom: 2.5rem; flex-wrap: wrap; }
+  .stat { text-align: center; }
+  .stat .num { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
+  .stat .lbl { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .featured-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+  .seminar-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1rem; cursor: pointer; transition: border-color .12s; }
+  .seminar-card:hover { border-color: var(--accent); }
+  .seminar-card .title { font-weight: 700; margin-bottom: .35rem; }
+  .seminar-card .when { font-size: .85rem; color: var(--accent); margin-bottom: .25rem; }
+  .seminar-card .meta { font-size: .8rem; color: var(--muted); }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="hero">
+    <h1>BJJ Seminars & Workshops</h1>
+    <div class="tag">One-time training events with world-class instructors near you.</div>
+    <form class="search-big" method="get" action="/search">
+      <input type="text" name="q" placeholder="Instructor, city, or keyword…" autocomplete="off">
+      <button type="submit" class="btn-go">Search</button>
+    </form>
+    <div class="stats-row">
+      <div class="stat"><div class="num" id="stat-upcoming">—</div><div class="lbl">Upcoming</div></div>
+      <div class="stat"><div class="num" id="stat-this-month">—</div><div class="lbl">This Month</div></div>
+      <div class="stat"><div class="num" id="stat-cities">—</div><div class="lbl">Cities</div></div>
+    </div>
+    <a class="btn-go" href="/submit">+ Submit a Seminar</a>
+  </div>
+
+  <div class="section-title">Upcoming Seminars</div>
+  <div class="featured-grid" id="featured">
+    <div class="muted">Loading…</div>
+  </div>
+</div>
+
+<script>
+async function loadFeatured() {
+  try {
+    const r = await fetch('/api/seminars?limit=12&future=1');
+    const d = await r.json();
+    const rows = d.seminars || [];
+    const grid = document.getElementById('featured');
+    if (!rows.length) { grid.innerHTML = '<div class="muted">No upcoming seminars yet. Be the first to <a href="/submit">submit one</a>!</div>'; return; }
+    grid.innerHTML = rows.map(s => `
+      <div class="seminar-card" onclick="location.href='/seminar/${encodeURIComponent(s.slug)}'">
+        <div class="title">${escapeHtml(s.title)}</div>
+        <div class="when">${escapeHtml(s.event_date || '')}${s.start_time ? ' · ' + escapeHtml(s.start_time.slice(0,5)) : ''}</div>
+        <div class="meta">${escapeHtml(s.instructor_name || '')}${s.city ? ' · ' + escapeHtml(s.city) : ''}${s.state_province ? ', ' + escapeHtml(s.state_province) : ''}</div>
+      </div>
+    `).join('');
+    const cities = new Set(rows.map(r => r.city).filter(Boolean));
+    document.getElementById('stat-upcoming').textContent = rows.length;
+    document.getElementById('stat-cities').textContent = cities.size;
+    const now = new Date(), thisMonth = now.toISOString().slice(0,7);
+    const tm = rows.filter(r => (r.event_date || '').startsWith(thisMonth)).length;
+    document.getElementById('stat-this-month').textContent = tm;
+  } catch(e) {
+    document.getElementById('featured').innerHTML = '<div class="muted">Could not load seminars.</div>';
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+loadFeatured();
+</script>
+{% endblock %}

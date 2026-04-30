@@ -1,0 +1,11 @@
+{% extends "trackbjjseminars/base.html" %}
+{% block title %}Not Found — TrackBJJSeminars{% endblock %}
+{% block body %}
+<div class="container">
+  <div class="empty-state">
+    <h3>Seminar not found</h3>
+    <p>We don't have a seminar with slug "<code>{{ slug }}</code>" on file.</p>
+    <p style="margin-top: 1rem;"><a class="btn-outline" href="/">← Home</a> <a class="btn-outline" href="/search">Search seminars →</a></p>
+  </div>
+</div>
+{% endblock %}

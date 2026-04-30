@@ -1,0 +1,76 @@
+{% extends "trackopenmat/base.html" %}
+{% block title %}TrackOpenMat — School & Open Mat Directory{% endblock %}
+
+{% block head %}
+<style>
+  .hero { text-align: center; padding: 3rem 1rem 2rem; }
+  .hero h1 { font-size: 2.2rem; font-weight: 800; color: var(--accent); margin-bottom: .5rem; }
+  .hero p { color: var(--muted); font-size: 1.05rem; margin-bottom: 2rem; }
+  .search-big { display: flex; gap: .5rem; max-width: 480px; margin: 0 auto 1rem; }
+  .search-big input { flex: 1; background: var(--card); border: 1px solid var(--border);
+    color: var(--text); padding: .7rem 1rem; border-radius: 8px; font-size: 1rem; outline: none; }
+  .search-big input:focus { border-color: var(--accent); }
+  .search-big button { background: var(--accent); color: #fff; border: none;
+    padding: .7rem 1.4rem; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 1rem; }
+  .quick-links { display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2.5rem; }
+  .stats-row { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin: 0 auto 2.5rem; max-width: 700px; }
+  .stat-box { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1rem 1.5rem; text-align: center; min-width: 130px; }
+  .stat-box .num { font-size: 1.8rem; font-weight: 800; color: var(--accent); }
+  .stat-box .lbl { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-top: .2rem; }
+  .school-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem 1.25rem; transition: border-color .15s; display: block; text-decoration: none; color: var(--text); }
+  .school-card:hover { border-color: var(--accent); text-decoration: none; }
+  .school-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: .35rem; }
+  .school-card .loc { font-size: .82rem; color: var(--muted); }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container">
+  <div class="hero">
+    <h1>TrackOpenMat</h1>
+    <p>Find a BJJ school. Browse open mats. Connect with the global mat community.</p>
+    <div class="search-big">
+      <input id="hero-search" type="text" placeholder="Search schools or city…" data-i18n="search_placeholder" autocomplete="off">
+      <button id="hero-btn">Search</button>
+    </div>
+    <div class="quick-links">
+      <a class="btn-outline" href="/openmats">📅 Browse open mats</a>
+      <a class="btn-outline" href="/search">🔍 All schools</a>
+    </div>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-box"><div class="num" id="s-total">{{ total }}</div><div class="lbl">Schools</div></div>
+    <div class="stat-box"><div class="num" id="s-claimed">—</div><div class="lbl">Claimed</div></div>
+    <div class="stat-box"><div class="num" id="s-cities">—</div><div class="lbl">Cities</div></div>
+  </div>
+
+  {% if featured %}
+  <div class="section-title">Featured Schools</div>
+  <div class="grid grid-2">
+    {% for s in featured %}
+    <a class="school-card" href="/school/{{ s.team_slug }}">
+      <h3>{{ s.display_name }}</h3>
+      <div class="loc">{% if s.city %}{{ s.city }}{% if s.state_province %}, {{ s.state_province }}{% endif %}{% else %}<span class="muted">Location not set</span>{% endif %}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No claimed schools yet</h3>
+    <p>Be the first — search for your school and claim it.</p>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function go() {
+  const q = document.getElementById('hero-search').value.trim();
+  if (q) window.location.href = '/search?q=' + encodeURIComponent(q);
+}
+document.getElementById('hero-btn').addEventListener('click', go);
+document.getElementById('hero-search').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+</script>
+{% endblock %}
