@@ -71,7 +71,9 @@
       </div>
       {% endif %}
       <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+        {% if ibjjf_id %}
         <span class="uid-badge">IBJJF #{{ ibjjf_id }}</span>
+        {% endif %}
         {% if slug %}
         <a href="https://ibjjf.com/athletes/{{ slug }}" target="_blank" style="font-size:.75rem;color:var(--accent);text-decoration:none;">↗ IBJJF Profile</a>
         {% endif %}
@@ -83,7 +85,11 @@
     <div class="text">
       <strong>Is this you?</strong> Link your Smoothcomp account to see all your results in one place and unlock profile editing.
     </div>
+    {% if ibjjf_id %}
     <a class="claim-cta" href="{{ url_for('claim_me') }}?ibjjf_id={{ ibjjf_id }}">This is me — Claim</a>
+    {% else %}
+    <a class="claim-cta" href="{{ url_for('claim_me') }}?hint_name={{ (hint_name or name)|urlencode }}">This is me — Claim</a>
+    {% endif %}
   </div>
 
   {% if stats %}
@@ -97,7 +103,7 @@
   {% endif %}
 
   <div class="section-title">
-    IBJJF Results
+    {% if ibjjf_id %}IBJJF Results{% else %}Tournament Results{% endif %}
     {% if points %}
     <span style="font-size:.75rem;color:var(--muted);font-weight:400;margin-left:.5rem">{{ points|int }} pts</span>
     {% endif %}

@@ -89,7 +89,9 @@ function renderResults(rows) {
     const hasKey = r.athlete_id || r.ibjjf_id;
     const href = r.athlete_id
       ? `/athlete/${r.athlete_id}`
-      : (r.ibjjf_id ? `/ibjjf-athlete/${r.ibjjf_id}` : null);
+      : (r.ibjjf_id
+          ? `/ibjjf-athlete/${r.ibjjf_id}`
+          : (r.display_name ? `/athlete-by-name/${encodeURIComponent(r.display_name)}` : null));
 
     const claimParams = new URLSearchParams();
     if (r.ibjjf_id) claimParams.set('ibjjf_id', r.ibjjf_id);

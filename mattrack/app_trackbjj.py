@@ -1053,6 +1053,63 @@ def ibjjf_athlete_profile(ibjjf_id):
     )
 
 
+@app.route("/athlete-by-name/<path:name>")
+def athlete_by_name_profile(name):
+    """Slim profile for athletes with no sc_uid and no ibjjf_athletes row.
+    Looks up tournament_results by case-insensitive athlete_name match.
+    Backed by idx_tr_name_lower on LOWER(athlete_name) for fast lookups.
+    """
+    name = (name or "").strip()
+    if not name:
+        return render_template("trackbjj/not_found.html",
+                               message="No athlete name provided."), 404
+
+    try:
+        results_res = (sb.table("tournament_results")
+                         .select("source,event_title,event_date,division,placement,team,event_id,status,athlete_name")
+                         .ilike("athlete_name", name)
+                         .or_("status.is.null,status.neq.registered")
+                         .order("event_date", desc=True)
+                         .limit(500)
+                         .execute())
+        results = results_res.data or []
+    except Exception as e:
+        log.warning("athlete_by_name_profile results lookup failed: %s", e)
+        results = []
+
+    if not results:
+        return render_template("trackbjj/not_found.html",
+                               message=f'No results found for "{name}".'), 404
+
+    display_name = next((r["athlete_name"] for r in results if r.get("athlete_name")), name)
+    team = next((r["team"] for r in results if r.get("team")), "")
+
+    gold   = sum(1 for r in results if r.get("placement") == 1)
+    silver = sum(1 for r in results if r.get("placement") == 2)
+    bronze = sum(1 for r in results if r.get("placement") == 3)
+    stats = {"events": len({r.get("event_id") for r in results if r.get("event_id")}),
+             "divisions": len(results),
+             "gold": gold, "silver": silver, "bronze": bronze}
+
+    return render_template(
+        "trackbjj/ibjjf_athlete.html",
+        ibjjf_id=None,
+        name=display_name,
+        belt="",
+        academy=team,
+        slug="",
+        points=None,
+        ranking_category="",
+        age_division="",
+        gi_nogi="",
+        gender="",
+        results=results,
+        stats=stats,
+        hint_name=display_name,
+        now_year=datetime.date.today().year,
+    )
+
+
 @app.route("/athlete/<sc_uid>")
 def athlete_profile(sc_uid):
     """Athlete profile page anchored by Smoothcomp user_id."""
