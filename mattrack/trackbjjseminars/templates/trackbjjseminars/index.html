@@ -21,6 +21,9 @@
   .seminar-card .title { font-weight: 700; margin-bottom: .35rem; }
   .seminar-card .when { font-size: .85rem; color: var(--accent); margin-bottom: .25rem; }
   .seminar-card .meta { font-size: .8rem; color: var(--muted); }
+  .seminar-card .badges { display: flex; gap: .35rem; margin-top: .4rem; flex-wrap: wrap; }
+  .seminar-card .badge { font-size: .65rem; padding: .15rem .45rem; border-radius: 999px;
+    background: var(--gray); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 </style>
 {% endblock %}
 
@@ -30,11 +33,11 @@
     <h1>BJJ Seminars & Workshops</h1>
     <div class="tag">One-time training events with world-class instructors near you.</div>
     <form class="search-big" method="get" action="/search">
-      <input type="text" name="q" placeholder="Instructor, city, or keyword…" autocomplete="off">
+      <input type="text" name="q" placeholder="Instructor, city, or topic…" autocomplete="off">
       <button type="submit" class="btn-go">Search</button>
     </form>
     <div class="stats-row">
-      <div class="stat"><div class="num" id="stat-upcoming">—</div><div class="lbl">Upcoming</div></div>
+      <div class="stat"><div class="num">{{ total }}</div><div class="lbl">Upcoming</div></div>
       <div class="stat"><div class="num" id="stat-this-month">—</div><div class="lbl">This Month</div></div>
       <div class="stat"><div class="num" id="stat-cities">—</div><div class="lbl">Cities</div></div>
     </div>
@@ -43,40 +46,55 @@
 
   <div class="section-title">Upcoming Seminars</div>
   <div class="featured-grid" id="featured">
-    <div class="muted">Loading…</div>
+    {% if upcoming %}
+      {% for s in upcoming %}
+      <div class="seminar-card" onclick="location.href='/seminar/{{ s.slug }}'">
+        <div class="title">{{ s.title }}</div>
+        <div class="when" data-iso="{{ s.start_datetime }}"></div>
+        <div class="meta">
+          {{ s.instructor_name }}{% if s.host_city %} · {{ s.host_city }}{% endif %}{% if s.host_state %}, {{ s.host_state }}{% endif %}
+        </div>
+        <div class="badges">
+          {% if s.level %}<span class="badge">{{ s.level }}</span>{% endif %}
+          {% if s.gi_required is not none %}<span class="badge">{{ 'Gi' if s.gi_required else 'No-Gi' }}</span>{% endif %}
+          {% if s.cost_usd %}<span class="badge">${{ s.cost_usd }}</span>{% endif %}
+          {% if s.topic %}<span class="badge">{{ s.topic }}</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="muted">No upcoming seminars yet. Be the first to <a href="/submit">submit one</a>!</div>
+    {% endif %}
   </div>
 </div>
 
 <script>
-async function loadFeatured() {
+function fmtWhen(iso) {
+  if (!iso) return '';
   try {
-    const r = await fetch('/api/seminars?limit=12&future=1');
-    const d = await r.json();
-    const rows = d.seminars || [];
-    const grid = document.getElementById('featured');
-    if (!rows.length) { grid.innerHTML = '<div class="muted">No upcoming seminars yet. Be the first to <a href="/submit">submit one</a>!</div>'; return; }
-    grid.innerHTML = rows.map(s => `
-      <div class="seminar-card" onclick="location.href='/seminar/${encodeURIComponent(s.slug)}'">
-        <div class="title">${escapeHtml(s.title)}</div>
-        <div class="when">${escapeHtml(s.event_date || '')}${s.start_time ? ' · ' + escapeHtml(s.start_time.slice(0,5)) : ''}</div>
-        <div class="meta">${escapeHtml(s.instructor_name || '')}${s.city ? ' · ' + escapeHtml(s.city) : ''}${s.state_province ? ', ' + escapeHtml(s.state_province) : ''}</div>
-      </div>
-    `).join('');
-    const cities = new Set(rows.map(r => r.city).filter(Boolean));
-    document.getElementById('stat-upcoming').textContent = rows.length;
-    document.getElementById('stat-cities').textContent = cities.size;
-    const now = new Date(), thisMonth = now.toISOString().slice(0,7);
-    const tm = rows.filter(r => (r.event_date || '').startsWith(thisMonth)).length;
-    document.getElementById('stat-this-month').textContent = tm;
-  } catch(e) {
-    document.getElementById('featured').innerHTML = '<div class="muted">Could not load seminars.</div>';
-  }
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'}) +
+           ' · ' + d.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+  } catch(e) { return iso; }
 }
+document.querySelectorAll('.seminar-card .when[data-iso]').forEach(el => {
+  el.textContent = fmtWhen(el.dataset.iso);
+});
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-loadFeatured();
+// Stats: this-month + unique cities (from rendered cards)
+(function(){
+  const cards = document.querySelectorAll('.seminar-card');
+  const cities = new Set(), now = new Date(), thisMonthKey = now.toISOString().slice(0,7);
+  let tm = 0;
+  cards.forEach(c => {
+    const iso = c.querySelector('.when')?.dataset.iso || '';
+    if (iso.startsWith(thisMonthKey)) tm++;
+    const meta = c.querySelector('.meta')?.textContent || '';
+    const m = meta.split('·')[1]?.split(',')[0]?.trim();
+    if (m) cities.add(m);
+  });
+  document.getElementById('stat-this-month').textContent = tm;
+  document.getElementById('stat-cities').textContent = cities.size;
+})();
 </script>
 {% endblock %}

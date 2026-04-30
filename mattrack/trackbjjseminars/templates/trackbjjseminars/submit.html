@@ -25,45 +25,47 @@
       <div class="form-row full">
         <div><label>Title *</label><input type="text" name="title" required placeholder="e.g., Marcelo Garcia Guard Seminar"></div>
       </div>
-      <div class="form-row">
+      <div class="form-row full">
         <div><label>Instructor name *</label><input type="text" name="instructor_name" required></div>
-        <div><label>Instructor URL</label><input type="url" name="instructor_url" placeholder="https://…"></div>
       </div>
       <div class="form-row">
-        <div><label>Date *</label><input type="date" name="event_date" required></div>
-        <div><label>Start time</label><input type="time" name="start_time"></div>
+        <div><label>Date *</label><input type="date" id="event_date" required></div>
+        <div><label>Start time</label><input type="time" id="start_time" value="10:00"></div>
       </div>
       <div class="form-row">
-        <div><label>End time</label><input type="time" name="end_time"></div>
-        <div><label>Duration (hours)</label><input type="number" name="duration_hours" step="0.5" min="0.5"></div>
+        <div><label>End date</label><input type="date" id="end_date"></div>
+        <div><label>End time</label><input type="time" id="end_time"></div>
       </div>
       <div class="form-row">
-        <div><label>Venue name</label><input type="text" name="venue_name"></div>
-        <div><label>City *</label><input type="text" name="city" required></div>
+        <div><label>Venue name</label><input type="text" name="host_venue_name"></div>
+        <div><label>City *</label><input type="text" name="host_city" required></div>
       </div>
       <div class="form-row">
-        <div><label>State / Province</label><input type="text" name="state_province"></div>
-        <div><label>Country</label><input type="text" name="country" placeholder="USA"></div>
+        <div><label>State / Province</label><input type="text" name="host_state"></div>
+        <div><label>Country</label><input type="text" name="host_country" placeholder="USA"></div>
       </div>
       <div class="form-row full">
-        <div><label>Address</label><input type="text" name="address_line1"></div>
+        <div><label>Address</label><input type="text" name="host_address"></div>
       </div>
       <div class="form-row">
-        <div><label>Format</label><select name="gi_or_nogi"><option value="">—</option><option>Gi</option><option>No-Gi</option><option>Both</option></select></div>
-        <div><label>Skill level</label><select name="skill_level"><option value="">All levels</option><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>All levels</option></select></div>
+        <div><label>Format</label><select name="gi_required"><option value="">—</option><option value="true">Gi</option><option value="false">No-Gi</option></select></div>
+        <div><label>Skill level</label><select name="level"><option value="All Levels">All Levels</option><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select></div>
       </div>
       <div class="form-row">
         <div><label>Cost (USD)</label><input type="number" name="cost_usd" step="0.01" min="0"></div>
-        <div><label>Spots available</label><input type="number" name="spots_available" min="1"></div>
+        <div><label>Max attendees</label><input type="number" name="max_attendees" min="1"></div>
+      </div>
+      <div class="form-row full">
+        <div><label>Topic</label><input type="text" name="topic" placeholder="e.g., Half Guard, Footlocks, Wrestling"></div>
       </div>
       <div class="form-row full">
         <div><label>Registration URL</label><input type="url" name="registration_url" placeholder="https://…"></div>
       </div>
       <div class="form-row full">
-        <div><label>Host school slug</label><input type="text" name="host_school" placeholder="e.g., gracie-barra-tampa"></div>
+        <div><label>Flyer URL</label><input type="url" name="flyer_url" placeholder="https://…"></div>
       </div>
       <div class="form-row full">
-        <div><label>Description</label><textarea name="description" placeholder="What will the seminar cover?"></textarea></div>
+        <div><label>Description</label><textarea name="description_md" placeholder="What will the seminar cover?"></textarea></div>
       </div>
       <div class="submit-bar">
         <button type="submit" class="btn-go">Submit for review</button>
@@ -75,6 +77,12 @@
 </div>
 
 <script>
+function buildIso(dateStr, timeStr) {
+  if (!dateStr) return null;
+  const t = timeStr || '00:00';
+  return new Date(dateStr + 'T' + t).toISOString();
+}
+
 document.getElementById('seminar-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const status = document.getElementById('status');
@@ -82,7 +90,19 @@ document.getElementById('seminar-form').addEventListener('submit', async (e) => 
   if (!session) { status.textContent = ''; openModal('modal-login'); return; }
   const fd = new FormData(e.target);
   const body = {};
-  for (const [k, v] of fd.entries()) { if (v !== '') body[k] = v; }
+  for (const [k, v] of fd.entries()) {
+    if (v === '') continue;
+    if (k === 'gi_required') body[k] = (v === 'true');
+    else if (k === 'cost_usd' || k === 'max_attendees') body[k] = Number(v);
+    else body[k] = v;
+  }
+  const startIso = buildIso(document.getElementById('event_date').value, document.getElementById('start_time').value);
+  if (!startIso) { status.textContent = '✗ date is required'; return; }
+  body.start_datetime = startIso;
+  const endIso = buildIso(document.getElementById('end_date').value || document.getElementById('event_date').value,
+                          document.getElementById('end_time').value);
+  if (endIso && endIso !== startIso) body.end_datetime = endIso;
+
   status.textContent = 'Submitting…';
   try {
     const r = await fetch('/api/seminars', {

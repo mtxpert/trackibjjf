@@ -20,44 +20,43 @@
 <div class="container">
   <div class="seminar-header">
     <h1>{{ seminar.title }}{% if not seminar.approved %} <span class="pill">pending review</span>{% endif %}</h1>
-    <div class="when">
-      {{ seminar.event_date }}{% if seminar.start_time %} · {{ seminar.start_time[:5] }}{% endif %}{% if seminar.end_time %}–{{ seminar.end_time[:5] }}{% endif %}
-    </div>
+    <div class="when" data-iso="{{ seminar.start_datetime }}" data-end="{{ seminar.end_datetime or '' }}">{{ seminar.start_datetime }}</div>
     <div class="meta">
       {% if seminar.instructor_name %}<span>👤 {{ seminar.instructor_name }}</span>{% endif %}
-      {% if seminar.city %}<span>📍 {{ seminar.city }}{% if seminar.state_province %}, {{ seminar.state_province }}{% endif %}{% if seminar.country %} · {{ seminar.country }}{% endif %}</span>{% endif %}
+      {% if seminar.host_city %}<span>📍 {{ seminar.host_city }}{% if seminar.host_state %}, {{ seminar.host_state }}{% endif %}{% if seminar.host_country %} · {{ seminar.host_country }}{% endif %}</span>{% endif %}
       {% if seminar.cost_usd %}<span class="pill">${{ seminar.cost_usd }}</span>{% endif %}
+      {% if seminar.gi_required is not none %}<span class="pill">{{ 'Gi' if seminar.gi_required else 'No-Gi' }}</span>{% endif %}
     </div>
   </div>
 
   <div class="actions">
     {% if seminar.registration_url %}<a class="btn-go" href="{{ seminar.registration_url }}" target="_blank" rel="noopener">→ Register</a>{% endif %}
-    {% if seminar.host_school %}<a class="btn-outline" href="/school/{{ seminar.host_school }}" onclick="this.href='https://www.trackopenmat.net{{ '/' }}school/{{ seminar.host_school }}'">🏠 Host School</a>{% endif %}
-    {% if seminar.instructor_url %}<a class="btn-outline" href="{{ seminar.instructor_url }}" target="_blank" rel="noopener">👤 Instructor</a>{% endif %}
+    {% if seminar.flyer_url %}<a class="btn-outline" href="{{ seminar.flyer_url }}" target="_blank" rel="noopener">📄 Flyer</a>{% endif %}
+    {% if seminar.video_promo_url %}<a class="btn-outline" href="{{ seminar.video_promo_url }}" target="_blank" rel="noopener">▶ Promo</a>{% endif %}
   </div>
 
-  {% if seminar.description %}
-  <div class="desc-block">{{ seminar.description }}</div>
+  {% if seminar.description_md %}
+  <div class="desc-block">{{ seminar.description_md }}</div>
   {% endif %}
 
   <div class="info-grid">
-    {% if seminar.venue_name %}
-    <div class="info-item"><div class="lbl">Venue</div><div class="val">{{ seminar.venue_name }}</div></div>
+    {% if seminar.host_venue_name %}
+    <div class="info-item"><div class="lbl">Venue</div><div class="val">{{ seminar.host_venue_name }}</div></div>
     {% endif %}
-    {% if seminar.address_line1 %}
-    <div class="info-item"><div class="lbl">Address</div><div class="val">{{ seminar.address_line1 }}{% if seminar.address_line2 %}<br>{{ seminar.address_line2 }}{% endif %}</div></div>
+    {% if seminar.host_address %}
+    <div class="info-item"><div class="lbl">Address</div><div class="val">{{ seminar.host_address }}</div></div>
     {% endif %}
-    {% if seminar.gi_or_nogi %}
-    <div class="info-item"><div class="lbl">Format</div><div class="val">{{ seminar.gi_or_nogi }}</div></div>
+    {% if seminar.level %}
+    <div class="info-item"><div class="lbl">Level</div><div class="val">{{ seminar.level }}</div></div>
     {% endif %}
-    {% if seminar.skill_level %}
-    <div class="info-item"><div class="lbl">Level</div><div class="val">{{ seminar.skill_level }}</div></div>
+    {% if seminar.topic %}
+    <div class="info-item"><div class="lbl">Topic</div><div class="val">{{ seminar.topic }}</div></div>
     {% endif %}
-    {% if seminar.duration_hours %}
-    <div class="info-item"><div class="lbl">Duration</div><div class="val">{{ seminar.duration_hours }} hrs</div></div>
+    {% if seminar.max_attendees %}
+    <div class="info-item"><div class="lbl">Spots</div><div class="val">{{ seminar.max_attendees }}</div></div>
     {% endif %}
-    {% if seminar.spots_available %}
-    <div class="info-item"><div class="lbl">Spots</div><div class="val">{{ seminar.spots_available }}</div></div>
+    {% if seminar.registration_deadline %}
+    <div class="info-item"><div class="lbl">Register By</div><div class="val" data-deadline="{{ seminar.registration_deadline }}">{{ seminar.registration_deadline }}</div></div>
     {% endif %}
   </div>
 
@@ -65,4 +64,28 @@
     <a class="btn-outline" href="/">← Back to all seminars</a>
   </div>
 </div>
+
+<script>
+function fmtWhenRange(isoStart, isoEnd) {
+  if (!isoStart) return '';
+  try {
+    const s = new Date(isoStart);
+    const dateStr = s.toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric', year:'numeric'});
+    const startTime = s.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+    let suffix = '';
+    if (isoEnd) {
+      const e = new Date(isoEnd);
+      const endTime = e.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+      suffix = '–' + endTime;
+    }
+    return dateStr + ' · ' + startTime + suffix;
+  } catch(e) { return isoStart; }
+}
+const whenEl = document.querySelector('.seminar-header .when');
+if (whenEl) whenEl.textContent = fmtWhenRange(whenEl.dataset.iso, whenEl.dataset.end);
+
+document.querySelectorAll('[data-deadline]').forEach(el => {
+  try { el.textContent = new Date(el.dataset.deadline).toLocaleDateString(undefined, {month:'long', day:'numeric', year:'numeric'}); } catch(e){}
+});
+</script>
 {% endblock %}

@@ -8,11 +8,11 @@
     color: var(--text); padding: .65rem 1rem; border-radius: 8px; font-size: .95rem; outline: none; }
   .search-bar input:focus { border-color: var(--accent); }
   .seminar-row { display: flex; justify-content: space-between; align-items: center;
-    padding: .85rem 1rem; border-bottom: 1px solid var(--border); cursor: pointer; }
+    padding: .85rem 1rem; border-bottom: 1px solid var(--border); cursor: pointer; gap: 1rem; }
   .seminar-row:hover { background: var(--gray); }
   .seminar-row .title { font-weight: 600; }
   .seminar-row .meta { font-size: .8rem; color: var(--muted); }
-  .seminar-row .when { font-size: .85rem; color: var(--accent); font-weight: 600; min-width: 110px; text-align: right; }
+  .seminar-row .when { font-size: .85rem; color: var(--accent); font-weight: 600; min-width: 140px; text-align: right; }
 </style>
 {% endblock %}
 
@@ -20,10 +20,10 @@
 <div class="container">
   <div class="section-title">Search Seminars</div>
   <div class="search-bar">
-    <input id="q" type="text" value="{{ q }}" placeholder="Instructor, city, or title…" autocomplete="off">
+    <input id="q" type="text" value="{{ q }}" placeholder="Instructor, city, or topic…" autocomplete="off">
     <button class="btn-go" id="btn-search">Search</button>
   </div>
-  <div id="status" class="muted" style="margin-bottom:1rem"></div>
+  <div id="status" class="muted" style="margin-bottom:1rem">Loading…</div>
   <div id="results" class="card" style="padding:0; overflow:hidden"></div>
 </div>
 
@@ -32,6 +32,15 @@ const inp  = document.getElementById('q');
 const btn  = document.getElementById('btn-search');
 const stat = document.getElementById('status');
 const out  = document.getElementById('results');
+
+function fmtWhen(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'}) +
+           ' · ' + d.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+  } catch(e) { return iso; }
+}
 
 async function load() {
   const q = inp.value.trim();
@@ -47,9 +56,9 @@ async function load() {
       <div class="seminar-row" onclick="location.href='/seminar/${encodeURIComponent(s.slug)}'">
         <div>
           <div class="title">${escapeHtml(s.title)}</div>
-          <div class="meta">${escapeHtml(s.instructor_name || '')}${s.city ? ' · ' + escapeHtml(s.city) : ''}${s.state_province ? ', ' + escapeHtml(s.state_province) : ''}</div>
+          <div class="meta">${escapeHtml(s.instructor_name || '')}${s.host_city ? ' · ' + escapeHtml(s.host_city) : ''}${s.host_state ? ', ' + escapeHtml(s.host_state) : ''}${s.topic ? ' · ' + escapeHtml(s.topic) : ''}</div>
         </div>
-        <div class="when">${escapeHtml(s.event_date || '')}</div>
+        <div class="when">${escapeHtml(fmtWhen(s.start_datetime))}</div>
       </div>
     `).join('');
   } catch(e) { stat.textContent = '✗ search failed'; }
@@ -61,6 +70,6 @@ function escapeHtml(s) {
 
 btn.addEventListener('click', load);
 inp.addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
-if (inp.value.trim()) load(); else load();
+load();
 </script>
 {% endblock %}
