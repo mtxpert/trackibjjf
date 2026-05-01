@@ -1090,8 +1090,21 @@ def api_watch_list_get(list_id):
         need_enrich = (not rich) or any(not isinstance(a, dict) or not a.get("category_id") for a in rich)
         if need_enrich and names:
             try:
-                from scraper import load_roster_cache
-                cache = load_roster_cache(row.get("tournament_id"))
+                from scraper import load_roster_cache, build_roster
+                tid_for_cache = row.get("tournament_id")
+                cache = load_roster_cache(tid_for_cache)
+                # Render's filesystem is wiped on every deploy — if the roster cache is
+                # missing for a tournament that has watch lists pointing at it, kick off
+                # a background rebuild so subsequent loads resolve fight times.
+                if not cache and tid_for_cache and (row.get("tournament_source") or "").lower() == "ibjjf":
+                    job_id = f"roster_{tid_for_cache}"
+                    if _build_jobs.get(job_id, {}).get("status") != "running":
+                        _build_jobs[job_id] = {"status": "running", "progress": 0, "total": 0, "current_cat": ""}
+                        threading.Thread(
+                            target=build_roster,
+                            args=(tid_for_cache, _build_jobs[job_id]),
+                            daemon=True,
+                        ).start()
                 roster = (cache or {}).get("athletes") or []
                 by_name = {}
                 for a in roster:
