@@ -985,6 +985,90 @@ def api_cache_all_status():
     return jsonify(job)
 
 
+# ── Watch lists (shareable tournament watch URLs) ────────────────────────────
+
+@app.route("/watch/<list_id>")
+def index_watch_list(list_id):
+    return _no_cache(make_response(render_template("index.html")))
+
+
+@app.route("/api/watch-list", methods=["POST"])
+def api_watch_list_create():
+    import secrets
+    body = request.get_json(silent=True) or {}
+    src = (body.get("source") or "").strip()[:32]
+    tid = (body.get("tournament_id") or "").strip()[:64]
+    athletes = body.get("athletes") or []
+    email = (body.get("email") or "").strip().lower()[:255] or None
+    if not src or not tid or not isinstance(athletes, list) or not athletes:
+        return jsonify({"error": "source, tournament_id, athletes required"}), 400
+    names = []
+    for n in athletes[:200]:
+        if isinstance(n, str):
+            s = n.strip()[:200]
+            if s:
+                names.append(s)
+    if not names:
+        return jsonify({"error": "no valid athlete names"}), 400
+    list_id = secrets.token_urlsafe(6)
+    sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    if not sb_url or not sb_key:
+        return jsonify({"error": "supabase not configured"}), 500
+    payload = {
+        "id": list_id,
+        "tournament_source": src,
+        "tournament_id": tid,
+        "athlete_names": names,
+    }
+    if email:
+        payload["created_by_email"] = email
+    try:
+        r = requests.post(
+            f"{sb_url}/rest/v1/watch_lists",
+            headers={
+                "apikey": sb_key,
+                "Authorization": f"Bearer {sb_key}",
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal",
+            },
+            json=payload,
+            timeout=8,
+        )
+        if r.status_code not in (200, 201, 204):
+            logger.warning("watch_list create failed: %s %s", r.status_code, r.text[:300])
+            return jsonify({"error": "could not save"}), 502
+    except Exception as e:
+        logger.error("watch_list create error: %s", e)
+        return jsonify({"error": "save failed"}), 502
+    return jsonify({"id": list_id})
+
+
+@app.route("/api/watch-list/<list_id>")
+def api_watch_list_get(list_id):
+    if not re.match(r"^[A-Za-z0-9_-]{1,16}$", list_id or ""):
+        return jsonify({"error": "invalid id"}), 400
+    sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    if not sb_url or not sb_key:
+        return jsonify({"error": "supabase not configured"}), 500
+    try:
+        r = requests.get(
+            f"{sb_url}/rest/v1/watch_lists?id=eq.{list_id}&select=id,tournament_source,tournament_id,athlete_names,created_at",
+            headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"},
+            timeout=8,
+        )
+        if r.status_code != 200:
+            return jsonify({"error": "lookup failed"}), 502
+        rows = r.json() or []
+        if not rows:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(rows[0])
+    except Exception as e:
+        logger.error("watch_list get error: %s", e)
+        return jsonify({"error": "lookup failed"}), 502
+
+
 # ── NAGA club list ────────────────────────────────────────────────────────────
 
 @app.route("/api/naga-clubs/<event_id>")
