@@ -1542,7 +1542,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function loadTournaments() {
   const route = _parseRoutePath();
-  const hasRoute = !!(route && route.org);
+  const hasRoute = !!(route && (route.org || route.kind === 'watch_list'));
   // URL route takes priority over localStorage session restore.
   if (!hasRoute && restoreSession()) return;
   try {
