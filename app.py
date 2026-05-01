@@ -1432,10 +1432,13 @@ def api_refresh():
         for cid in cat_ids:
             register_watch(tournament_id, cid)
 
-        # Kick off immediate fetch for categories not yet in memory
-        for cid in cat_ids:
-            if cid not in _brackets:
-                threading.Thread(target=refresh_bracket, args=(tournament_id, cid), daemon=True).start()
+    # One-shot bracket fetch for any cat we don't have cached state for. This
+    # populates Mat/Fight/Est. Time even for upcoming events whose brackets are
+    # already published on bjjcompsystem (typical 1–3 days before).
+    from watcher import load_state as _load_state
+    for cid in cat_ids:
+        if cid not in _brackets and not _load_state(cid):
+            threading.Thread(target=refresh_bracket, args=(tournament_id, cid), daemon=True).start()
 
     # Return current cached state (instant)
     all_changes = []
