@@ -1,6 +1,6 @@
 /* TrackMat Service Worker — handles push notifications and offline caching */
 
-const CACHE_NAME = 'trackmat-v1';
+const CACHE_NAME = 'trackmat-v2';
 const PRECACHE = ['/', '/static/manifest.json', '/static/icon-192.png'];
 
 // ── Install: precache shell ───────────────────────────────────────────────────
