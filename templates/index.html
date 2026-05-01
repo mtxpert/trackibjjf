@@ -2540,12 +2540,23 @@ function renderWatch() {
   if (_watchFilter === 'placing') list = list.filter(a => a.placement || a.eliminated);
   if (q) list = list.filter(a => a.name.toLowerCase().includes(q));
 
-  // Sort: placed/eliminated at bottom, then by fight time
+  // Sort: next-up first. Tiers: upcoming → no-time-yet → past → done.
+  // Within upcoming, earliest UTC wins so the user's actual next fight floats up.
+  const nowMs    = Date.now();
+  const pastMs   = nowMs - 30 * 60 * 1000;
+  const tierOf   = (a) => {
+    if (a.placement || a.eliminated) return 3;
+    const t = a.fight_time_utc ? Date.parse(a.fight_time_utc) : NaN;
+    if (Number.isNaN(t)) return 1;            // active but no time yet
+    return t >= pastMs ? 0 : 2;               // upcoming vs past
+  };
   list.sort((a, b) => {
-    const aDone = !!(a.placement || a.eliminated);
-    const bDone = !!(b.placement || b.eliminated);
-    if (aDone !== bDone) return aDone ? 1 : -1;
-    return (a.fight_time || 'z').localeCompare(b.fight_time || 'z');
+    const ta = tierOf(a), tb = tierOf(b);
+    if (ta !== tb) return ta - tb;
+    const ua = a.fight_time_utc ? Date.parse(a.fight_time_utc) : Infinity;
+    const ub = b.fight_time_utc ? Date.parse(b.fight_time_utc) : Infinity;
+    if (ua !== ub) return ua - ub;
+    return a.name.localeCompare(b.name);
   });
 
   // Update context line with live count
