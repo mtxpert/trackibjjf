@@ -1352,23 +1352,35 @@ async function _restoreWatchFromListId(listId) {
   setTournamentSource(list.tournament_source);
   selectedTournament = t;
   watchedTournamentId = t.id;
-  let roster = [];
-  try {
-    const r = await fetch(`/api/roster/${encodeURIComponent(t.id)}`);
-    if (r.ok) {
-      const d = await r.json();
-      roster = d.athletes || [];
-    }
-  } catch(e) {}
+  // Prefer the rich `athletes` jsonb saved on the watch list — it carries
+  // category_id and metadata that /api/refresh needs to look up bracket state.
+  // Fall back to the roster cache lookup, then to bare names.
+  const savedRich = Array.isArray(list.athletes) ? list.athletes.filter(a => a && a.name) : [];
   const savedNames = (list.athlete_names || []).filter(n => typeof n === 'string' && n.trim());
-  const wantedKeys = new Set(savedNames.map(n => n.toLowerCase()));
-  const matched = roster.filter(a => wantedKeys.has(String(a.name).toLowerCase()));
-  // Fallback: roster cache may be missing (post-redeploy on Render). Build
-  // minimal athlete objects from the saved names so the shared link still works.
-  if (matched.length) {
-    allAthletes = matched;
+  let roster = [];
+  if (!savedRich.length || savedRich.some(a => !a.category_id)) {
+    try {
+      const r = await fetch(`/api/roster/${encodeURIComponent(t.id)}`);
+      if (r.ok) {
+        const d = await r.json();
+        roster = d.athletes || [];
+      }
+    } catch(e) {}
+  }
+  if (savedRich.length) {
+    allAthletes = savedRich.map(a => {
+      if (a.category_id) return a;
+      const m = roster.find(r => String(r.name).toLowerCase() === String(a.name).toLowerCase());
+      return m ? Object.assign({}, m, a, { category_id: m.category_id, category_name: m.category_name }) : a;
+    });
   } else {
-    allAthletes = savedNames.map(n => ({ name: n, team: '', belt: '', age: '', gender: '', weight: '' }));
+    const wantedKeys = new Set(savedNames.map(n => n.toLowerCase()));
+    const matched = roster.filter(a => wantedKeys.has(String(a.name).toLowerCase()));
+    if (matched.length) {
+      allAthletes = matched;
+    } else {
+      allAthletes = savedNames.map(n => ({ name: n, team: '', belt: '', age: '', gender: '', weight: '' }));
+    }
   }
   if (!allAthletes.length) {
     showToast('Watch list is empty');
@@ -2379,9 +2391,21 @@ function goWatch() {
   showScreen('screen-watch');
   // Mint a server-side watch list ID so the URL is shareable and restore-on-refresh works.
   if (selectedTournament && _tournamentSource) {
-    const athleteNames = [...selectedKeys].map(k => {
+    const athletePayload = [...selectedKeys].map(k => {
       const a = allAthletes.find(x => x.name.toLowerCase() === k);
-      return a ? a.name : null;
+      if (!a) return null;
+      // Send the rich record so /api/refresh has category_id after redeploys
+      // wipe the roster cache.
+      return {
+        name: a.name,
+        team: a.team || '',
+        belt: a.belt || '',
+        age:  a.age  || '',
+        gender: a.gender || '',
+        weight: a.weight || '',
+        category_id:   a.category_id || null,
+        category_name: a.category_name || '',
+      };
     }).filter(Boolean);
     fetch('/api/watch-list', {
       method: 'POST',
@@ -2389,7 +2413,7 @@ function goWatch() {
       body: JSON.stringify({
         source: _tournamentSource,
         tournament_id: selectedTournament.id,
-        athletes: athleteNames,
+        athletes: athletePayload,
         email: _userEmail || null,
       })
     })

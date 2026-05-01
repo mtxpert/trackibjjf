@@ -998,16 +998,32 @@ def api_watch_list_create():
     body = request.get_json(silent=True) or {}
     src = (body.get("source") or "").strip()[:32]
     tid = (body.get("tournament_id") or "").strip()[:64]
-    athletes = body.get("athletes") or []
+    athletes_in = body.get("athletes") or []
     email = (body.get("email") or "").strip().lower()[:255] or None
-    if not src or not tid or not isinstance(athletes, list) or not athletes:
+    if not src or not tid or not isinstance(athletes_in, list) or not athletes_in:
         return jsonify({"error": "source, tournament_id, athletes required"}), 400
+    # Accept either bare strings or full athlete objects. Persist both shapes:
+    # `athlete_names` (text array) for backward compat with older clients;
+    # `athletes` (jsonb) for the rich record needed to look up bracket state
+    # after the roster cache is wiped on a Render redeploy.
     names = []
-    for n in athletes[:200]:
-        if isinstance(n, str):
-            s = n.strip()[:200]
+    rich  = []
+    allowed_keys = {"name", "team", "belt", "age", "gender", "weight",
+                    "category_id", "category_name", "country", "competitor_id"}
+    for entry in athletes_in[:200]:
+        if isinstance(entry, str):
+            s = entry.strip()[:200]
             if s:
                 names.append(s)
+                rich.append({"name": s})
+        elif isinstance(entry, dict):
+            n = (entry.get("name") or "").strip()[:200]
+            if not n:
+                continue
+            obj = {k: entry[k] for k in allowed_keys if k in entry and entry[k] is not None}
+            obj["name"] = n
+            rich.append(obj)
+            names.append(n)
     if not names:
         return jsonify({"error": "no valid athlete names"}), 400
     list_id = secrets.token_urlsafe(6)
@@ -1020,6 +1036,7 @@ def api_watch_list_create():
         "tournament_source": src,
         "tournament_id": tid,
         "athlete_names": names,
+        "athletes": rich,
     }
     if email:
         payload["created_by_email"] = email
@@ -1054,7 +1071,7 @@ def api_watch_list_get(list_id):
         return jsonify({"error": "supabase not configured"}), 500
     try:
         r = requests.get(
-            f"{sb_url}/rest/v1/watch_lists?id=eq.{list_id}&select=id,tournament_source,tournament_id,athlete_names,created_at",
+            f"{sb_url}/rest/v1/watch_lists?id=eq.{list_id}&select=id,tournament_source,tournament_id,athlete_names,athletes,created_at",
             headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"},
             timeout=8,
         )
@@ -1063,7 +1080,46 @@ def api_watch_list_get(list_id):
         rows = r.json() or []
         if not rows:
             return jsonify({"error": "not found"}), 404
-        return jsonify(rows[0])
+        row = rows[0]
+        # If `athletes` jsonb is missing or any record is name-only (no
+        # category_id), enrich from the current roster cache so the watch
+        # screen can look up bracket state. This fixes watch lists created
+        # before the rich-payload migration.
+        rich = row.get("athletes") or []
+        names = row.get("athlete_names") or []
+        need_enrich = (not rich) or any(not isinstance(a, dict) or not a.get("category_id") for a in rich)
+        if need_enrich and names:
+            try:
+                from scraper import load_roster_cache
+                cache = load_roster_cache(row.get("tournament_id"))
+                roster = (cache or {}).get("athletes") or []
+                by_name = {}
+                for a in roster:
+                    k = (a.get("name") or "").strip().lower()
+                    if k:
+                        by_name.setdefault(k, []).append(a)
+                merged = []
+                for n in names:
+                    matches = by_name.get(n.strip().lower(), [])
+                    if matches:
+                        for m in matches:
+                            merged.append({
+                                "name": m.get("name"),
+                                "team": m.get("team", ""),
+                                "belt": m.get("belt", ""),
+                                "age":  m.get("age", ""),
+                                "gender": m.get("gender", ""),
+                                "weight": m.get("weight", ""),
+                                "category_id":   m.get("category_id"),
+                                "category_name": m.get("category_name", ""),
+                            })
+                    else:
+                        merged.append({"name": n})
+                if merged:
+                    row["athletes"] = merged
+            except Exception as e:
+                logger.warning("watch_list enrich failed: %s", e)
+        return jsonify(row)
     except Exception as e:
         logger.error("watch_list get error: %s", e)
         return jsonify({"error": "lookup failed"}), 502
