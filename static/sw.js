@@ -1,6 +1,6 @@
-/* MatTrack Service Worker — handles push notifications and offline caching */
+/* TrackMat Service Worker — handles push notifications and offline caching */
 
-const CACHE_NAME = 'mattrack-v1';
+const CACHE_NAME = 'trackmat-v1';
 const PRECACHE = ['/', '/static/manifest.json', '/static/icon-192.png'];
 
 // ── Install: precache shell ───────────────────────────────────────────────────
@@ -30,7 +30,7 @@ self.addEventListener('fetch', e => {
 
 // ── Push: show notification ───────────────────────────────────────────────────
 self.addEventListener('push', e => {
-  let data = { title: 'MatTrack', body: 'Fight update', tag: 'mattrack' };
+  let data = { title: 'TrackMat', body: 'Fight update', tag: 'mattrack' };
   try { data = { ...data, ...e.data.json() }; } catch {}
 
   e.waitUntil(

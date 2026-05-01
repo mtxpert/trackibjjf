@@ -1,5 +1,5 @@
 """
-MatTrack Scraper
+TrackMat Scraper
 All fetching uses requests + BeautifulSoup. No Playwright/browser needed.
 Rosters are built by fetching all bracket pages concurrently (~2-5s per tournament).
 """

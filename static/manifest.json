@@ -1,6 +1,6 @@
 {
-  "name": "MatTrack",
-  "short_name": "MatTrack",
+  "name": "TrackMat",
+  "short_name": "TrackMat",
   "description": "Live BJJ tournament bracket tracking",
   "start_url": "/",
   "display": "standalone",
