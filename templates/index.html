@@ -1355,13 +1355,23 @@ async function _restoreWatchFromListId(listId) {
   let roster = [];
   try {
     const r = await fetch(`/api/roster/${encodeURIComponent(t.id)}`);
-    const d = await r.json();
-    roster = d.athletes || [];
+    if (r.ok) {
+      const d = await r.json();
+      roster = d.athletes || [];
+    }
   } catch(e) {}
-  const wantedKeys = new Set((list.athlete_names || []).map(n => String(n).toLowerCase()));
-  allAthletes = roster.filter(a => wantedKeys.has(String(a.name).toLowerCase()));
+  const savedNames = (list.athlete_names || []).filter(n => typeof n === 'string' && n.trim());
+  const wantedKeys = new Set(savedNames.map(n => n.toLowerCase()));
+  const matched = roster.filter(a => wantedKeys.has(String(a.name).toLowerCase()));
+  // Fallback: roster cache may be missing (post-redeploy on Render). Build
+  // minimal athlete objects from the saved names so the shared link still works.
+  if (matched.length) {
+    allAthletes = matched;
+  } else {
+    allAthletes = savedNames.map(n => ({ name: n, team: '', belt: '', age: '', gender: '', weight: '' }));
+  }
   if (!allAthletes.length) {
-    showToast('No matching athletes — roster may be loading');
+    showToast('Watch list is empty');
     showScreen('screen-tournament', false);
     return;
   }
