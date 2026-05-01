@@ -1382,14 +1382,32 @@ def api_refresh():
     tournament_id    = data.get("tournament_id", "")
     tournament_name  = data.get("tournament_name", "")
     athletes         = data.get("athletes", [])
+    list_id          = (data.get("list_id") or "").strip()
 
-    # Enforce free tier limit server-side
+    # Enforce free tier limit server-side, but exempt requests that are
+    # backing a shared watch list: the link itself is the authorization, and
+    # the cap on /api/watch-list creation already governs how big lists can be.
     import os as _os
     if not _os.environ.get("DEV_BYPASS_AUTH"):
         from auth import get_user_from_token, is_plan_active
         _user = get_user_from_token(request)
         _paid = _user and is_plan_active(_user["sub"], email=_user.get("email", ""))
-        if not _paid and len(data.get("athletes", [])) > 1:
+        _list_ok = False
+        if list_id and re.match(r"^[A-Za-z0-9_-]{1,16}$", list_id):
+            try:
+                _sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+                _sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+                _r = requests.get(
+                    f"{_sb_url}/rest/v1/watch_lists?id=eq.{list_id}&select=tournament_id",
+                    headers={"apikey": _sb_key, "Authorization": f"Bearer {_sb_key}"},
+                    timeout=4,
+                )
+                _rows = _r.json() if _r.ok else []
+                if _rows and str(_rows[0].get("tournament_id")) == str(tournament_id):
+                    _list_ok = True
+            except Exception:
+                pass
+        if not _paid and not _list_ok and len(athletes) > 1:
             return jsonify({"error": "limit_reached", "plan_required": "individual"}), 402
 
     if not tournament_id or not athletes:

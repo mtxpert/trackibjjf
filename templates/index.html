@@ -2708,6 +2708,8 @@ async function manualRefresh() {
       body: JSON.stringify({
         tournament_id:   watchedTournamentId,
         tournament_name: selectedTournament?.name || '',
+        source:          _tournamentSource || '',
+        list_id:         _currentWatchListId || null,
         athletes:        watched
       })
     });
