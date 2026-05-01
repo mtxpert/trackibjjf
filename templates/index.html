@@ -3506,17 +3506,7 @@ async function redeemCode() {
 }
 
 function checkAthleteLimit(currentCount, silent = false) {
-  // Beta: any signed-in user is unlimited.
-  if (_userEmail) return true;
-  // Logged out: gate at 1 with a sign-in prompt (no paywall during beta).
-  if (currentCount >= 1) {
-    if (!silent) {
-      const subEl = document.getElementById('modal-login-sub');
-      if (subEl) subEl.textContent = 'Sign in with Google to track more than 1 athlete.';
-      showModal('modal-login');
-    }
-    return false;
-  }
+  // Beta: unlimited for everyone, no tiers.
   return true;
 }
 
