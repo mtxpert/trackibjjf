@@ -979,7 +979,7 @@
     <div class="modal-sheet">
       <button class="btn-modal-close" onclick="closeModal('modal-login')">✕</button>
       <div class="modal-title">Sign In to TrackMat</div>
-      <div style="color:var(--muted);font-size:0.85rem;margin-bottom:20px;text-align:center">Track unlimited athletes, save your setup</div>
+      <div id="modal-login-sub" style="color:var(--muted);font-size:0.85rem;margin-bottom:20px;text-align:center">Track unlimited athletes, save your setup</div>
       <button class="btn-google" onclick="signInWithGoogle()">
         <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
         Continue with Google
@@ -994,7 +994,7 @@
         onkeydown="if(event.key==='Enter')sendMagicLink()">
       <button class="btn btn-primary" style="width:100%" onclick="sendMagicLink()">Send Magic Link</button>
       <div id="login-email-status" style="text-align:center;font-size:0.82rem;margin-top:10px;min-height:18px"></div>
-      <div style="text-align:center;margin-top:8px;color:var(--muted);font-size:0.78rem">Free account · 1 athlete included</div>
+      <div style="text-align:center;margin-top:8px;color:var(--muted);font-size:0.78rem">Free during beta · unlimited athletes once signed in</div>
     </div>
   </div>
 
@@ -1244,6 +1244,24 @@ async function _applyRoute(route) {
       }
       renderTournaments();
       return;
+    }
+
+    // Watching marker: prefer the user's saved watch list for this event.
+    if (route.kind === 'watching') {
+      try {
+        const raw = localStorage.getItem('mattrack_session');
+        const s = raw ? JSON.parse(raw) : null;
+        if (s && s.screen === 'screen-watch'
+            && (s.selected || []).length
+            && route.eventId
+            && String(s.tournament?.id) === String(route.eventId)) {
+          _routerHydrating = false;
+          if (restoreSession()) return;
+          _routerHydrating = true;
+        }
+      } catch(e) {}
+      // No saved list — strip the watching segment and fall through to event view.
+      route = { org: route.org, eventId: route.eventId, kind: null, subSlug: null };
     }
 
     // Stage 1: org
@@ -2280,6 +2298,13 @@ function goWatch() {
   }
 
   showScreen('screen-watch');
+  // Reflect the watch list in the URL so refresh restores it.
+  if (selectedTournament && _tournamentSource) {
+    const watchPath = `/org/${encodeURIComponent(_tournamentSource)}/${encodeURIComponent(selectedTournament.id)}/watching`;
+    if (window.location.pathname !== watchPath) {
+      history.replaceState({ screen: 'screen-watch' }, '', watchPath);
+    }
+  }
   renderWatch();
   connectSSE(watchedTournamentId);
   startRefreshTimer();
@@ -3031,6 +3056,8 @@ function _onPillClick() {
     showModal('modal-account');
   } else {
     console.log('[auth] pill click → login modal');
+    const subEl = document.getElementById('modal-login-sub');
+    if (subEl) subEl.textContent = 'Track unlimited athletes, save your setup';
     showModal('modal-login');
   }
 }
@@ -3306,8 +3333,17 @@ async function redeemCode() {
 }
 
 function checkAthleteLimit(currentCount, silent = false) {
-  if (_userPlan !== 'free') return true;
-  if (currentCount >= 1) { if (!silent) showModal('modal-paywall'); return false; }
+  // Beta: any signed-in user is unlimited.
+  if (_userEmail) return true;
+  // Logged out: gate at 1 with a sign-in prompt (no paywall during beta).
+  if (currentCount >= 1) {
+    if (!silent) {
+      const subEl = document.getElementById('modal-login-sub');
+      if (subEl) subEl.textContent = 'Sign in with Google to track more than 1 athlete.';
+      showModal('modal-login');
+    }
+    return false;
+  }
   return true;
 }
 
