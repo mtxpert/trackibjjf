@@ -925,6 +925,59 @@ def api_teams(tournament_id):
     return jsonify({"teams": teams, "athletes": athletes, "athlete_count": len(athletes)})
 
 
+@app.route("/api/debug/poller")
+def api_debug_poller():
+    """Inspect background-poller state. Auth: ?key=UPLOAD_KEY."""
+    if request.args.get("key") != os.environ.get("UPLOAD_KEY", ""):
+        return jsonify({"error": "unauthorized"}), 401
+    now = time.time()
+    registry = []
+    for cid, info in _watch_registry.items():
+        registry.append({
+            "category_id":   cid,
+            "tournament_id": info.get("tournament_id"),
+            "source":        info.get("source", "ibjjf"),
+            "last_fetched":  info.get("last_fetched", 0),
+            "age_sec":       round(now - info.get("last_fetched", 0), 1),
+            "interval_sec":  info.get("interval_sec", 30),
+        })
+    brackets = []
+    for cid, state in _brackets.items():
+        brackets.append({
+            "category_id":      cid,
+            "fetched_at":       state.get("fetched_at"),
+            "completed_fights": state.get("completed_fights"),
+            "total_fights":     state.get("total_fights"),
+            "results_final":    state.get("results_final"),
+        })
+    out = {
+        "now":            now,
+        "registry_count": len(registry),
+        "bracket_count":  len(brackets),
+        "live_check_cache": {k: {"expires_in": round(v[0]-now,1), "value": v[1]}
+                             for k, v in _LIVE_CHECK_CACHE.items()},
+        "registry":       sorted(registry, key=lambda x: x["age_sec"], reverse=True),
+        "brackets":       brackets,
+    }
+    if request.args.get("force") == "1":
+        # Force a one-shot poll of all registered cats
+        from watcher import fetch_brackets_batch
+        ibjjf = []
+        tid_by = {}
+        for cid, info in list(_watch_registry.items()):
+            if info.get("source", "ibjjf") == "ibjjf":
+                ibjjf.append((info["tournament_id"], cid, ""))
+                tid_by[cid] = info["tournament_id"]
+        if ibjjf:
+            try:
+                results = fetch_brackets_batch(ibjjf, concurrency=10)
+                _process_batch_results(results, tid_by)
+                out["forced_count"] = len(results)
+            except Exception as e:
+                out["forced_error"] = str(e)
+    return jsonify(out)
+
+
 @app.route("/api/cache/<tournament_id>", methods=["GET"])
 def api_cache_status(tournament_id):
     from scraper import load_roster_cache
