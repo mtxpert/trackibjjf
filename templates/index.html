@@ -2175,7 +2175,7 @@ async function startSearch() {
 
 // ─── Pick screen ───────────────────────────────────────────────────────────
 
-async function _loadPickStatuses() {
+async function _loadPickStatuses(retries = 2) {
   if (!selectedTournament) return;
   try {
     const name = encodeURIComponent(selectedTournament.name || '');
@@ -2189,6 +2189,18 @@ async function _loadPickStatuses() {
       return s ? {...a, ...s} : a;
     });
     filterPick();
+    // Server kicks off background bracket fetches for cats it didn't have
+    // state for. Re-poll a couple times so those results show up without
+    // the user having to refresh.
+    if (retries > 0) {
+      const noStatus = allAthletes.filter(a =>
+        a.category_id && !a.placement && !a.fight_time
+        && typeof a.eliminated === 'undefined'
+      ).length;
+      if (noStatus > 3) {
+        setTimeout(() => _loadPickStatuses(retries - 1), 8000);
+      }
+    }
   } catch(e) {}
 }
 

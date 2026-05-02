@@ -142,6 +142,10 @@ def _subdomain_to_source(subdomain: str) -> str:
 _watch_registry = {}
 _watch_lock     = threading.Lock()
 
+# category_id -> last prefetch unix-ts. Throttle pick-statuses prefetches so
+# repeated picker hits don't re-fetch the same bracket within a short window.
+_pick_prefetch_at = {}
+
 # SSE subscriber queues: tournament_id -> list[queue.Queue]
 _sse_clients = {}
 _sse_lock    = threading.Lock()
@@ -1431,6 +1435,43 @@ def api_pick_statuses(tournament_id):
         return jsonify({"statuses": statuses})
 
     # ── IBJJF legacy path ────────────────────────────────────────────────────
+    # Kick off background fetches for cats with no state. Without this, only
+    # categories someone is actively watching populate _brackets — meaning
+    # picker rows for athletes the viewer doesn't watch show no mat/time.
+    # Throttled per-cat so repeated picker hits don't storm the source.
+    if _tournament_is_live(tournament_id):
+        now_ts = time.time()
+        missing = []
+        seen = set()
+        for a in cache.get("athletes", []):
+            cid = a.get("category_id", "")
+            if not cid or cid in seen:
+                continue
+            seen.add(cid)
+            if cid in _brackets or load_state(cid):
+                continue
+            if (now_ts - _pick_prefetch_at.get(cid, 0)) < 25:
+                continue
+            _pick_prefetch_at[cid] = now_ts
+            missing.append(cid)
+        if missing:
+            def _bg_prefetch(cats):
+                try:
+                    from watcher import fetch_brackets_batch, save_state, diff_states
+                    items = [(tournament_id, c, "") for c in cats]
+                    results = fetch_brackets_batch(items, concurrency=10)
+                    for cid, state in results.items():
+                        if "error" in state:
+                            continue
+                        old = _brackets.get(cid)
+                        state["changes"] = diff_states(old, state) if old else []
+                        state["bracket_url"] = f"{BASE_URL}/tournaments/{tournament_id}/categories/{cid}"
+                        _brackets[cid] = state
+                        save_state(cid, state)
+                except Exception as e:
+                    logger.warning("pick-statuses prefetch failed: %s", e)
+            threading.Thread(target=_bg_prefetch, args=(missing,), daemon=True).start()
+
     for a in cache.get("athletes", []):
         cid = a.get("category_id", "")
         if not cid:
