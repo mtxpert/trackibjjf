@@ -1404,6 +1404,7 @@ def api_pick_statuses(tournament_id):
                         rec["fight_time"]     = next_fight.get("time", "")
                         rec["fight_time_utc"] = next_fight.get("time_utc", "")
                         rec["mat_name"]       = next_fight.get("mat", "")
+                        rec["mat"]            = next_fight.get("mat", "")
                 # 2 losses with no upcoming → usually eliminated. Skip in
                 # small round-robin brackets where 2 losses = 3rd place.
                 if not results_final and "fight_time" not in rec:
@@ -1448,6 +1449,7 @@ def api_pick_statuses(tournament_id):
                         rec["fight_time"]     = fight["time"]
                         rec["fight_time_utc"] = _fight_time_to_utc(fight["time"], tz_name)
                         rec["mat_name"]       = fight.get("mat", "")
+                        rec["mat"]            = fight.get("mat", "")
                         break
                 else:
                     continue
@@ -1509,6 +1511,28 @@ def api_refresh():
 
     # ── IBJJF refresh path ────────────────────────────────────────────────────
     tz_name = _tournament_tz(tournament_name)
+
+    # Backfill missing category_ids from the roster cache. Some clients persist
+    # bare-name watch lists (e.g., legacy local sessions) and POST them here
+    # without category_id — without this lookup we'd return them unchanged and
+    # the watch screen would show Mat TBD / Fight — for everyone.
+    if any(not a.get("category_id") for a in athletes):
+        try:
+            from scraper import load_roster_cache
+            cache = load_roster_cache(tournament_id) or {}
+            roster = cache.get("athletes") or []
+            by_name = {(r.get("name") or "").strip().lower(): r for r in roster}
+            for a in athletes:
+                if a.get("category_id"):
+                    continue
+                m = by_name.get((a.get("name") or "").strip().lower())
+                if m and m.get("category_id"):
+                    a["category_id"]   = m["category_id"]
+                    a["category_name"] = m.get("category_name", a.get("category_name", ""))
+                    if not a.get("team"):
+                        a["team"] = m.get("team", "")
+        except Exception:
+            pass
 
     cat_ids = list({a["category_id"] for a in athletes if a.get("category_id")})
     if not cat_ids:

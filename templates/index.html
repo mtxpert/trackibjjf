@@ -2248,14 +2248,11 @@ function filterPick() {
   const q = (document.getElementById('pick-search').value || '').toLowerCase().trim();
   let list = allAthletes.slice();
 
-  // Sort: upcoming fights → in progress → placed → eliminated → no data
-  // Secondary: within upcoming fights, sort by fight_time alphabetically (times are formatted consistently)
-  list.sort((a, b) => {
-    const sa = _pickStatusSort(a), sb = _pickStatusSort(b);
-    if (sa !== sb) return sa - sb;
-    if (sa === 0) return (a.fight_time || '').localeCompare(b.fight_time || '');
-    return a.name.localeCompare(b.name);
-  });
+  // Alphabetical sort by name. Status badges (mat/time, medal, X) still
+  // render per-row, but order doesn't change based on bracket state — that
+  // way the user's currently-watched athletes don't appear elevated to
+  // anyone else viewing the same team page.
+  list.sort((a, b) => a.name.localeCompare(b.name));
 
   if (q) list = list.filter(a => a.name.toLowerCase().includes(q) || (a.division||'').toLowerCase().includes(q));
 
@@ -2540,24 +2537,10 @@ function renderWatch() {
   if (_watchFilter === 'placing') list = list.filter(a => a.placement || a.eliminated);
   if (q) list = list.filter(a => a.name.toLowerCase().includes(q));
 
-  // Sort: next-up first. Tiers: upcoming → no-time-yet → past → done.
-  // Within upcoming, earliest UTC wins so the user's actual next fight floats up.
-  const nowMs    = Date.now();
-  const pastMs   = nowMs - 30 * 60 * 1000;
-  const tierOf   = (a) => {
-    if (a.placement || a.eliminated) return 3;
-    const t = a.fight_time_utc ? Date.parse(a.fight_time_utc) : NaN;
-    if (Number.isNaN(t)) return 1;            // active but no time yet
-    return t >= pastMs ? 0 : 2;               // upcoming vs past
-  };
-  list.sort((a, b) => {
-    const ta = tierOf(a), tb = tierOf(b);
-    if (ta !== tb) return ta - tb;
-    const ua = a.fight_time_utc ? Date.parse(a.fight_time_utc) : Infinity;
-    const ub = b.fight_time_utc ? Date.parse(b.fight_time_utc) : Infinity;
-    if (ua !== ub) return ua - ub;
-    return a.name.localeCompare(b.name);
-  });
+  // Alphabetical sort by name. Mat/time/result badges still render per
+  // row, but ordering stays predictable — names don't shuffle as fights
+  // start or finish.
+  list.sort((a, b) => a.name.localeCompare(b.name));
 
   // Update context line with live count
   const ctxEl = document.getElementById('watch-context');
