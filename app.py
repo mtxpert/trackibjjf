@@ -219,10 +219,17 @@ def _sse_push(tournament_id, event_data):
             pass   # slow client — drop event rather than block
 
 
+_LIVE_CHECK_CACHE: dict = {}  # tid -> (expires_ts, bool)
+
 def _tournament_is_live(tournament_id: str) -> bool:
-    """Return True only if the tournament's start date is today (day-of only)."""
+    """Return True only if today is within the tournament's start..end range.
+    Falls back to Supabase tournament_events when the seed cache is stale."""
     today = date.today().isoformat()
-    # Check all known tournament lists for this id
+    cached = _LIVE_CHECK_CACHE.get(str(tournament_id))
+    if cached and cached[0] > time.time():
+        return cached[1]
+
+    # 1. Seed cache (fast path)
     try:
         from pathlib import Path as _P
         import json as _j
@@ -232,19 +239,48 @@ def _tournament_is_live(tournament_id: str) -> bool:
                 if str(t.get("id")) == str(tournament_id):
                     start = t.get("start") or t.get("date", "")
                     end   = t.get("end", start)
-                    return start <= today <= end
+                    res = bool(start) and start <= today <= (end or start)
+                    _LIVE_CHECK_CACHE[str(tournament_id)] = (time.time() + 300, res)
+                    return res
     except Exception:
         pass
-    # NAGA: check naga seed cache
+
+    # 2. Supabase tournament_events (authoritative when seed is stale)
+    try:
+        import requests as _req
+        sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+        sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+        if sb_url and sb_key:
+            r = _req.get(
+                f"{sb_url}/rest/v1/tournament_events"
+                f"?select=start_date,end_date&event_id=eq.{tournament_id}&limit=1",
+                headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"},
+                timeout=4,
+            )
+            rows = r.json() if r.ok else []
+            if rows:
+                start = rows[0].get("start_date") or ""
+                end   = rows[0].get("end_date") or start
+                res   = bool(start) and start <= today <= (end or start)
+                _LIVE_CHECK_CACHE[str(tournament_id)] = (time.time() + 300, res)
+                return res
+    except Exception:
+        pass
+
+    # 3. NAGA seed cache
     try:
         from scraper_naga import _load_naga_cache
         ev = _load_naga_cache().get(str(tournament_id))
         if ev:
             start = ev.get("start", "")
             end   = ev.get("end", start)
-            return bool(start) and start <= today <= (end or start)
+            res = bool(start) and start <= today <= (end or start)
+            _LIVE_CHECK_CACHE[str(tournament_id)] = (time.time() + 300, res)
+            return res
     except Exception:
         pass
+
+    _LIVE_CHECK_CACHE[str(tournament_id)] = (time.time() + 60, False)
     return False
 
 
