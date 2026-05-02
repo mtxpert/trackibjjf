@@ -1000,9 +1000,20 @@ def api_cache_build(tournament_id):
         return jsonify({"error": "unauthorized"}), 401
     from scraper import build_roster
     job_id = f"roster_{tournament_id}"
-    if job_id in _build_jobs and _build_jobs[job_id].get("status") == "running":
-        return jsonify({"job_id": job_id, "already_running": True})
-    _build_jobs[job_id] = {"status": "running", "progress": 0, "total": 0, "current_cat": ""}
+    existing = _build_jobs.get(job_id) or {}
+    # Only block a new run if the old job is still actively progressing.
+    # A job stuck at progress=0 with status=running for >2 minutes is a
+    # dead daemon thread — let the new POST replace it.
+    if existing.get("status") == "running":
+        started_at = existing.get("started_at", 0)
+        is_progressing = bool(existing.get("total")) or (existing.get("progress", 0) > 0)
+        is_stale       = (time.time() - started_at) > 120
+        if is_progressing and not is_stale:
+            return jsonify({"job_id": job_id, "already_running": True})
+    _build_jobs[job_id] = {
+        "status": "running", "progress": 0, "total": 0,
+        "current_cat": "", "started_at": time.time(),
+    }
     threading.Thread(
         target=build_roster,
         args=(tournament_id, _build_jobs[job_id]),
