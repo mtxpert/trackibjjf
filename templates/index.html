@@ -1108,7 +1108,8 @@ let _athleteSugg      = [];       // [{name, team}]
 
 function setSearchMode(mode) {
   _searchMode   = mode;
-  _athleteQueue = [];
+  // Preserve _athleteQueue across mode switches so users can mix
+  // team-roster picks with cross-team athlete-name picks before watching.
   _updateAthWatchBtns();
   document.getElementById('mode-team').classList.toggle('mode-btn--active', mode === 'team');
   document.getElementById('mode-athlete').classList.toggle('mode-btn--active', mode === 'athlete');
@@ -2091,7 +2092,10 @@ function addAthleteToList(name) {
 }
 
 function _updateAthWatchBtns() {
-  const n = _athleteQueue.length;
+  // Combined count: athlete-mode queue + any team-mode picks already in selectedKeys.
+  const queueKeys = new Set(_athleteQueue.map(a => a.name.toLowerCase()));
+  const teamSelectedNotInQueue = [...selectedKeys].filter(k => !queueKeys.has(k)).length;
+  const n = _athleteQueue.length + teamSelectedNotInQueue;
   const label = n ? `Watch ${n} Athlete${n>1?'s':''} →` : '';
   ['ath-watch-top','ath-watch-bottom'].forEach(id => {
     const btn = document.getElementById(id);
@@ -2102,10 +2106,11 @@ function _updateAthWatchBtns() {
 }
 
 async function startAthleteQueueSearch() {
-  if (!_athleteQueue.length || !selectedTournament) return;
-  // Merge results for all athletes in the queue
-  const results = [];
-  const seen    = new Set();
+  if ((!_athleteQueue.length && !selectedKeys.size) || !selectedTournament) return;
+  // Merge results for all athletes in the queue with any prior team-flow
+  // selections so users can mix athlete-name picks with team-roster picks.
+  const merged = allAthletes.slice();
+  const seen   = new Set(merged.map(a => a.name.toLowerCase()));
   for (const a of _athleteQueue) {
     try {
       const r    = await fetch('/api/search', {
@@ -2118,13 +2123,13 @@ async function startAthleteQueueSearch() {
         const job = await jr.json();
         for (const athlete of (job.athletes || [])) {
           const k = athlete.name.toLowerCase();
-          if (!seen.has(k)) { seen.add(k); results.push(athlete); }
+          if (!seen.has(k)) { seen.add(k); merged.push(athlete); }
         }
       }
     } catch(e) {}
   }
-  allAthletes  = results;
-  selectedKeys = new Set(_athleteQueue.map(a => a.name.toLowerCase()));
+  allAthletes = merged;
+  for (const a of _athleteQueue) selectedKeys.add(a.name.toLowerCase());
   _athleteQueue = [];
   _updateAthWatchBtns();
   goWatch();
@@ -2162,8 +2167,26 @@ async function startSearch() {
     if (data.job_id) {
       const jr = await fetch(`/api/search/${data.job_id}`);
       const job = await jr.json();
+      // Preserve prior team picks: shift any previously-selected athletes
+      // into _athleteQueue so they survive the team-roster swap and get
+      // re-merged at goWatch time.
+      for (const k of selectedKeys) {
+        const prior = allAthletes.find(a => a.name.toLowerCase() === k);
+        if (prior && !_athleteQueue.find(q => q.name.toLowerCase() === k)) {
+          _athleteQueue.push({
+            name: prior.name, team: prior.team || '', division: prior.division || ''
+          });
+        }
+      }
       allAthletes  = job.athletes || [];
       selectedKeys = new Set();
+      // Pre-select any queued athletes that happen to be on this team's roster.
+      for (const a of allAthletes) {
+        if (_athleteQueue.find(q => q.name.toLowerCase() === a.name.toLowerCase())) {
+          selectedKeys.add(a.name.toLowerCase());
+        }
+      }
+      _updateAthWatchBtns();
       showPick();
       return;
     }
@@ -2268,19 +2291,28 @@ function filterPick() {
 
   if (q) list = list.filter(a => a.name.toLowerCase().includes(q) || (a.division||'').toLowerCase().includes(q));
 
-  document.getElementById('pick-count').textContent =
-    selectedKeys.size ? `${selectedKeys.size} selected` : `${allAthletes.length} athletes — tap to select`;
+  // Count includes cross-team athlete-mode picks (_athleteQueue) that
+  // aren't in this team's roster — they'll be merged into the watch list.
+  const extraQueue = _athleteQueue.filter(q =>
+    !selectedKeys.has(q.name.toLowerCase())
+  );
+  const totalSelected = selectedKeys.size + extraQueue.length;
 
-  const label = selectedKeys.size ? `Watch ${selectedKeys.size} Athlete${selectedKeys.size>1?'s':''} →` : 'Select athletes to watch';
+  const countText = totalSelected
+    ? `${totalSelected} selected` + (extraQueue.length ? ` (+${extraQueue.length} from athlete search)` : '')
+    : `${allAthletes.length} athletes — tap to select`;
+  document.getElementById('pick-count').textContent = countText;
+
+  const label = totalSelected ? `Watch ${totalSelected} Athlete${totalSelected>1?'s':''} →` : 'Select athletes to watch';
   const btn = document.getElementById('watch-btn');
-  btn.disabled = selectedKeys.size === 0;
+  btn.disabled = totalSelected === 0;
   btn.textContent = label;
   const topBar = document.getElementById('pick-top-bar');
   const btnTop = document.getElementById('watch-btn-top');
   if (topBar && btnTop) {
     btnTop.textContent = label;
-    btnTop.disabled = selectedKeys.size === 0;
-    topBar.classList.toggle('visible', selectedKeys.size > 0);
+    btnTop.disabled = totalSelected === 0;
+    topBar.classList.toggle('visible', totalSelected > 0);
   }
 
   // Update select-all button
@@ -2288,8 +2320,8 @@ function filterPick() {
   if (saBtn) {
     const visibleKeys = list.map(a => a.name.toLowerCase());
     const allSel = visibleKeys.length > 0 && visibleKeys.every(k => selectedKeys.has(k));
-    if (selectedKeys.size > 0 && !allSel) {
-      saBtn.textContent = `Watch ${selectedKeys.size} Athlete${selectedKeys.size>1?'s':''} →`;
+    if (totalSelected > 0 && !allSel) {
+      saBtn.textContent = `Watch ${totalSelected} Athlete${totalSelected>1?'s':''} →`;
       saBtn.onclick = goWatch;
     } else {
       saBtn.textContent = allSel ? 'Deselect All' : 'Select All';
@@ -2358,8 +2390,12 @@ async function refreshPickStatuses() {
 }
 
 function togglePick(key) {
-  if (selectedKeys.has(key)) selectedKeys.delete(key);
-  else {
+  if (selectedKeys.has(key)) {
+    selectedKeys.delete(key);
+    // Also drop from _athleteQueue so unchecking a carried-over pick sticks.
+    const qi = _athleteQueue.findIndex(a => a.name.toLowerCase() === key);
+    if (qi !== -1) _athleteQueue.splice(qi, 1);
+  } else {
     if (!checkAthleteLimit(selectedKeys.size)) return;
     selectedKeys.add(key);
   }
@@ -2370,7 +2406,11 @@ function toggleSelectAll() {
   const visibleKeys = [...document.querySelectorAll('#pick-list [data-key]')].map(el => el.dataset.key);
   const allSelected = visibleKeys.every(k => selectedKeys.has(k));
   if (allSelected) {
-    visibleKeys.forEach(k => selectedKeys.delete(k));
+    visibleKeys.forEach(k => {
+      selectedKeys.delete(k);
+      const qi = _athleteQueue.findIndex(a => a.name.toLowerCase() === k);
+      if (qi !== -1) _athleteQueue.splice(qi, 1);
+    });
   } else {
     for (const k of visibleKeys) {
       if (!checkAthleteLimit(selectedKeys.size, true)) break;
@@ -2381,6 +2421,18 @@ function toggleSelectAll() {
 }
 
 function goWatch() {
+  // Merge any cross-team athlete-mode picks (_athleteQueue) into the watch
+  // list so users can combine team-roster selections with athlete-name picks.
+  for (const a of _athleteQueue) {
+    const k = a.name.toLowerCase();
+    if (!allAthletes.find(x => x.name.toLowerCase() === k)) {
+      allAthletes.push({ name: a.name, team: a.team || '', division: a.division || '' });
+    }
+    selectedKeys.add(k);
+  }
+  _athleteQueue = [];
+  _updateAthWatchBtns();
+
   if (!selectedKeys.size) return;
   _currentWatchListId = null;   // any prior id is stale; will be re-minted below
   watchedTournamentId = selectedTournament ? selectedTournament.id : '';
@@ -2392,9 +2444,12 @@ function goWatch() {
   const ctxEl     = document.getElementById('watch-context');
   if (tourneyEl) tourneyEl.textContent = selectedTournament?.name || '';
   if (ctxEl) {
-    const team = allAthletes.find(a => selectedKeys.has(a.name.toLowerCase()))?.team || '';
+    const teams = [...new Set(
+      [...selectedKeys].map(k => allAthletes.find(a => a.name.toLowerCase() === k)?.team).filter(Boolean)
+    )];
+    const teamLabel = teams.length === 1 ? teams[0] : (teams.length > 1 ? `${teams.length} teams` : '');
     const n    = selectedKeys.size;
-    ctxEl.textContent = [team, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
+    ctxEl.textContent = [teamLabel, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
   }
 
   showScreen('screen-watch');
