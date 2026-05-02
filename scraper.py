@@ -392,18 +392,29 @@ def build_roster(tournament_id, job):
     Build roster cache using requests+BS4 via watcher.fetch_brackets_batch.
     Fetches ALL bracket pages concurrently (~2-5s for a full tournament).
     Returns dict of category_id -> bracket_state so caller can register watchers.
+
+    Hard 180s outer timeout via ThreadPoolExecutor so a hung
+    requests.get() can't leave the job permanently 'running' (witnessed
+    on Render where requests' internal timeout sometimes doesn't fire).
     """
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FT
+    ex = ThreadPoolExecutor(max_workers=1)
+    future = ex.submit(_build_roster_inner, tournament_id, job)
     try:
-        return _build_roster_inner(tournament_id, job)
+        return future.result(timeout=180)
+    except _FT:
+        job["status"] = "error"
+        job["error"]  = "build_roster_timeout_180s"
+        return {}
     except Exception as e:
-        # If we don't catch here, the daemon thread dies silently and
-        # job["status"] stays at "running" forever — the cache stays
-        # empty and the next /api/cache POST short-circuits with
-        # already_running=true. Record the error so the next POST can
-        # try again (status=error → not "running" → new job allowed).
         job["status"] = "error"
         job["error"]  = f"{type(e).__name__}: {e}"
         return {}
+    finally:
+        # Don't wait for the inner future — it may still be hung in
+        # requests.get; let the daemon executor leak. Process restart
+        # will reap it. shutdown(wait=False) is the explicit "I know."
+        ex.shutdown(wait=False)
 
 
 def _build_roster_inner(tournament_id, job):
