@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>MatTrack</title>
+  <title>TrackMat</title>
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#6366f1">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="MatTrack">
+  <meta name="apple-mobile-web-app-title" content="TrackMat">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
@@ -624,7 +624,7 @@
 
   <div class="landing-hero">
     <div class="landing-logo">🥋</div>
-    <h1 class="landing-title">MatTrack</h1>
+    <h1 class="landing-title">TrackMat</h1>
     <p class="landing-sub" id="landing-sub">Live bracket tracking for BJJ tournaments. Know the moment your athlete steps on the mat.</p>
     <button class="landing-cta" id="landing-cta-btn" onclick="startApp()">Start Tracking Free</button>
     <div class="landing-cta-sub" id="landing-cta-sub">No account required to try · 1 athlete free</div>
@@ -709,7 +709,7 @@
   </div>
 
   <div class="landing-footer">
-    © 2026 Olympic Network Services LLC · mattrack.net
+    © 2026 Olympic Network Services LLC · trackmat.net
   </div>
 
 </div>
@@ -928,7 +928,7 @@
   <div class="modal-overlay" id="modal-paywall">
     <div class="modal-sheet">
       <button class="btn-modal-close" onclick="closeModal('modal-paywall')">✕</button>
-      <div class="modal-title">Upgrade MatTrack</div>
+      <div class="modal-title">Upgrade TrackMat</div>
       <div class="modal-sub">Free plan: track 1 athlete per session.<br>Upgrade to watch your whole team.</div>
 
       <div class="plan-card featured" onclick="startCheckout('individual')">
@@ -978,7 +978,7 @@
   <div class="modal-overlay" id="modal-login">
     <div class="modal-sheet">
       <button class="btn-modal-close" onclick="closeModal('modal-login')">✕</button>
-      <div class="modal-title">Sign In to MatTrack</div>
+      <div class="modal-title">Sign In to TrackMat</div>
       <div style="color:var(--muted);font-size:0.85rem;margin-bottom:20px;text-align:center">Track unlimited athletes, save your setup</div>
       <button class="btn-google" onclick="signInWithGoogle()">
         <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.282-1.117-.282-1.71s.102-1.17.282-1.71V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
@@ -1035,7 +1035,7 @@
         <p style="color:var(--muted)">Free accounts can track 1 athlete. Individual Coach ($2.99/mo) removes that limit. Gym and Affiliate packs cover whole teams.</p>
 
         <h3 style="font-size:0.95rem;margin:16px 0 6px">Contact</h3>
-        <p style="color:var(--muted)">Questions or issues? Email <a href="mailto:info@mattrack.net" style="color:var(--accent)">info@mattrack.net</a></p>
+        <p style="color:var(--muted)">Questions or issues? Email <a href="mailto:info@trackmat.net" style="color:var(--accent)">info@trackmat.net</a></p>
       </div>
     </div>
   </div>
@@ -1114,8 +1114,16 @@ let _teamSuggestions  = [];       // [{name, count}]
 let _athleteSugg      = [];       // [{name, team}]
 
 function setSearchMode(mode) {
-  _searchMode   = mode;
-  _athleteQueue = [];
+  // Switching team → athlete: shift any current team picks into the durable queue
+  // so they aren't lost when the user adds cross-team athletes.
+  if (mode === 'athlete' && _searchMode === 'team' && typeof selectedKeys !== 'undefined' && selectedKeys.size) {
+    for (const k of selectedKeys) {
+      if (_athleteQueue.find(x => x.name.toLowerCase() === k)) continue;
+      const meta = (allAthletes || []).find(a => a.name.toLowerCase() === k);
+      if (meta) _athleteQueue.push({ name: meta.name, team: meta.team || '', division: meta.division || '' });
+    }
+  }
+  _searchMode = mode;
   _updateAthWatchBtns();
   document.getElementById('mode-team').classList.toggle('mode-btn--active', mode === 'team');
   document.getElementById('mode-athlete').classList.toggle('mode-btn--active', mode === 'athlete');
@@ -1996,7 +2004,11 @@ function addAthleteToList(name) {
 }
 
 function _updateAthWatchBtns() {
-  const n = _athleteQueue.length;
+  // Combined count: queue + any team selections not already in queue
+  const queueKeys = new Set(_athleteQueue.map(a => a.name.toLowerCase()));
+  const teamExtras = (typeof selectedKeys !== 'undefined')
+    ? [...selectedKeys].filter(k => !queueKeys.has(k)).length : 0;
+  const n = _athleteQueue.length + teamExtras;
   const label = n ? `Watch ${n} Athlete${n>1?'s':''} →` : '';
   ['ath-watch-top','ath-watch-bottom'].forEach(id => {
     const btn = document.getElementById(id);
@@ -2028,8 +2040,20 @@ async function startAthleteQueueSearch() {
       }
     } catch(e) {}
   }
-  allAthletes  = results;
-  selectedKeys = new Set(_athleteQueue.map(a => a.name.toLowerCase()));
+  // Merge fetched results into existing allAthletes (preserve prior team picks)
+  for (const r of results) {
+    if (!allAthletes.find(a => a.name.toLowerCase() === r.name.toLowerCase())) {
+      allAthletes.push(r);
+    }
+  }
+  // Also ensure every queue entry exists in allAthletes (even with empty meta)
+  for (const a of _athleteQueue) {
+    const k = a.name.toLowerCase();
+    if (!allAthletes.find(x => x.name.toLowerCase() === k)) {
+      allAthletes.push({ name: a.name, team: a.team || '', division: a.division || '' });
+    }
+    selectedKeys.add(k);
+  }
   _athleteQueue = [];
   _updateAthWatchBtns();
   goWatch();
@@ -2040,6 +2064,15 @@ async function startSearch() {
   const school = document.getElementById('school-input').value.trim();
   if (!school) { showToast('Enter a school name'); return; }
   if (!selectedTournament) { showScreen('screen-tournament'); return; }
+
+  // Carry any prior team picks into the queue so they survive the new team search
+  if (typeof selectedKeys !== 'undefined' && selectedKeys.size) {
+    for (const k of selectedKeys) {
+      if (_athleteQueue.find(x => x.name.toLowerCase() === k)) continue;
+      const meta = (allAthletes || []).find(a => a.name.toLowerCase() === k);
+      if (meta) _athleteQueue.push({ name: meta.name, team: meta.team || '', division: meta.division || '' });
+    }
+  }
 
   document.getElementById('header-sub').textContent =
     school + ' · ' + selectedTournament.name.split(' ').slice(0,3).join(' ') + '...';
@@ -2065,7 +2098,15 @@ async function startSearch() {
       const jr = await fetch(`/api/search/${data.job_id}`);
       const job = await jr.json();
       allAthletes  = job.athletes || [];
+      // Pre-select any queued athletes that exist in this team's roster
       selectedKeys = new Set();
+      if (_athleteQueue.length) {
+        const queueKeys = new Set(_athleteQueue.map(a => a.name.toLowerCase()));
+        for (const a of allAthletes) {
+          const k = a.name.toLowerCase();
+          if (queueKeys.has(k)) selectedKeys.add(k);
+        }
+      }
       showPick();
       return;
     }
@@ -2161,19 +2202,25 @@ function filterPick() {
 
   if (q) list = list.filter(a => a.name.toLowerCase().includes(q) || (a.division||'').toLowerCase().includes(q));
 
-  document.getElementById('pick-count').textContent =
-    selectedKeys.size ? `${selectedKeys.size} selected` : `${allAthletes.length} athletes — tap to select`;
+  // Combined count: current team selectedKeys + queue items NOT in current roster
+  const rosterKeys = new Set(allAthletes.map(a => a.name.toLowerCase()));
+  const queueExtras = _athleteQueue.filter(q => !rosterKeys.has(q.name.toLowerCase())).length;
+  const total = selectedKeys.size + queueExtras;
+  const countText = total
+    ? `${total} selected${queueExtras ? ` (+${queueExtras} from athlete search)` : ''}`
+    : `${allAthletes.length} athletes — tap to select`;
+  document.getElementById('pick-count').textContent = countText;
 
-  const label = selectedKeys.size ? `Watch ${selectedKeys.size} Athlete${selectedKeys.size>1?'s':''} →` : 'Select athletes to watch';
+  const label = total ? `Watch ${total} Athlete${total>1?'s':''} →` : 'Select athletes to watch';
   const btn = document.getElementById('watch-btn');
-  btn.disabled = selectedKeys.size === 0;
+  btn.disabled = total === 0;
   btn.textContent = label;
   const topBar = document.getElementById('pick-top-bar');
   const btnTop = document.getElementById('watch-btn-top');
   if (topBar && btnTop) {
     btnTop.textContent = label;
-    btnTop.disabled = selectedKeys.size === 0;
-    topBar.classList.toggle('visible', selectedKeys.size > 0);
+    btnTop.disabled = total === 0;
+    topBar.classList.toggle('visible', total > 0);
   }
 
   // Update select-all button
@@ -2181,8 +2228,8 @@ function filterPick() {
   if (saBtn) {
     const visibleKeys = list.map(a => a.name.toLowerCase());
     const allSel = visibleKeys.length > 0 && visibleKeys.every(k => selectedKeys.has(k));
-    if (selectedKeys.size > 0 && !allSel) {
-      saBtn.textContent = `Watch ${selectedKeys.size} Athlete${selectedKeys.size>1?'s':''} →`;
+    if (total > 0 && !allSel) {
+      saBtn.textContent = `Watch ${total} Athlete${total>1?'s':''} →`;
       saBtn.onclick = goWatch;
     } else {
       saBtn.textContent = allSel ? 'Deselect All' : 'Select All';
@@ -2250,8 +2297,12 @@ async function refreshPickStatuses() {
 }
 
 function togglePick(key) {
-  if (selectedKeys.has(key)) selectedKeys.delete(key);
-  else {
+  if (selectedKeys.has(key)) {
+    selectedKeys.delete(key);
+    // Also drop from cross-mode queue if present
+    const idx = _athleteQueue.findIndex(a => a.name.toLowerCase() === key);
+    if (idx !== -1) _athleteQueue.splice(idx, 1);
+  } else {
     if (!checkAthleteLimit(selectedKeys.size)) return;
     selectedKeys.add(key);
   }
@@ -2262,7 +2313,11 @@ function toggleSelectAll() {
   const visibleKeys = [...document.querySelectorAll('#pick-list [data-key]')].map(el => el.dataset.key);
   const allSelected = visibleKeys.every(k => selectedKeys.has(k));
   if (allSelected) {
-    visibleKeys.forEach(k => selectedKeys.delete(k));
+    visibleKeys.forEach(k => {
+      selectedKeys.delete(k);
+      const idx = _athleteQueue.findIndex(a => a.name.toLowerCase() === k);
+      if (idx !== -1) _athleteQueue.splice(idx, 1);
+    });
   } else {
     for (const k of visibleKeys) {
       if (!checkAthleteLimit(selectedKeys.size, true)) break;
@@ -2273,19 +2328,32 @@ function toggleSelectAll() {
 }
 
 function goWatch() {
+  // Merge any queue carry-over (from athlete-mode picks) into selectedKeys + allAthletes
+  for (const a of _athleteQueue) {
+    const k = a.name.toLowerCase();
+    if (!allAthletes.find(x => x.name.toLowerCase() === k)) {
+      allAthletes.push({ name: a.name, team: a.team || '', division: a.division || '' });
+    }
+    selectedKeys.add(k);
+  }
+  _athleteQueue = [];
+  _updateAthWatchBtns();
   if (!selectedKeys.size) return;
   watchedTournamentId = selectedTournament ? selectedTournament.id : '';
   document.getElementById('changes-banner').style.display = 'none';
   _watchFilter = 'all';
 
-  // Context header
+  // Context header — show team count if multi-team
   const tourneyEl = document.getElementById('watch-tourney-name');
   const ctxEl     = document.getElementById('watch-context');
   if (tourneyEl) tourneyEl.textContent = selectedTournament?.name || '';
   if (ctxEl) {
-    const team = allAthletes.find(a => selectedKeys.has(a.name.toLowerCase()))?.team || '';
+    const teams = [...new Set(
+      [...selectedKeys].map(k => allAthletes.find(a => a.name.toLowerCase() === k)?.team).filter(Boolean)
+    )];
+    const teamLabel = teams.length === 1 ? teams[0] : (teams.length > 1 ? `${teams.length} teams` : '');
     const n    = selectedKeys.size;
-    ctxEl.textContent = [team, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
+    ctxEl.textContent = [teamLabel, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
   }
 
   showScreen('screen-watch');
@@ -2361,12 +2429,15 @@ function renderWatch() {
     return (a.fight_time || 'z').localeCompare(b.fight_time || 'z');
   });
 
-  // Update context line with live count
+  // Update context line with live count — show team count if multi-team
   const ctxEl = document.getElementById('watch-context');
   if (ctxEl) {
-    const team = allAthletes.find(a => selectedKeys.has(a.name.toLowerCase()))?.team || '';
+    const teams = [...new Set(
+      [...selectedKeys].map(k => allAthletes.find(a => a.name.toLowerCase() === k)?.team).filter(Boolean)
+    )];
+    const teamLabel = teams.length === 1 ? teams[0] : (teams.length > 1 ? `${teams.length} teams` : '');
     const n    = selectedKeys.size;
-    ctxEl.textContent = [team, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
+    ctxEl.textContent = [teamLabel, `${n} athlete${n!==1?'s':''} selected`].filter(Boolean).join(' · ');
   }
 
   const container = document.getElementById('watch-list');
@@ -2605,7 +2676,7 @@ function shareResults() {
       lines.push(`   ${a.name}${div}`);
     }
   }
-  lines.push('\nTracked with MatTrack · mattrack.net');
+  lines.push('\nTracked with TrackMat · trackmat.net');
 
   const text = lines.join('\n');
   navigator.clipboard.writeText(text).then(() => {
@@ -2935,7 +3006,7 @@ function _openSiblingWithSession(baseUrl, e) {
 
 function _fetchSiblingSession() {
   const SIBLING = window.location.hostname.includes('trackbjj')
-    ? 'https://www.mattrack.net'
+    ? 'https://www.trackmat.net'
     : 'https://www.trackbjj.net';
   return new Promise(function(resolve) {
     var iframe = document.createElement('iframe');
