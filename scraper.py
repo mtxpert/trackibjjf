@@ -364,26 +364,33 @@ def get_ibjjf_schedule():
 
 
 def get_category_ids(tournament_id):
-    """Return list of {id, name} for all bracket categories (regex, no BS4)."""
-    resp = requests.get(f"{BASE}/tournaments/{tournament_id}/categories",
-                        headers=HEADERS, timeout=(5, 12))
-    resp.raise_for_status()
+    """Return list of {id, name} for all bracket categories (regex, no BS4).
+
+    bjjcompsystem's /categories listing filters by gender_id, defaulting to
+    male (1). To capture female brackets we must also fetch gender_id=2.
+    """
     seen, cats = set(), []
-    for m in _CAT_HREF.finditer(resp.text):
-        if m.group(1) != str(tournament_id):
-            continue
-        cid = m.group(2)
-        if cid in seen:
-            continue
-        seen.add(cid)
-        # extract name from surrounding markup via BS4 — small targeted parse
-        start = max(0, m.start() - 20)
-        end   = min(len(resp.text), m.end() + 400)
-        chunk = resp.text[start:end]
-        soup  = BeautifulSoup(chunk, "html.parser")
-        a_tag = soup.find("a")
-        name  = a_tag.get_text(" ", strip=True) if a_tag else cid
-        cats.append({"id": cid, "name": name})
+    for gid in (1, 2):
+        resp = requests.get(
+            f"{BASE}/tournaments/{tournament_id}/categories",
+            params={"gender_id": gid},
+            headers=HEADERS, timeout=(5, 12),
+        )
+        resp.raise_for_status()
+        for m in _CAT_HREF.finditer(resp.text):
+            if m.group(1) != str(tournament_id):
+                continue
+            cid = m.group(2)
+            if cid in seen:
+                continue
+            seen.add(cid)
+            start = max(0, m.start() - 20)
+            end   = min(len(resp.text), m.end() + 400)
+            chunk = resp.text[start:end]
+            soup  = BeautifulSoup(chunk, "html.parser")
+            a_tag = soup.find("a")
+            name  = a_tag.get_text(" ", strip=True) if a_tag else cid
+            cats.append({"id": cid, "name": name})
     return cats
 
 
