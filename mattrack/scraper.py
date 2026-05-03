@@ -1,5 +1,5 @@
 """
-MatTrack Scraper
+TrackMat Scraper
 All fetching uses requests + BeautifulSoup. No Playwright/browser needed.
 Rosters are built by fetching all bracket pages concurrently (~2-5s per tournament).
 """
@@ -365,26 +365,33 @@ def get_ibjjf_schedule():
 
 
 def get_category_ids(tournament_id):
-    """Return list of {id, name} for all bracket categories (regex, no BS4)."""
-    resp = requests.get(f"{BASE}/tournaments/{tournament_id}/categories",
-                        headers=HEADERS, timeout=(5, 12))
-    resp.raise_for_status()
+    """Return list of {id, name} for all bracket categories (regex, no BS4).
+
+    bjjcompsystem's /categories listing filters by gender_id, defaulting to
+    male (1). To capture female brackets we must also fetch gender_id=2.
+    """
     seen, cats = set(), []
-    for m in _CAT_HREF.finditer(resp.text):
-        if m.group(1) != str(tournament_id):
-            continue
-        cid = m.group(2)
-        if cid in seen:
-            continue
-        seen.add(cid)
-        # extract name from surrounding markup via BS4 — small targeted parse
-        start = max(0, m.start() - 20)
-        end   = min(len(resp.text), m.end() + 400)
-        chunk = resp.text[start:end]
-        soup  = BeautifulSoup(chunk, "html.parser")
-        a_tag = soup.find("a")
-        name  = a_tag.get_text(" ", strip=True) if a_tag else cid
-        cats.append({"id": cid, "name": name})
+    for gid in (1, 2):
+        resp = requests.get(
+            f"{BASE}/tournaments/{tournament_id}/categories",
+            params={"gender_id": gid},
+            headers=HEADERS, timeout=(5, 12),
+        )
+        resp.raise_for_status()
+        for m in _CAT_HREF.finditer(resp.text):
+            if m.group(1) != str(tournament_id):
+                continue
+            cid = m.group(2)
+            if cid in seen:
+                continue
+            seen.add(cid)
+            start = max(0, m.start() - 20)
+            end   = min(len(resp.text), m.end() + 400)
+            chunk = resp.text[start:end]
+            soup  = BeautifulSoup(chunk, "html.parser")
+            a_tag = soup.find("a")
+            name  = a_tag.get_text(" ", strip=True) if a_tag else cid
+            cats.append({"id": cid, "name": name})
     return cats
 
 
@@ -465,20 +472,95 @@ def _safe_roster_path(tournament_id):
     return path
 
 
+# Roster persistence: /tmp is fast but ephemeral on Render — durable copy lives
+# in Supabase Storage bucket `roster-cache` (one JSON object per tournament).
+# /tmp is a per-instance hot cache that gets rehydrated from Storage on first
+# read after a restart.
+
+import os as _os
+import logging as _logging
+import urllib.request as _ureq
+import urllib.error as _uerr
+
+_log_rc = _logging.getLogger("roster_cache")
+_BUCKET = "roster-cache"
+
+
+def _sb_creds():
+    return _os.environ.get("SUPABASE_URL", ""), _os.environ.get("SUPABASE_SERVICE_KEY", "")
+
+
+def _storage_object_url(tournament_id):
+    url, _ = _sb_creds()
+    if not url:
+        return None
+    return f"{url}/storage/v1/object/{_BUCKET}/{tournament_id}.json"
+
+
+def _load_from_supabase(tournament_id):
+    url = _storage_object_url(tournament_id)
+    _, key = _sb_creds()
+    if not url or not key:
+        return None
+    req = _ureq.Request(url, headers={"Authorization": f"Bearer {key}", "apikey": key})
+    try:
+        with _ureq.urlopen(req, timeout=10) as r:
+            return json.loads(r.read().decode())
+    except _uerr.HTTPError as e:
+        if e.code != 404:
+            _log_rc.warning("storage load %s: HTTP %s", tournament_id, e.code)
+        return None
+    except Exception as e:
+        _log_rc.warning("storage load %s: %s", tournament_id, e)
+        return None
+
+
+def _save_to_supabase(tournament_id, data):
+    url = _storage_object_url(tournament_id)
+    _, key = _sb_creds()
+    if not url or not key:
+        return False
+    body = json.dumps(data).encode()
+    req = _ureq.Request(url, data=body, method="POST", headers={
+        "Authorization":   f"Bearer {key}",
+        "apikey":          key,
+        "Content-Type":    "application/json",
+        "x-upsert":        "true",
+        "cache-control":   "max-age=0",
+    })
+    try:
+        _ureq.urlopen(req, timeout=20).read()
+        return True
+    except Exception as e:
+        _log_rc.warning("storage save %s: %s", tournament_id, e)
+        return False
+
+
 def load_roster_cache(tournament_id):
     path = _safe_roster_path(tournament_id)
     if path and path.exists():
         try:
             return json.loads(path.read_text())
         except Exception:
-            return None
-    return None
+            pass
+
+    data = _load_from_supabase(tournament_id)
+    if data is not None and path:
+        try:
+            path.write_text(json.dumps(data))
+        except Exception:
+            pass
+    return data
 
 
 def save_roster_cache(tournament_id, data):
     path = _safe_roster_path(tournament_id)
     if path:
-        path.write_text(json.dumps(data))
+        try:
+            path.write_text(json.dumps(data))
+        except Exception:
+            pass
+    _save_to_supabase(tournament_id, data)
 
 
 def filter_roster(cache, school_name):
