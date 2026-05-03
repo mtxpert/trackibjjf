@@ -482,7 +482,7 @@ import logging as _logging
 import urllib.request as _ureq
 import urllib.error as _uerr
 
-_log_rc = _logging.getLogger("roster_cache")
+_log_rc = _logging.getLogger("gunicorn.error")
 _BUCKET = "roster-cache"
 
 
@@ -519,7 +519,7 @@ def _save_to_supabase(tournament_id, data):
     url = _storage_object_url(tournament_id)
     _, key = _sb_creds()
     if not url or not key:
-        print(f"[roster-cache] save {tournament_id}: missing creds (url={bool(url)} key={bool(key)})", flush=True)
+        _log_rc.warning("[roster-cache] save %s: missing creds (url=%s key=%s)", tournament_id, bool(url), bool(key))
         return False
     body = json.dumps(data).encode()
     req = _ureq.Request(url, data=body, method="POST", headers={
@@ -531,13 +531,13 @@ def _save_to_supabase(tournament_id, data):
     })
     try:
         _ureq.urlopen(req, timeout=20).read()
-        print(f"[roster-cache] save {tournament_id}: OK ({len(body)} bytes)", flush=True)
+        _log_rc.info("[roster-cache] save %s: OK (%d bytes)", tournament_id, len(body))
         return True
     except _uerr.HTTPError as e:
-        print(f"[roster-cache] save {tournament_id}: HTTP {e.code} {e.reason} :: {e.read()[:200]!r}", flush=True)
+        _log_rc.error("[roster-cache] save %s: HTTP %s %s :: %r", tournament_id, e.code, e.reason, e.read()[:200])
         return False
     except Exception as e:
-        print(f"[roster-cache] save {tournament_id}: {type(e).__name__}: {e}", flush=True)
+        _log_rc.error("[roster-cache] save %s: %s: %s", tournament_id, type(e).__name__, e)
         return False
 
 
