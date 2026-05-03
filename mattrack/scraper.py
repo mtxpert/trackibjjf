@@ -519,6 +519,7 @@ def _save_to_supabase(tournament_id, data):
     url = _storage_object_url(tournament_id)
     _, key = _sb_creds()
     if not url or not key:
+        print(f"[roster-cache] save {tournament_id}: missing creds (url={bool(url)} key={bool(key)})", flush=True)
         return False
     body = json.dumps(data).encode()
     req = _ureq.Request(url, data=body, method="POST", headers={
@@ -530,9 +531,13 @@ def _save_to_supabase(tournament_id, data):
     })
     try:
         _ureq.urlopen(req, timeout=20).read()
+        print(f"[roster-cache] save {tournament_id}: OK ({len(body)} bytes)", flush=True)
         return True
+    except _uerr.HTTPError as e:
+        print(f"[roster-cache] save {tournament_id}: HTTP {e.code} {e.reason} :: {e.read()[:200]!r}", flush=True)
+        return False
     except Exception as e:
-        _log_rc.warning("storage save %s: %s", tournament_id, e)
+        print(f"[roster-cache] save {tournament_id}: {type(e).__name__}: {e}", flush=True)
         return False
 
 
