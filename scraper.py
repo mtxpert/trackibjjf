@@ -496,20 +496,100 @@ def _safe_roster_path(tournament_id):
     return path
 
 
+# Roster persistence: /tmp is fast but ephemeral on Render — durable copy lives
+# in Supabase Storage bucket `roster-cache` (one JSON object per tournament).
+# /tmp is a per-instance hot cache that gets rehydrated from Storage on first
+# read after a restart.
+
+import os as _os
+import logging as _logging
+import urllib.request as _ureq
+import urllib.error as _uerr
+
+_log_rc = _logging.getLogger("gunicorn.error")
+_BUCKET = "roster-cache"
+
+
+def _sb_creds():
+    return _os.environ.get("SUPABASE_URL", ""), _os.environ.get("SUPABASE_SERVICE_KEY", "")
+
+
+def _storage_object_url(tournament_id):
+    url, _ = _sb_creds()
+    if not url:
+        return None
+    return f"{url}/storage/v1/object/{_BUCKET}/{tournament_id}.json"
+
+
+def _load_from_supabase(tournament_id):
+    url = _storage_object_url(tournament_id)
+    _, key = _sb_creds()
+    if not url or not key:
+        return None
+    req = _ureq.Request(url, headers={"Authorization": f"Bearer {key}", "apikey": key})
+    try:
+        with _ureq.urlopen(req, timeout=10) as r:
+            return json.loads(r.read().decode())
+    except _uerr.HTTPError as e:
+        if e.code != 404:
+            _log_rc.warning("storage load %s: HTTP %s", tournament_id, e.code)
+        return None
+    except Exception as e:
+        _log_rc.warning("storage load %s: %s", tournament_id, e)
+        return None
+
+
+def _save_to_supabase(tournament_id, data):
+    url = _storage_object_url(tournament_id)
+    _, key = _sb_creds()
+    if not url or not key:
+        _log_rc.warning("[roster-cache] save %s: missing creds (url=%s key=%s)", tournament_id, bool(url), bool(key))
+        return False
+    body = json.dumps(data).encode()
+    req = _ureq.Request(url, data=body, method="POST", headers={
+        "Authorization":   f"Bearer {key}",
+        "apikey":          key,
+        "Content-Type":    "application/json",
+        "x-upsert":        "true",
+        "cache-control":   "max-age=0",
+    })
+    try:
+        _ureq.urlopen(req, timeout=20).read()
+        _log_rc.info("[roster-cache] save %s: OK (%d bytes)", tournament_id, len(body))
+        return True
+    except _uerr.HTTPError as e:
+        _log_rc.error("[roster-cache] save %s: HTTP %s %s :: %r", tournament_id, e.code, e.reason, e.read()[:200])
+        return False
+    except Exception as e:
+        _log_rc.error("[roster-cache] save %s: %s: %s", tournament_id, type(e).__name__, e)
+        return False
+
+
 def load_roster_cache(tournament_id):
     path = _safe_roster_path(tournament_id)
     if path and path.exists():
         try:
             return json.loads(path.read_text())
         except Exception:
-            return None
-    return None
+            pass
+
+    data = _load_from_supabase(tournament_id)
+    if data is not None and path:
+        try:
+            path.write_text(json.dumps(data))
+        except Exception:
+            pass
+    return data
 
 
 def save_roster_cache(tournament_id, data):
     path = _safe_roster_path(tournament_id)
     if path:
-        path.write_text(json.dumps(data))
+        try:
+            path.write_text(json.dumps(data))
+        except Exception:
+            pass
+    _save_to_supabase(tournament_id, data)
 
 
 def filter_roster(cache, school_name):
